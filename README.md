@@ -12,6 +12,14 @@ its colors, font and corner radius from your current theme, and doesn't
 replace or modify anything in Omarchy. Remove it and your desktop is exactly
 as it was.
 
+<p align="center">
+  <img src="docs/island-demo.gif" alt="The island opening from the bar's clock: now playing, calendar, focus timer and dock" width="720">
+</p>
+
+| Open | Peek |
+| --- | --- |
+| ![Open island](docs/island-open.png) | ![Peek after a track change](docs/island-peek.png) |
+
 ## Features
 
 - **Peek**: when the song changes, the timer ends, you plug in or unplug a

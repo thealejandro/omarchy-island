@@ -11,6 +11,14 @@ Es un plugin normal del shell de Omarchy: corre dentro de `omarchy-shell`,
 toma los colores, la fuente y el acento de tu tema y no reemplaza ni modifica
 nada de Omarchy. Si lo quitas, tu escritorio queda exactamente como estaba.
 
+<p align="center">
+  <img src="docs/island-demo.gif" alt="La isla abriéndose desde el reloj de la barra: música, calendario, temporizador y dock" width="720">
+</p>
+
+| Abierta | Vistazo |
+| --- | --- |
+| ![Isla abierta](docs/island-open.png) | ![Vistazo al cambiar de canción](docs/island-peek.png) |
+
 ## Funciones
 
 - **Vistazo**: cuando cambia la canción, termina el temporizador, conectas o
