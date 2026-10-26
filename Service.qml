@@ -25,13 +25,20 @@ Item {
   // ------------------------------------------------------------- settings
 
   // Omarchy doesn't hand settings to service plugins, so read our own entry
-  // from shell.json: { "id": "thealejandro.island", "language": "es" }.
+  // from shell.json: { "id": "thealejandro.island", "language": "es" }. It
+  // lives under "plugins", or in the bar layout once the island is put on the
+  // bar to hide Omarchy's indicators.
   property var settings: ({})
   readonly property string lang: IslandModel.language(settings.language || Quickshell.env("LANG"))
   readonly property var locale: Qt.locale(lang === "es" ? "es_ES" : "en_US")
   // The island sits over the bar's clock by default: hovering it opens the
   // island and a left click pins it, instead of Omarchy's calendar popup.
   readonly property bool overClock: settings.clock !== false
+  // Where Omarchy's quick toggles live: "island" (here, and the bar only
+  // shows the ones that are on), "both", or "bar" (Omarchy's own, untouched).
+  readonly property string togglesMode: ["island", "both", "bar"].indexOf(settings.toggles) !== -1
+    ? settings.toggles : "island"
+  readonly property bool imperial: settings.units === "imperial"
 
   function tr(key, arg) { return IslandModel.t(lang, key, arg) }
 
@@ -41,10 +48,12 @@ Item {
     onFileChanged: reload()
     onLoaded: {
       try {
-        var plugins = JSON.parse(text()).plugins || []
+        var config = JSON.parse(text())
+        var layout = config.bar && config.bar.layout ? config.bar.layout : {}
+        var entries = (config.plugins || []).concat(layout.left || [], layout.center || [], layout.right || [])
         var mine = ({})
-        for (var i = 0; i < plugins.length; i++)
-          if (plugins[i] && plugins[i].id === "thealejandro.island") mine = plugins[i]
+        for (var i = 0; i < entries.length; i++)
+          if (entries[i] && entries[i].id === "thealejandro.island") mine = entries[i]
         root.settings = mine
       } catch (e) {
         console.warn("island: could not read shell.json:", e)
@@ -197,6 +206,82 @@ Item {
         root.reminderCount = Number(json(4).count || 0)
       }
     }
+  }
+
+  // ------------------------------------------------------------- actions
+
+  // Launchers for Omarchy's tools. The island lets go first and the command
+  // waits a moment, so a screenshot or the picker doesn't catch the island.
+  function runAction(command) {
+    pinned = false
+    Quickshell.execDetached(["sh", "-c", "sleep 0.4; exec \"$@\"", "sh"].concat(command))
+  }
+  function screenshot() { runAction(["omarchy-capture-screenshot"]) }
+  function pickColor() { runAction(["hyprpicker", "-a"]) }
+  function openClipboard() { runAction(["omarchy-menu-clipboard"]) }
+  function openEmoji() { runAction(["omarchy-menu-emoji"]) }
+  function openWeather() { runAction(["omarchy-shell", "omarchy.weather", "toggle"]) }
+
+  // ------------------------------------------------------------- weather
+
+  // Current conditions from wttr.in, at the place Omarchy's weather widget
+  // was set to (weather.json) or by IP. Refreshed every 20 minutes and kept
+  // on failure so the island never flashes an empty pill.
+  property var weather: null
+  property string weatherQuery: ""
+  property string weatherLang: ""
+  readonly property string weatherGlyph: weather
+    ? IslandModel.weatherIcon(weather.code, weather.hour < 6 || weather.hour >= 19) : ""
+
+  function refreshWeather() {
+    if (weatherFetch.running) return
+    weatherLang = lang
+    weatherFetch.command = ["curl", "-fsS", "--max-time", "8",
+      "https://wttr.in/" + weatherQuery + "?format=j1&lang=" + lang]
+    weatherFetch.running = true
+  }
+
+  FileView {
+    path: Quickshell.env("HOME") + "/.local/state/omarchy/settings/weather.json"
+    printErrors: false
+    watchChanges: true
+    onFileChanged: reload()
+    onLoaded: {
+      try {
+        var place = JSON.parse(text())
+        var lat = parseFloat(place.latitude), lon = parseFloat(place.longitude)
+        root.weatherQuery = !isNaN(lat) && !isNaN(lon) ? lat + "," + lon
+          : encodeURIComponent(String(place.name || "").trim())
+      } catch (e) {
+        root.weatherQuery = ""
+      }
+      root.refreshWeather()
+    }
+    onLoadFailed: { root.weatherQuery = ""; root.refreshWeather() }
+  }
+
+  // The first fetch can race the settings file; ask again in the right
+  // language once it's known.
+  onLangChanged: refreshWeather()
+
+  Process {
+    id: weatherFetch
+    onExited: if (root.weatherLang !== root.lang) root.refreshWeather()
+    stdout: StdioCollector {
+      onStreamFinished: {
+        var report = IslandModel.parseWeather(text, root.lang, root.imperial)
+        if (!report) return
+        report.hour = new Date().getHours()
+        root.weather = report
+      }
+    }
+  }
+
+  Timer {
+    interval: 20 * 60 * 1000
+    running: true
+    repeat: true
+    onTriggered: root.refreshWeather()
   }
 
   // ------------------------------------------------------------- visibility
