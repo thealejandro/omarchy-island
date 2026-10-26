@@ -21,8 +21,8 @@ nada de Omarchy. Si lo quitas, tu escritorio queda exactamente como estaba.
 - **Calendario**: el mes actual con hoy resaltado. Las flechas o la rueda del
   ratón cambian de mes; pulsa el título para volver a hoy.
 - **Temporizador de enfoque**: Pomodoro (25 / 5 por defecto) con una
-  notificación al terminar cada fase. Usa la rueda sobre la hora para cambiar
-  la duración del enfoque (5–120 min).
+  notificación al terminar cada fase. Usa la rueda sobre el temporizador
+  para cambiar la duración del enfoque (5–120 min).
 - **Español e inglés**: sigue `LANG`, o elígelo en `shell.json`.
 - **Sigue tu tema**: cambia en vivo con `omarchy theme set` (colores, fuente
   y acento). La isla tiene esquinas redondeadas con "orejas" cóncavas que se

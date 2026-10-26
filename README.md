@@ -22,7 +22,7 @@ as it was.
 - **Calendar**: the current month with today highlighted. Arrows or the
   scroll wheel change month; click the title to go back to today.
 - **Focus timer**: Pomodoro (25 / 5 by default) with a notification when each
-  phase ends. Scroll over the time to change the focus length (5–120 min).
+  phase ends. Scroll over the timer to change the focus length (5–120 min).
 - **English and Spanish**: follows `LANG`, or set it in `shell.json`.
 - **Theme-aware**: follows `omarchy theme set` live: colors, font and accent.
   The island keeps rounded corners with concave "ears" that melt into the

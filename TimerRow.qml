@@ -4,7 +4,7 @@ import qs.Commons as Commons
 import "IslandModel.js" as IslandModel
 
 // Focus timer: phase, remaining time and a thin progress line. Scroll over
-// the time to change the focus length while the timer is idle.
+// the row to change the focus length while the timer is idle.
 Item {
   id: root
 
@@ -15,6 +15,14 @@ Item {
     ? 1 - island.timerRemaining / island.timerTotal : 0
 
   implicitHeight: Math.max(left.height, buttons.height) + Style.spacing.md + Style.space(3)
+
+  WheelHandler {
+    // Without this the handler ignores a regular mouse wheel.
+    acceptedDevices: PointerDevice.Mouse | PointerDevice.TouchPad
+    enabled: !root.island.timerActive
+    onWheel: (event) => root.island.setFocusMinutes(
+      root.island.focusMinutes + (event.angleDelta.y > 0 ? 5 : -5))
+  }
 
   Row {
     id: left
@@ -36,12 +44,6 @@ Item {
       font.family: Style.font.family
       font.pixelSize: Style.font.display
       font.bold: true
-
-      WheelHandler {
-        enabled: !root.island.timerActive
-        onWheel: (event) => root.island.setFocusMinutes(
-          root.island.focusMinutes + (event.angleDelta.y > 0 ? 5 : -5))
-      }
     }
     Column {
       anchors.verticalCenter: parent.verticalCenter
