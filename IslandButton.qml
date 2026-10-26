@@ -24,10 +24,11 @@ Item {
       : Util.alpha(Commons.Color.bar.text, mouse.containsMouse ? 0.1 : 0)
     scale: mouse.pressed ? 0.9 : (mouse.containsMouse && root.filled ? 1.06 : 1)
     Behavior on color { ColorAnimation { duration: 120 } }
-    Behavior on scale { NumberAnimation { duration: 120; easing.type: Easing.OutQuad } }
+    Behavior on scale { NumberAnimation { duration: 180; easing.type: Easing.OutBack; easing.overshoot: 2 } }
   }
 
   Glyph {
+    id: icon
     anchors.centerIn: parent
     // A play triangle looks centered on its centroid, not its box.
     anchors.horizontalCenterOffset: root.glyph === "󰐊" ? Math.round(width * 0.1) : 0
@@ -37,6 +38,19 @@ Item {
     opacity: root.filled || mouse.containsMouse ? 1 : 0.75
     font.family: Style.font.family
     font.pixelSize: root.glyphSize
+  }
+
+  // Swapping icons (play to pause) pops the new one in.
+  onGlyphChanged: pop.restart()
+  NumberAnimation {
+    id: pop
+    target: icon
+    property: "scale"
+    from: 0.55
+    to: 1
+    duration: 280
+    easing.type: Easing.OutBack
+    easing.overshoot: 2.2
   }
 
   MouseArea {

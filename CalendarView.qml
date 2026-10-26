@@ -24,11 +24,26 @@ Column {
     var d = new Date(year, month + delta, 1)
     year = d.getFullYear()
     month = d.getMonth()
+    slide(delta)
   }
   function goToday() {
     today = new Date()
+    var delta = (today.getFullYear() - year) * 12 + today.getMonth() - month
     year = today.getFullYear()
     month = today.getMonth()
+    if (delta !== 0 && visible) slide(delta)
+  }
+  // The new month slides in from the side it came from.
+  function slide(delta) {
+    monthIn.from = (delta > 0 ? 1 : -1) * Style.space(18)
+    monthSlide.restart()
+  }
+
+  ParallelAnimation {
+    id: monthSlide
+    NumberAnimation { id: monthIn; target: daysShift; property: "x"; to: 0; duration: 320; easing.type: Easing.OutCubic }
+    NumberAnimation { target: days; property: "opacity"; from: 0.2; to: 1; duration: 260; easing.type: Easing.OutCubic }
+    NumberAnimation { target: header; property: "opacity"; from: 0.4; to: 1; duration: 260; easing.type: Easing.OutCubic }
   }
 
   // Keep "today" right across midnight and snap back to it each time the
@@ -48,6 +63,7 @@ Column {
     height: Style.space(24)
 
     Text {
+      id: header
       anchors.left: parent.left
       anchors.verticalCenter: parent.verticalCenter
       text: {
@@ -73,7 +89,9 @@ Column {
   }
 
   Grid {
+    id: days
     columns: 7
+    transform: Translate { id: daysShift }
 
     Repeater {
       model: IslandModel.weekdayOrder(root.locale.firstDayOfWeek === 0 ? 7 : root.locale.firstDayOfWeek)

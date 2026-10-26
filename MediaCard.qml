@@ -16,6 +16,17 @@ Column {
 
   spacing: Style.spacing.xl
 
+  // A new track nudges the cover and slides the titles in.
+  readonly property string trackKey: island.title + "\u0000" + island.artist + "\u0000" + island.artUrl
+  onTrackKeyChanged: if (visible) trackIn.restart()
+
+  ParallelAnimation {
+    id: trackIn
+    NumberAnimation { target: art; property: "scale"; from: 0.88; to: 1; duration: 420; easing.type: Easing.OutBack; easing.overshoot: 1.6 }
+    NumberAnimation { target: info; property: "opacity"; from: 0; to: 1; duration: 260; easing.type: Easing.OutCubic }
+    NumberAnimation { target: infoShift; property: "x"; from: Style.space(10); to: 0; duration: 360; easing.type: Easing.OutCubic }
+  }
+
   Row {
     width: parent.width
     spacing: Style.spacing.xl
@@ -28,12 +39,21 @@ Column {
       color: Util.alpha(root.textColor, 0.08)
 
       Image {
+        id: cover
         anchors.fill: parent
         source: root.island.artUrl
         sourceSize: Qt.size(root.artSize * 2, root.artSize * 2)
         fillMode: Image.PreserveAspectCrop
         asynchronous: true
         visible: status === Image.Ready
+        // Covers load late; fade them in with a slight zoom instead of
+        // popping over the placeholder.
+        onStatusChanged: if (status === Image.Ready) coverIn.restart()
+        ParallelAnimation {
+          id: coverIn
+          NumberAnimation { target: cover; property: "opacity"; from: 0; to: 1; duration: 320; easing.type: Easing.OutCubic }
+          NumberAnimation { target: cover; property: "scale"; from: 1.12; to: 1; duration: 480; easing.type: Easing.OutCubic }
+        }
       }
       Text {
         anchors.centerIn: parent
@@ -46,9 +66,11 @@ Column {
     }
 
     Column {
+      id: info
       width: parent.width - root.artSize - parent.spacing
       anchors.verticalCenter: parent.verticalCenter
       spacing: Style.spacing.sm
+      transform: Translate { id: infoShift }
 
       Row {
         spacing: Style.spacing.md
@@ -96,6 +118,16 @@ Column {
     visible: root.island.hasMedia && root.island.length > 0
 
     readonly property real progress: Math.min(1, root.island.position / Math.max(1, root.island.length))
+    // The position only updates once a second; gliding between ticks keeps
+    // the bar moving instead of stepping. Off while dragging, so it sticks
+    // to the pointer.
+    property real smooth: progress
+    Behavior on smooth {
+      enabled: !seek.pressed && !seek.settling
+      NumberAnimation { duration: 1000 }
+    }
+    // After a seek, hold the dropped spot until the player reports it.
+    onProgressChanged: if (seek.settling) Qt.callLater(() => seek.settling = false)
 
     Text {
       id: elapsed
@@ -115,7 +147,7 @@ Column {
       anchors.verticalCenter: parent.verticalCenter
       height: Style.space(4)
 
-      readonly property real shown: seek.pressed ? seek.dragFraction : parent.progress
+      readonly property real shown: seek.pressed || seek.settling ? seek.dragFraction : parent.smooth
 
       Rectangle {
         anchors.fill: parent
@@ -135,12 +167,14 @@ Column {
         x: parent.width * track.shown - width / 2
         anchors.verticalCenter: parent.verticalCenter
         color: Commons.Color.accent
-        scale: seek.containsMouse || seek.pressed ? 1 : 0
-        Behavior on scale { NumberAnimation { duration: 120 } }
+        scale: seek.pressed ? 1.25 : (seek.containsMouse ? 1 : 0)
+        Behavior on scale { NumberAnimation { duration: 200; easing.type: Easing.OutBack; easing.overshoot: 2 } }
       }
       MouseArea {
         id: seek
         property real dragFraction: 0
+        property bool settling: false
+        Timer { id: settleTimeout; interval: 1500; onTriggered: seek.settling = false }
         anchors.fill: parent
         anchors.topMargin: -Style.space(6)
         anchors.bottomMargin: -Style.space(6)
@@ -149,7 +183,12 @@ Column {
         function fractionAt(x) { return Math.max(0, Math.min(1, x / track.width)) }
         onPressed: (mouse) => dragFraction = fractionAt(mouse.x)
         onPositionChanged: (mouse) => { if (pressed) dragFraction = fractionAt(mouse.x) }
-        onReleased: (mouse) => root.island.seekTo(fractionAt(mouse.x))
+        onReleased: (mouse) => {
+          dragFraction = fractionAt(mouse.x)
+          settling = true
+          settleTimeout.restart()
+          root.island.seekTo(dragFraction)
+        }
       }
     }
     Text {
