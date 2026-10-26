@@ -15,8 +15,8 @@ as it was.
 
 - **Peek**: when the song changes or the timer ends, a one-line glance drops
   out of the bar for a few seconds.
-- **Open**: hover the top edge over the clock, or just below the center of
-  the bar (or bind a key), to open the island: cover art, source player,
+- **Open**: hover the bar's clock, or just below it (or bind a key), to open
+  the island: cover art, source player,
   title, artist, a progress bar you can click or drag, previous / play /
   next.
 - **Calendar**: the current month with today highlighted. Arrows or the
@@ -48,8 +48,11 @@ omarchy plugin remove thealejandro.island
 
 ## Usage
 
-- Hover the top edge of the screen over the clock, or the thin strip right
-  under the bar's center, to open it; move away and it closes.
+- Hover the bar's clock, or the thin strip right under it, to open the
+  island; move away and it closes.
+- Click the clock to pin the island open (its calendar replaces Omarchy's
+  popup); click again to close it. Right click still changes the clock
+  format and middle click still opens the timezone menu.
 - Toggle it from a key, in `~/.config/hypr/bindings.lua`:
 
   ```lua
@@ -79,6 +82,10 @@ Optional, in the plugin's entry in `~/.config/omarchy/shell.json`:
 | Key        | Values       | Default            |
 |------------|--------------|--------------------|
 | `language` | `en`, `es`   | from `LANG`        |
+| `clock`    | `true`, `false` | `true`          |
+
+With `"clock": false` the island leaves the clock alone: hover only the top
+edge to open it, and a click on the clock opens Omarchy's calendar again.
 
 ## Development
 

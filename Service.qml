@@ -14,7 +14,8 @@ Item {
   property var manifest: null
 
   // "peek" is the short glance after something changes (new song, timer
-  // done); "pinned" keeps the island open until toggled again over IPC.
+  // done); "pinned" keeps the island open until toggled again (IPC or a
+  // click on the clock).
   property bool peeking: false
   property bool pinned: false
   property string peekReason: ""
@@ -28,6 +29,9 @@ Item {
   property var settings: ({})
   readonly property string lang: IslandModel.language(settings.language || Quickshell.env("LANG"))
   readonly property var locale: Qt.locale(lang === "es" ? "es_ES" : "en_US")
+  // The island sits over the bar's clock by default: hovering it opens the
+  // island and a left click pins it, instead of Omarchy's calendar popup.
+  readonly property bool overClock: settings.clock !== false
 
   function tr(key, arg) { return IslandModel.t(lang, key, arg) }
 
