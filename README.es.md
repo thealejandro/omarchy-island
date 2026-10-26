@@ -4,7 +4,8 @@
 
 Una isla dinámica para [Omarchy](https://omarchy.org) que sale del centro de
 la barra. Muestra lo que suena, te da controles de música, el calendario del
-mes y un temporizador de enfoque, y se aparta cuando terminas.
+mes, un temporizador de enfoque, el clima, acciones rápidas y los toggles de
+Omarchy, y se aparta cuando terminas.
 
 Es un plugin normal del shell de Omarchy: corre dentro de `omarchy-shell`,
 toma los colores, la fuente y el acento de tu tema y no reemplaza ni modifica
@@ -23,16 +24,26 @@ nada de Omarchy. Si lo quitas, tu escritorio queda exactamente como estaba.
 - **Temporizador de enfoque**: Pomodoro (25 / 5 por defecto) con una
   notificación al terminar cada fase. Usa la rueda sobre el temporizador
   para cambiar la duración del enfoque (5–120 min).
-- **Toggles rápidos**: luz nocturna, silenciar notificaciones, mantener
-  despierto, grabar pantalla y recordatorios, los mismos interruptores que
-  los indicadores de la barra de Omarchy (que solo aparecen con el ratón en
-  el centro de la barra, ahora de la isla). Una ficha iluminada está activa.
+- **Dock**: una fila fina en la parte de abajo.
+  - Toggles rápidos: luz nocturna, silenciar notificaciones, mantener
+    despierto, grabar pantalla y recordatorios, los mismos interruptores que
+    los indicadores de la barra de Omarchy. Un botón iluminado está activo.
+  - Acciones: captura de pantalla, cuentagotas, historial del portapapeles y
+    selector de emojis. La isla se aparta antes de que empiecen.
+  - Clima: icono, temperatura y estado del lugar configurado en el widget de
+    clima de Omarchy (o por IP), desde wttr.in. Púlsalo para ver el
+    pronóstico de Omarchy.
+  - Pasa el ratón por un botón para ver su nombre.
+- **Sin toggles duplicados**: con la isla en la barra (ver abajo), pasar el
+  ratón por el centro de la barra ya no muestra los indicadores inactivos de
+  Omarchy; la barra deja solo los que están activos. Configurable.
 - **Español e inglés**: sigue `LANG`, o elígelo en `shell.json`.
 - **Sigue tu tema**: cambia en vivo con `omarchy theme set` (colores, fuente
   y acento). La isla tiene esquinas redondeadas con "orejas" cóncavas que se
   funden con la barra.
-- **Ligera**: sin procesos extra ni sondeos en reposo. La música llega por
-  MPRIS (Spotify, navegadores, mpv…).
+- **Ligera**: sin procesos extra. La música llega por MPRIS (Spotify,
+  navegadores, mpv…); lo único que se consulta solo es el clima, cada 20
+  minutos.
 
 ## Requisitos
 
@@ -43,6 +54,13 @@ arriba.
 
 ```bash
 omarchy plugin add https://github.com/thealejandro/omarchy-island.git --enable
+```
+
+Luego ponla en el centro de la barra, junto al reloj. No ocupa sitio ahí; es
+lo que le permite ocultar los indicadores que ya lleva la isla:
+
+```bash
+omarchy bar put thealejandro.island --after omarchy.clock
 ```
 
 Para quitarlo:
@@ -78,16 +96,29 @@ IPC (`omarchy-shell island <método>`):
 
 ## Ajustes
 
-Opcionales, en la entrada del plugin en `~/.config/omarchy/shell.json`:
+Opcionales, en la entrada de la isla en `~/.config/omarchy/shell.json` (en
+la disposición de la barra, o en `plugins` si no la pusiste en la barra):
 
 ```json
-{ "id": "thealejandro.island", "language": "es" }
+{ "id": "thealejandro.island", "language": "es", "toggles": "island" }
 ```
 
-| Clave      | Valores    | Por defecto   |
-|------------|------------|---------------|
-| `language` | `en`, `es` | según `LANG`  |
-| `clock`    | `true`, `false` | `true`   |
+O desde la terminal: `omarchy bar set thealejandro.island toggles both`.
+
+| Clave      | Valores                  | Por defecto  |
+|------------|--------------------------|--------------|
+| `language` | `en`, `es`               | según `LANG` |
+| `clock`    | `true`, `false`          | `true`       |
+| `toggles`  | `island`, `both`, `bar`  | `island`     |
+| `units`    | `metric`, `imperial`     | `metric`     |
+
+`toggles` decide dónde van los toggles rápidos de Omarchy:
+
+- `island`: en la isla; la barra muestra solo los indicadores activos.
+- `both`: en la isla, y la barra los sigue mostrando todos al pasar el ratón
+  por su centro (como hace Omarchy).
+- `bar`: solo en la barra; el dock de la isla se queda con las acciones y el
+  clima.
 
 Con `"clock": false` la isla deja el reloj en paz: se abre solo desde el
 borde superior y un clic en el reloj vuelve a abrir el calendario de Omarchy.
@@ -108,8 +139,9 @@ ejecuta `omarchy restart shell` para ver los cambios.
 
 | Archivo            | Qué hace                                               |
 |--------------------|--------------------------------------------------------|
-| `Service.qml`      | Estado: reproductor MPRIS, temporizador, vistazo, ajustes, IPC |
-| `IslandModel.js`   | Funciones puras: elegir reproductor, reloj, textos, mes |
+| `Service.qml`      | Estado: reproductor MPRIS, temporizador, toggles, clima, ajustes, IPC |
+| `BarWidget.qml`    | Entrada invisible en la barra que oculta indicadores duplicados |
+| `IslandModel.js`   | Funciones puras: elegir reproductor, reloj, textos, mes, clima |
 | `IslandWindow.qml` | Capa por pantalla, máscara de entrada, hover, animación |
 | `IslandShape.qml`  | La silueta con orejas cóncavas                         |
 | `PeekView.qml`     | El vistazo de una línea                                |
@@ -117,7 +149,7 @@ ejecuta `omarchy restart shell` para ver los cambios.
 | `MediaCard.qml`    | Portada, canción, barra de progreso y controles        |
 | `CalendarView.qml` | Calendario del mes                                     |
 | `TimerRow.qml`     | Temporizador de enfoque                                |
-| `QuickToggles.qml` | Los toggles rápidos de Omarchy                         |
+| `Dock.qml`         | Fila de toggles, acciones y clima                      |
 | `IslandButton.qml` | Botón redondo con icono                                |
 | `Glyph.qml`        | Icono centrado por su tinta, no por su caja            |
 | `Equalizer.qml`    | Barritas animadas mientras suena música                |

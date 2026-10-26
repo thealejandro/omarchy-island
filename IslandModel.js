@@ -41,7 +41,12 @@ var STRINGS = {
     stayAwake: "Stay awake",
     recording: "Record",
     stopRecording: "Stop",
-    reminders: "Reminder"
+    reminders: "Reminder",
+    screenshot: "Screenshot",
+    colorPicker: "Color picker",
+    clipboard: "Clipboard",
+    emoji: "Emoji",
+    weather: "Weather"
   },
   es: {
     nothingPlaying: "Nada sonando",
@@ -60,7 +65,12 @@ var STRINGS = {
     stayAwake: "Despierto",
     recording: "Grabar",
     stopRecording: "Detener",
-    reminders: "Recordatorio"
+    reminders: "Recordatorio",
+    screenshot: "Captura",
+    colorPicker: "Cuentagotas",
+    clipboard: "Portapapeles",
+    emoji: "Emoji",
+    weather: "Clima"
   }
 }
 
@@ -107,4 +117,43 @@ function weekdayOrder(firstDow) {
   var out = []
   for (var i = 0; i < 7; i++) out.push(((firstDow - 1 + i) % 7) + 1)
   return out
+}
+
+// wttr.in's j1 report → { temp, code, desc, place }. lang picks wttr's
+// translated description ("lang_es") when it has one. Anything malformed
+// returns null so the caller keeps the last good report.
+function parseWeather(raw, lang, imperial) {
+  try {
+    var data = JSON.parse(String(raw || ""))
+    var now = data.current_condition[0]
+    var translated = now["lang_" + lang]
+    var desc = translated && translated[0] ? translated[0].value
+      : (now.weatherDesc && now.weatherDesc[0] ? now.weatherDesc[0].value : "")
+    var area = data.nearest_area && data.nearest_area[0] && data.nearest_area[0].areaName
+      ? data.nearest_area[0].areaName[0].value : ""
+    var temp = imperial ? now.temp_F : now.temp_C
+    if (temp === undefined || temp === "") return null
+    return { temp: temp + "°", code: parseInt(now.weatherCode, 10), desc: desc.trim(), place: area }
+  } catch (e) {
+    return null
+  }
+}
+
+// Nerd Font icon for a wttr.in weather code, the same set Omarchy's weather
+// widget uses.
+function weatherIcon(code, night) {
+  switch (code) {
+    case 113: return night ? "\ue32b" : "\ue30d"
+    case 116: return night ? "\ue32e" : "\ue302"
+    case 119: case 122: return "\ue33d"
+    case 143: case 248: case 260: return night ? "\ue346" : "\ue313"
+    case 176: case 263: case 353: return night ? "\ue333" : "\ue308"
+    case 179: case 227: case 230: case 323: case 326: case 368: return night ? "\ue327" : "\ue30a"
+    case 182: case 185: case 281: case 284: case 311: case 314:
+    case 317: case 320: case 350: case 362: case 365: case 374: case 377: return "\ue3ad"
+    case 200: case 386: case 389: case 392: case 395: return "\ue31d"
+    case 266: case 293: case 296: case 299: case 302: case 305: case 308: case 356: case 359: return "\ue318"
+    case 329: case 332: case 335: case 338: case 371: return "\ue31a"
+    default: return "\ue33d"
+  }
 }

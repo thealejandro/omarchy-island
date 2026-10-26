@@ -2,14 +2,22 @@
   "schemaVersion": 1,
   "id": "thealejandro.island",
   "name": "Island",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "author": "thealejandro",
-  "description": "A dynamic island that grows out of the center of the Omarchy bar: now playing, media controls, a month calendar, a focus timer and Omarchy's quick toggles.",
+  "description": "A dynamic island that grows out of the center of the Omarchy bar: now playing, media controls, a month calendar, a focus timer, the weather, quick actions and Omarchy's quick toggles.",
   "kinds": [
-    "service"
+    "service",
+    "bar-widget"
   ],
   "keepLoaded": true,
   "entryPoints": {
-    "service": "Service.qml"
+    "service": "Service.qml",
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Island",
+    "description": "Hides Omarchy's inactive indicators from the bar while the island carries them",
+    "category": "System",
+    "allowMultiple": false
   }
 }

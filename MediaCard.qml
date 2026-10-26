@@ -12,13 +12,13 @@ Column {
 
   readonly property color textColor: Commons.Color.bar.text
   readonly property color dimColor: Util.alpha(Commons.Color.bar.text, 0.6)
-  readonly property int artSize: Style.space(76)
+  readonly property int artSize: Style.space(64)
 
-  spacing: Style.spacing.xxl
+  spacing: Style.spacing.xl
 
   Row {
     width: parent.width
-    spacing: Style.spacing.xxl
+    spacing: Style.spacing.xl
 
     ClippingRectangle {
       id: art
@@ -165,14 +165,14 @@ Column {
 
   Row {
     anchors.horizontalCenter: parent.horizontalCenter
-    spacing: Style.spacing.huge
+    spacing: Style.spacing.xl
     visible: root.island.hasMedia
     IslandButton { anchors.verticalCenter: parent.verticalCenter; glyph: "󰒮"; onClicked: root.island.previous() }
     IslandButton {
       anchors.verticalCenter: parent.verticalCenter
       glyph: root.island.playing ? "󰏤" : "󰐊"
       filled: true
-      size: Style.space(38)
+      size: Style.space(34)
       onClicked: root.island.togglePlaying()
     }
     IslandButton { anchors.verticalCenter: parent.verticalCenter; glyph: "󰒭"; onClicked: root.island.next() }

@@ -80,7 +80,7 @@ Item {
       anchors.verticalCenter: parent.verticalCenter
       glyph: root.island.timerRunning ? "󰏤" : "󰐊"
       filled: true
-      size: Style.space(34)
+      size: Style.space(30)
       onClicked: root.island.toggleTimer()
     }
   }
