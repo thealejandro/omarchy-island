@@ -13,8 +13,13 @@ nada de Omarchy. Si lo quitas, tu escritorio queda exactamente como estaba.
 
 ## Funciones
 
-- **Vistazo**: cuando cambia la canción o termina el temporizador, una línea
-  baja de la barra unos segundos.
+- **Vistazo**: cuando cambia la canción, termina el temporizador, conectas o
+  desconectas el portátil, o la batería baja (20 % y 10 %), una línea baja de
+  la barra unos segundos.
+- **Volumen y brillo en la isla** (opcional): el OSD de Omarchy (volumen,
+  brillo, micrófono, luz del teclado, teclas multimedia) aparece como un
+  vistazo con su barra de nivel en lugar de una tarjeta flotante. Ver `osd`
+  abajo.
 - **Abrir**: pasa el ratón por el reloj de la barra, o justo debajo (o usa
   un atajo), y se abre la isla: portada,
   reproductor, título, artista, barra de progreso que puedes pulsar o
@@ -111,6 +116,8 @@ O desde la terminal: `omarchy bar set thealejandro.island toggles both`.
 | `clock`    | `true`, `false`          | `true`       |
 | `toggles`  | `island`, `both`, `bar`  | `island`     |
 | `units`    | `metric`, `imperial`     | `metric`     |
+| `osd`      | `true`, `false`          | `false`      |
+| `battery`  | `true`, `false`          | `true`       |
 
 `toggles` decide dónde van los toggles rápidos de Omarchy:
 
@@ -119,6 +126,20 @@ O desde la terminal: `omarchy bar set thealejandro.island toggles both`.
   por su centro (como hace Omarchy).
 - `bar`: solo en la barra; el dock de la isla se queda con las acciones y el
   clima.
+
+`osd` hace que la isla muestre el OSD de Omarchy. Solo un plugin puede
+tenerlo, así que primero apaga la tarjeta de Omarchy y luego actívalo:
+
+```bash
+omarchy plugin disable omarchy.osd
+omarchy bar set thealejandro.island osd true
+```
+
+Para volver: `omarchy bar set thealejandro.island osd false` y
+`omarchy plugin enable omarchy.osd`.
+
+`battery: false` silencia los vistazos de carga y batería baja. En un
+equipo sin batería nunca aparecen.
 
 Con `"clock": false` la isla deja el reloj en paz: se abre solo desde el
 borde superior y un clic en el reloj vuelve a abrir el calendario de Omarchy.
@@ -139,12 +160,12 @@ ejecuta `omarchy restart shell` para ver los cambios.
 
 | Archivo            | Qué hace                                               |
 |--------------------|--------------------------------------------------------|
-| `Service.qml`      | Estado: reproductor MPRIS, temporizador, toggles, clima, ajustes, IPC |
+| `Service.qml`      | Estado: reproductor MPRIS, temporizador, toggles, clima, OSD, batería, ajustes, IPC |
 | `BarWidget.qml`    | Entrada invisible en la barra que oculta indicadores duplicados |
 | `IslandModel.js`   | Funciones puras: elegir reproductor, reloj, textos, mes, clima |
 | `IslandWindow.qml` | Capa por pantalla, máscara de entrada, hover, animación |
 | `IslandShape.qml`  | La silueta con orejas cóncavas                         |
-| `PeekView.qml`     | El vistazo de una línea                                |
+| `PeekView.qml`     | El vistazo de una línea: canción, temporizador, OSD o batería |
 | `OpenView.qml`     | Disposición de la isla abierta                         |
 | `MediaCard.qml`    | Portada, canción, barra de progreso y controles        |
 | `CalendarView.qml` | Calendario del mes                                     |
