@@ -13,12 +13,12 @@ PanelWindow {
   required property var island
 
   readonly property int barSize: Style.bar.sizeHorizontal
-  readonly property int pad: Style.spacing.panelPadding
+  readonly property int pad: Style.spacing.xxxl
   // An island needs soft corners to read as one; sharp themes still get
   // their square bar, the island just rounds off below it.
   readonly property int radius: Math.max(Style.cornerRadius, Style.space(18))
   readonly property int ear: Style.space(10)
-  readonly property int openWidth: Style.space(620)
+  readonly property int openWidth: Style.space(560)
 
   // Hot zones: throwing the pointer at the top edge over the bar's center
   // (the notch gesture), resting it on the clock, or just under the bar.
