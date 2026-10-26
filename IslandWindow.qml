@@ -21,11 +21,13 @@ PanelWindow {
   readonly property int openWidth: Style.space(620)
 
   // Hot zones: throwing the pointer at the top edge over the bar's center
-  // (the notch gesture), or resting it just under the bar.
+  // (the notch gesture), resting it on the clock, or just under the bar.
   readonly property int edgeHeight: 2
   readonly property int edgeWidth: Style.space(220)
   readonly property int stripHeight: Style.space(8)
   readonly property int stripWidth: Style.space(320)
+  // The bar's clock is its center anchor, so it sits right in the middle.
+  readonly property int clockWidth: Style.space(120)
 
   property bool hovered: false
   readonly property bool expanded: hovered || island.pinned
@@ -54,6 +56,7 @@ PanelWindow {
   mask: Region {
     Region { item: edgeZone }
     Region { item: stripZone }
+    Region { item: clockZone }
     Region { item: islandZone }
   }
 
@@ -70,6 +73,31 @@ PanelWindow {
     y: win.barSize
     width: win.stripWidth
     height: win.stripHeight
+  }
+
+  // Covers the clock so hovering it opens the island. Clicks that would have
+  // reached the clock are handled here: left pins the island (its calendar
+  // stands in for Omarchy's), right and middle are passed on to the clock.
+  MouseArea {
+    id: clockZone
+    x: Math.round((win.width - width) / 2)
+    width: win.island.overClock ? win.clockWidth : 0
+    height: win.barSize
+    acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
+    cursorShape: Qt.PointingHandCursor
+    onPressed: (mouse) => {
+      if (mouse.button === Qt.RightButton)
+        Quickshell.execDetached(["omarchy-shell", "omarchy.clock", "cycleFormat"])
+      else if (mouse.button === Qt.MiddleButton)
+        Quickshell.execDetached(["omarchy-menu-timezone"])
+      else {
+        win.island.pinned = !win.island.pinned
+        if (win.island.pinned) {
+          enterTimer.stop()
+          win.hovered = true
+        }
+      }
+    }
   }
 
   Item {

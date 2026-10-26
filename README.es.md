@@ -14,8 +14,8 @@ nada de Omarchy. Si lo quitas, tu escritorio queda exactamente como estaba.
 
 - **Vistazo**: cuando cambia la canción o termina el temporizador, una línea
   baja de la barra unos segundos.
-- **Abrir**: pasa el ratón por el borde superior sobre el reloj, o justo
-  debajo del centro de la barra (o usa un atajo), y se abre la isla: portada,
+- **Abrir**: pasa el ratón por el reloj de la barra, o justo debajo (o usa
+  un atajo), y se abre la isla: portada,
   reproductor, título, artista, barra de progreso que puedes pulsar o
   arrastrar, anterior / reproducir / siguiente.
 - **Calendario**: el mes actual con hoy resaltado. Las flechas o la rueda del
@@ -49,8 +49,11 @@ omarchy plugin remove thealejandro.island
 
 ## Uso
 
-- Pasa el ratón por el borde superior de la pantalla sobre el reloj, o por la
-  franja fina justo debajo del centro de la barra; al alejarte se cierra.
+- Pasa el ratón por el reloj de la barra, o por la franja fina justo debajo,
+  para abrir la isla; al alejarte se cierra.
+- Pulsa el reloj para dejarla fija (su calendario sustituye al de Omarchy);
+  vuelve a pulsarlo para cerrarla. El clic derecho sigue cambiando el formato
+  del reloj y el central sigue abriendo el menú de zona horaria.
 - Ábrela con un atajo, en `~/.config/hypr/bindings.lua`:
 
   ```lua
@@ -80,6 +83,10 @@ Opcionales, en la entrada del plugin en `~/.config/omarchy/shell.json`:
 | Clave      | Valores    | Por defecto   |
 |------------|------------|---------------|
 | `language` | `en`, `es` | según `LANG`  |
+| `clock`    | `true`, `false` | `true`   |
+
+Con `"clock": false` la isla deja el reloj en paz: se abre solo desde el
+borde superior y un clic en el reloj vuelve a abrir el calendario de Omarchy.
 
 ## Desarrollo
 
