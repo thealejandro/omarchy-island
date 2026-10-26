@@ -1,0 +1,15 @@
+{
+  "schemaVersion": 1,
+  "id": "thealejandro.island",
+  "name": "Island",
+  "version": "0.1.0",
+  "author": "thealejandro",
+  "description": "A dynamic island that grows out of the center of the Omarchy bar: now playing, media controls and a focus timer.",
+  "kinds": [
+    "service"
+  ],
+  "keepLoaded": true,
+  "entryPoints": {
+    "service": "Service.qml"
+  }
+}
