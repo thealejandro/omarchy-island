@@ -2,6 +2,7 @@ import QtQuick
 import Quickshell
 import Quickshell.Io
 import Quickshell.Services.Mpris
+import Quickshell.Services.UPower
 import "IslandModel.js" as IslandModel
 
 // Headless owner of the island state. One IslandWindow is mounted per screen;
@@ -39,6 +40,11 @@ Item {
   readonly property string togglesMode: ["island", "both", "bar"].indexOf(settings.toggles) !== -1
     ? settings.toggles : "island"
   readonly property bool imperial: settings.units === "imperial"
+  // Take over Omarchy's OSD (volume, brightness, mic...). Off by default:
+  // only one plugin can own the "osd" IPC target, so Omarchy's has to be
+  // disabled first (omarchy plugin disable omarchy.osd).
+  readonly property bool osdEnabled: String(settings.osd) === "true"
+  readonly property bool batteryEnabled: String(settings.battery) !== "false"
 
   function tr(key, arg) { return IslandModel.t(lang, key, arg) }
 
@@ -284,12 +290,72 @@ Item {
     onTriggered: root.refreshWeather()
   }
 
+  // ------------------------------------------------------------- osd
+
+  // The last OSD Omarchy asked for, shown as a peek instead of its own card.
+  property var osd: null
+
+  function showOsd(payloadJson) {
+    var next = IslandModel.osdState(payloadJson)
+    if (!next) return false
+    osd = next
+    // The island needs a moment to grow, so short OSDs get a little longer;
+    // a zero duration stays up until "osd close".
+    peek("osd", next.duration > 0 ? Math.max(1600, next.duration) : 0)
+    return true
+  }
+
+  IpcHandler {
+    target: "osd"
+    enabled: root.osdEnabled
+    function show(payloadJson: string): string { return root.showOsd(payloadJson) ? "ok" : "invalid" }
+    function close(): string { if (root.peekReason === "osd") root.peeking = false; return "ok" }
+    function state(): string { return root.peeking && root.peekReason === "osd" ? "open" : "closed" }
+    function ping(): string { return "ok" }
+  }
+
+  // ------------------------------------------------------------- battery
+
+  // Plugging in, unplugging and running low each get a peek. Desktops
+  // without a battery never see one.
+  readonly property var battery: UPower.displayDevice
+  readonly property bool hasBattery: batteryEnabled && !!battery && battery.isPresent && battery.isLaptopBattery
+  readonly property int batteryLevel: hasBattery ? Math.round(battery.percentage * 100) : -1
+  readonly property bool charging: hasBattery && !UPower.onBattery
+  readonly property bool batteryFull: hasBattery && battery.state === UPowerDeviceState.FullyCharged
+  property string batteryNote: ""
+  property int _lowWarned: 100
+  // UPower fills in its state just after startup; that isn't news.
+  property bool _batteryReady: false
+  Timer { interval: 3000; running: true; onTriggered: root._batteryReady = true }
+
+  onChargingChanged: {
+    if (!hasBattery || !_batteryReady) return
+    _lowWarned = 100
+    batteryNote = charging ? "charging" : "onBattery"
+    peek("battery")
+  }
+  onBatteryFullChanged: if (batteryFull && _batteryReady) { batteryNote = "fullyCharged"; peek("battery") }
+  // Warn once at 20% and again at 10% while discharging.
+  onBatteryLevelChanged: {
+    if (!hasBattery || charging) return
+    var mark = batteryLevel <= 10 ? 10 : (batteryLevel <= 20 ? 20 : 100)
+    if (mark < _lowWarned && _batteryReady) {
+      _lowWarned = mark
+      batteryNote = "batteryLow"
+      peek("battery")
+    }
+  }
+
   // ------------------------------------------------------------- visibility
 
-  function peek(reason) {
+  // ms overrides how long the peek stays; 0 keeps it until closed.
+  function peek(reason, ms) {
     peekReason = reason || ""
     peeking = true
-    peekTimer.restart()
+    peekTimer.interval = ms === undefined ? peekDuration : ms
+    if (peekTimer.interval > 0) peekTimer.restart()
+    else peekTimer.stop()
   }
 
   Timer {
@@ -312,7 +378,8 @@ Item {
       return JSON.stringify({ pinned: root.pinned, peeking: root.peeking, playing: root.playing,
         title: root.title, position: Math.round(root.position), length: Math.round(root.length),
         timerRunning: root.timerRunning, timerRemaining: root.timerRemaining,
-        focusMinutes: root.focusMinutes, lang: root.lang })
+        focusMinutes: root.focusMinutes, lang: root.lang, osd: root.osdEnabled,
+        battery: root.batteryLevel, charging: root.charging })
     }
     function ping(): string { return "ok" }
   }
