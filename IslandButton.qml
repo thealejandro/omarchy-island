@@ -27,8 +27,10 @@ Item {
     Behavior on scale { NumberAnimation { duration: 120; easing.type: Easing.OutQuad } }
   }
 
-  Text {
+  Glyph {
     anchors.centerIn: parent
+    // A play triangle looks centered on its centroid, not its box.
+    anchors.horizontalCenterOffset: root.glyph === "󰐊" ? Math.round(width * 0.1) : 0
     text: root.glyph
     color: root.filled ? Commons.Color.bar.background
       : (root.accent ? Commons.Color.accent : Commons.Color.bar.text)
