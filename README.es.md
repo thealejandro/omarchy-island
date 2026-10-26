@@ -12,7 +12,7 @@ toma los colores, la fuente y el acento de tu tema y no reemplaza ni modifica
 nada de Omarchy. Si lo quitas, tu escritorio queda exactamente como estaba.
 
 <p align="center">
-  <img src="docs/island-demo.gif" alt="La isla abriéndose desde el reloj de la barra: música, calendario, temporizador y dock" width="720">
+  <img src="docs/island-demo.gif" alt="La isla asomándose al cambiar de canción, mostrando el volumen y abriéndose desde el reloj: música, calendario, temporizador y dock" width="600">
 </p>
 
 | Abierta | Vistazo |

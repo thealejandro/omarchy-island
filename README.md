@@ -13,7 +13,7 @@ replace or modify anything in Omarchy. Remove it and your desktop is exactly
 as it was.
 
 <p align="center">
-  <img src="docs/island-demo.gif" alt="The island opening from the bar's clock: now playing, calendar, focus timer and dock" width="720">
+  <img src="docs/island-demo.gif" alt="The island peeking on a track change, showing the volume and opening from the clock: now playing, calendar, focus timer and dock" width="600">
 </p>
 
 | Open | Peek |
