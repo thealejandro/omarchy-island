@@ -34,15 +34,40 @@ Item {
     radius: Style.space(10)
     color: on ? Util.alpha(Commons.Color.accent, mouse.containsMouse ? 0.3 : 0.2)
       : Util.alpha(root.textColor, mouse.containsMouse ? 0.1 : 0.05)
-    scale: mouse.pressed ? 0.92 : 1
-    Behavior on color { ColorAnimation { duration: 120 } }
-    Behavior on scale { NumberAnimation { duration: 120; easing.type: Easing.OutQuad } }
+    scale: mouse.pressed ? 0.9 : (mouse.containsMouse ? 1.08 : 1)
+    Behavior on color { ColorAnimation { duration: 160 } }
+    Behavior on scale { NumberAnimation { duration: 220; easing.type: Easing.OutBack; easing.overshoot: 2.4 } }
+
+    // Turning a toggle on sends a soft ring out of it.
+    onOnChanged: if (on && root.visible) ring.restart()
+    Rectangle {
+      id: halo
+      anchors.centerIn: parent
+      width: parent.width
+      height: parent.height
+      radius: parent.radius
+      color: "transparent"
+      border.width: 2
+      border.color: Commons.Color.accent
+      opacity: 0
+    }
+    ParallelAnimation {
+      id: ring
+      NumberAnimation { target: halo; property: "scale"; from: 1; to: 1.45; duration: 420; easing.type: Easing.OutCubic }
+      NumberAnimation { target: halo; property: "opacity"; from: 0.7; to: 0; duration: 420; easing.type: Easing.OutCubic }
+      SequentialAnimation {
+        NumberAnimation { target: icon; property: "scale"; to: 1.25; duration: 120; easing.type: Easing.OutQuad }
+        NumberAnimation { target: icon; property: "scale"; to: 1; duration: 260; easing.type: Easing.OutBack; easing.overshoot: 2 }
+      }
+    }
 
     Glyph {
+      id: icon
       anchors.centerIn: parent
       text: button.glyph
       color: button.on ? Commons.Color.accent : root.textColor
       opacity: button.on || mouse.containsMouse ? 1 : 0.75
+      Behavior on opacity { NumberAnimation { duration: 160 } }
       font.family: Style.font.family
       font.pixelSize: Style.font.body + Style.space(3)
     }
@@ -122,12 +147,25 @@ Item {
     radius: Style.space(10)
     color: Util.alpha(root.textColor, weatherMouse.containsMouse && root.hint === "" ? 0.1 : 0.05)
     visible: hasWeather || root.hint !== ""
+    clip: true
     Behavior on color { ColorAnimation { duration: 120 } }
+    Behavior on width { NumberAnimation { duration: 240; easing.type: Easing.OutCubic } }
+
+    // Swapping between the weather and a button's name fades the new text
+    // up from just below.
+    readonly property string content: root.hint !== "" ? "hint:" + root.hint : "weather"
+    onContentChanged: swap.restart()
+    ParallelAnimation {
+      id: swap
+      NumberAnimation { target: info; property: "opacity"; from: 0; to: 1; duration: 200; easing.type: Easing.OutCubic }
+      NumberAnimation { target: infoShift; property: "y"; from: Style.space(5); to: 0; duration: 240; easing.type: Easing.OutCubic }
+    }
 
     Row {
       id: info
       anchors.verticalCenter: parent.verticalCenter
       x: Style.spacing.xl
+      transform: Translate { id: infoShift }
       spacing: Style.spacing.md
 
       Glyph {
