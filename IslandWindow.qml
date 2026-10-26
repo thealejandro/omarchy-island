@@ -138,32 +138,41 @@ PanelWindow {
   Item {
     id: body
     y: win.barSize
-    width: Math.ceil(bodyWidth)
-    height: Math.ceil(bodyHeight)
+    width: Math.max(0, Math.ceil(bodyWidth))
+    height: Math.max(0, Math.ceil(bodyHeight))
     x: Math.round((win.width - width) / 2)
 
     property real bodyWidth: win.targetWidth
     property real bodyHeight: win.targetHeight
 
+    // Springs rather than timed curves: they keep their velocity when the
+    // target changes mid-flight, so a quick in-and-out of the pointer bends
+    // the motion instead of restarting it. Opening is loose and settles with
+    // a little wobble; closing is stiffer and barely overshoots. Width is a
+    // touch softer than height so the body stretches before it widens.
+    readonly property bool closing: win.mode === "closed"
     Behavior on bodyWidth {
-      NumberAnimation {
-        duration: win.mode === "closed" ? 220 : 380
-        easing.type: win.mode === "closed" ? Easing.InOutQuart : Easing.OutBack
-        easing.overshoot: 0.9
+      SpringAnimation {
+        spring: body.closing ? 6 : 3.6
+        damping: body.closing ? 0.55 : 0.32
+        mass: 1
+        epsilon: 0.25
       }
     }
     Behavior on bodyHeight {
-      NumberAnimation {
-        duration: win.mode === "closed" ? 220 : 380
-        easing.type: win.mode === "closed" ? Easing.InOutQuart : Easing.OutBack
-        easing.overshoot: 0.9
+      SpringAnimation {
+        spring: body.closing ? 7 : 4.2
+        damping: body.closing ? 0.6 : 0.34
+        mass: 1
+        epsilon: 0.25
       }
     }
 
     IslandShape {
       x: -win.ear
-      bodyWidth: body.bodyWidth
-      bodyHeight: body.bodyHeight
+      // A spring can dip just below zero while closing.
+      bodyWidth: Math.max(0, body.bodyWidth)
+      bodyHeight: Math.max(0, body.bodyHeight)
       radius: win.radius
       ear: win.ear
       fillColor: Commons.Color.bar.background
@@ -180,9 +189,19 @@ PanelWindow {
         x: Style.spacing.xxl
         y: Style.spacing.lg
         width: Math.max(0, body.width - 2 * Style.spacing.xxl)
-        opacity: win.mode === "peek" ? 1 : 0
+        // Drops in from the bar as the body grows; when the island opens
+        // further it shrinks back into the content instead of just vanishing.
+        readonly property bool shown: win.mode === "peek"
+        opacity: shown ? 1 : 0
         visible: opacity > 0
-        Behavior on opacity { NumberAnimation { duration: 160 } }
+        transformOrigin: Item.Top
+        scale: shown ? 1 : (win.mode === "open" ? 0.9 : 0.96)
+        transform: Translate {
+          y: peekView.shown ? 0 : -Style.space(6)
+          Behavior on y { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
+        }
+        Behavior on opacity { NumberAnimation { duration: peekView.shown ? 220 : 140; easing.type: Easing.OutCubic } }
+        Behavior on scale { NumberAnimation { duration: 260; easing.type: Easing.OutBack; easing.overshoot: 1.2 } }
       }
 
       OpenView {
@@ -191,10 +210,12 @@ PanelWindow {
         x: win.pad
         y: win.pad
         width: win.openWidth - 2 * win.pad
-        // Fade in once the body has mostly grown, and out right away.
-        opacity: win.mode === "open" && body.bodyHeight > win.targetHeight * 0.6 ? 1 : 0
+        // Sections come in one after another once the body is about half
+        // grown, and everything goes at once on the way out.
+        shown: win.mode === "open" && body.bodyHeight > win.targetHeight * 0.45
+        opacity: shown ? 1 : 0
         visible: opacity > 0
-        Behavior on opacity { NumberAnimation { duration: 180 } }
+        Behavior on opacity { NumberAnimation { duration: openView.shown ? 80 : 140 } }
       }
     }
   }
