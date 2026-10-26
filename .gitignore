@@ -1,0 +1,3 @@
+*.bak*
+.qmlls.ini
+graphify-out/
