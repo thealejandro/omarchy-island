@@ -41,7 +41,7 @@ PanelWindow {
     : activeView.implicitHeight + 2 * (mode === "open" ? pad : Style.spacing.lg)
 
   anchors { top: true; left: true; right: true }
-  implicitHeight: barSize + Style.space(320)
+  implicitHeight: barSize + Style.space(400)
   color: "transparent"
   exclusionMode: ExclusionMode.Ignore
   WlrLayershell.namespace: "omarchy-island"

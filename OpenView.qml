@@ -2,7 +2,8 @@ import QtQuick
 import qs.Commons
 import qs.Commons as Commons
 
-// The open island: now playing next to the month, focus timer underneath.
+// The open island: now playing next to the month, focus timer and quick
+// toggles underneath.
 Column {
   id: root
 
@@ -42,6 +43,11 @@ Column {
   }
 
   TimerRow {
+    island: root.island
+    width: parent.width
+  }
+
+  QuickToggles {
     island: root.island
     width: parent.width
   }

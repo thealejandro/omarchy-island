@@ -23,6 +23,10 @@ as it was.
   scroll wheel change month; click the title to go back to today.
 - **Focus timer**: Pomodoro (25 / 5 by default) with a notification when each
   phase ends. Scroll over the timer to change the focus length (5–120 min).
+- **Quick toggles**: night light, silence notifications, stay awake, screen
+  recording and reminders, the same switches as Omarchy's bar indicators
+  (which only show while the pointer is on the bar's center, now the
+  island's). A lit tile is on.
 - **English and Spanish**: follows `LANG`, or set it in `shell.json`.
 - **Theme-aware**: follows `omarchy theme set` live: colors, font and accent.
   The island keeps rounded corners with concave "ears" that melt into the
@@ -112,7 +116,9 @@ Quickshell caches compiled QML, so after editing the code run
 | `MediaCard.qml`    | Cover, track, seek bar and transport                 |
 | `CalendarView.qml` | Month calendar                                       |
 | `TimerRow.qml`     | Focus timer                                          |
+| `QuickToggles.qml` | Omarchy's quick toggles                              |
 | `IslandButton.qml` | Round icon button                                    |
+| `Glyph.qml`        | Icon centered by its ink, not its font box           |
 | `Equalizer.qml`    | Small animated bars while music plays                |
 
 Ideas and bugs go to the issues. Inspired by

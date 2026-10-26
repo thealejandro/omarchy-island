@@ -35,7 +35,13 @@ var STRINGS = {
     readyAgain: "Ready for another round?",
     today: "Today",
     minutes: "%1 min",
-    scrollToChange: "Scroll to change"
+    scrollToChange: "Scroll to change",
+    nightLight: "Night light",
+    doNotDisturb: "Silence",
+    stayAwake: "Stay awake",
+    recording: "Record",
+    stopRecording: "Stop",
+    reminders: "Reminder"
   },
   es: {
     nothingPlaying: "Nada sonando",
@@ -48,7 +54,13 @@ var STRINGS = {
     readyAgain: "¿Otra ronda?",
     today: "Hoy",
     minutes: "%1 min",
-    scrollToChange: "Rueda para cambiar"
+    scrollToChange: "Rueda para cambiar",
+    nightLight: "Luz nocturna",
+    doNotDisturb: "Silencio",
+    stayAwake: "Despierto",
+    recording: "Grabar",
+    stopRecording: "Detener",
+    reminders: "Recordatorio"
   }
 }
 
