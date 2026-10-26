@@ -23,6 +23,10 @@ nada de Omarchy. Si lo quitas, tu escritorio queda exactamente como estaba.
 - **Temporizador de enfoque**: Pomodoro (25 / 5 por defecto) con una
   notificación al terminar cada fase. Usa la rueda sobre el temporizador
   para cambiar la duración del enfoque (5–120 min).
+- **Toggles rápidos**: luz nocturna, silenciar notificaciones, mantener
+  despierto, grabar pantalla y recordatorios, los mismos interruptores que
+  los indicadores de la barra de Omarchy (que solo aparecen con el ratón en
+  el centro de la barra, ahora de la isla). Una ficha iluminada está activa.
 - **Español e inglés**: sigue `LANG`, o elígelo en `shell.json`.
 - **Sigue tu tema**: cambia en vivo con `omarchy theme set` (colores, fuente
   y acento). La isla tiene esquinas redondeadas con "orejas" cóncavas que se
@@ -113,7 +117,9 @@ ejecuta `omarchy restart shell` para ver los cambios.
 | `MediaCard.qml`    | Portada, canción, barra de progreso y controles        |
 | `CalendarView.qml` | Calendario del mes                                     |
 | `TimerRow.qml`     | Temporizador de enfoque                                |
+| `QuickToggles.qml` | Los toggles rápidos de Omarchy                         |
 | `IslandButton.qml` | Botón redondo con icono                                |
+| `Glyph.qml`        | Icono centrado por su tinta, no por su caja            |
 | `Equalizer.qml`    | Barritas animadas mientras suena música                |
 
 Ideas y fallos, en los issues. Inspirado en

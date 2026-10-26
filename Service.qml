@@ -145,6 +145,60 @@ Item {
     }
   }
 
+  // ------------------------------------------------------------- quick toggles
+
+  // Omarchy only reveals its inactive bar indicators while the pointer is on
+  // the bar's center, which the island now owns, so the island carries them.
+  // Third-party plugins can't reach Omarchy's services directly; everything
+  // goes through the same IPC and commands the indicators use.
+  property bool nightLight: false
+  property bool doNotDisturb: false
+  property bool stayAwake: false
+  property bool recording: false
+  property int reminderCount: 0
+
+  function toggleNightLight() { runToggle(["omarchy-shell", "nightlight", "toggle"]) }
+  function toggleDoNotDisturb() { runToggle(["omarchy-shell", "notifications", "toggleDnd"]) }
+  function toggleStayAwake() { runToggle(["omarchy-shell", "idle", "toggle"]) }
+  function toggleRecording() {
+    runToggle(recording ? ["omarchy-capture-screenrecording", "--stop-recording"]
+      : ["omarchy-menu", "toggle", "trigger.capture.screenrecord"])
+  }
+  function openReminders() {
+    runToggle(reminderCount > 0 ? ["omarchy-reminder", "show"] : ["omarchy-reminder", "-i"])
+  }
+
+  function runToggle(command) {
+    Quickshell.execDetached(command)
+    toggleSettle.restart()
+  }
+  function refreshToggles() { if (!toggleState.running) toggleState.running = true }
+
+  Timer {
+    id: toggleSettle
+    interval: 500
+    onTriggered: root.refreshToggles()
+  }
+
+  // One line per toggle, in a fixed order, so a slow command can't shuffle
+  // them. pgrep prints a count and exits 1 when nothing matches.
+  Process {
+    id: toggleState
+    command: ["bash", "-c", "omarchy-shell nightlight status; omarchy-shell notifications isDnd; "
+      + "omarchy-shell idle status; pgrep -c -f '^gpu-screen-recorder'; omarchy-reminder show --json"]
+    stdout: StdioCollector {
+      onStreamFinished: {
+        var lines = text.split("\n")
+        function json(i) { try { return JSON.parse(lines[i]) } catch (e) { return {} } }
+        root.nightLight = json(0).enabled === true
+        root.doNotDisturb = String(lines[1]).trim() === "on"
+        root.stayAwake = json(2).stayAwake === true
+        root.recording = Number(lines[3]) > 0
+        root.reminderCount = Number(json(4).count || 0)
+      }
+    }
+  }
+
   // ------------------------------------------------------------- visibility
 
   function peek(reason) {
