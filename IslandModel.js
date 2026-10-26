@@ -46,7 +46,11 @@ var STRINGS = {
     colorPicker: "Color picker",
     clipboard: "Clipboard",
     emoji: "Emoji",
-    weather: "Weather"
+    weather: "Weather",
+    charging: "Charging",
+    onBattery: "On battery",
+    batteryLow: "Battery low",
+    fullyCharged: "Fully charged"
   },
   es: {
     nothingPlaying: "Nada sonando",
@@ -156,4 +160,68 @@ function weatherIcon(code, night) {
     case 329: case 332: case 335: case 338: case 371: return "\ue31a"
     default: return "\ue33d"
   }
+}
+
+// ------------------------------------------------------------- osd
+
+// Omarchy's OSD payload ({icon, message, value, max, progressText,
+// duration}, as built by omarchy-osd) → what the peek shows. Same rules as
+// Omarchy's own card: a value without a message is a progress bar.
+function osdState(payloadJson) {
+  var p
+  try { p = JSON.parse(String(payloadJson || "{}")) } catch (e) { return null }
+  var max = Math.max(1, parseInt(p.max || "100", 10) || 100)
+  var raw = p.value === undefined || p.value === null ? "" : String(p.value)
+  var value = parseInt(raw, 10)
+  var message = String(p.message || "")
+  var hasProgress = raw !== "" && !isNaN(value) && message === ""
+  var percent = hasProgress ? Math.round(Math.max(0, Math.min(max, value)) * 100 / max) : -1
+  var duration = parseInt(p.duration || "1200", 10)
+  return {
+    icon: osdIcon(p.icon, percent),
+    message: message,
+    hasProgress: hasProgress,
+    progress: hasProgress ? percent / 100 : 0,
+    label: hasProgress ? String(p.progressText || percent + "%") : "",
+    duration: isNaN(duration) ? 1200 : Math.max(0, duration)
+  }
+}
+
+// The icon names Omarchy's commands send, as Nerd Font glyphs. Unknown
+// names are passed through, so a caller can send a glyph directly.
+function osdIcon(name, percent) {
+  var n = String(name || "").toLowerCase()
+  var table = {
+    "volume-muted": "\ueee8", "volume-mute": "\ueee8", "muted": "\ueee8", "mute": "\ueee8",
+    "volume-low": "\uf026", "volume-medium": "\uf027", "volume-high": "\uf028", "volume": "\uf028",
+    "microphone-muted": "\udb80\udf6d", "microphone-off": "\udb80\udf6d", "mic-muted": "\udb80\udf6d", "mic-off": "\udb80\udf6d",
+    "microphone": "\udb80\udf6c", "mic": "\udb80\udf6c",
+    "keyboard": "\udb80\udf0c", "brightness": "\udb80\udf79", "display": "\udb80\udf79",
+    "touchpad": "\udb81\udff8", "touch": "\udb81\udf41", "touchscreen": "\udb81\udf41",
+    "reboot": "\udb81\udf09", "restart": "\udb81\udf09",
+    "shutdown": "\udb81\udc25", "power": "\udb81\udc25", "poweroff": "\udb81\udc25",
+    "logout": "\udb80\udf43", "sign-out": "\udb80\udf43", "leave": "\udb80\udf43",
+    "media": "\udb81\udf5a", "player": "\udb81\udf5a", "media-source": "\udb81\udf5a", "player-source": "\udb81\udf5a",
+    "media-play": "\udb81\udc0a", "player-play": "\udb81\udc0a",
+    "media-pause": "\udb80\udfe4", "player-pause": "\udb80\udfe4",
+    "media-next": "\udb81\udcad", "player-next": "\udb81\udcad",
+    "media-previous": "\udb81\udcae", "player-previous": "\udb81\udcae"
+  }
+  if (table[n]) return table[n]
+  if (n.length > 0) return String(name)
+  if (percent <= 0) return table["volume-muted"]
+  if (percent <= 33) return table["volume-low"]
+  if (percent <= 66) return table["volume-medium"]
+  return table["volume-high"]
+}
+
+// ------------------------------------------------------------- battery
+
+// Battery glyph for a 0..100 level, filled in tenths, with the bolt while
+// charging.
+function batteryIcon(level, charging) {
+  if (charging) return "\udb80\udc84"
+  var steps = ["\udb80\udc8e", "\udb80\udc7a", "\udb80\udc7b", "\udb80\udc7c", "\udb80\udc7d",
+    "\udb80\udc7e", "\udb80\udc7f", "\udb80\udc80", "\udb80\udc81", "\udb80\udc82", "\udb80\udc79"]
+  return steps[Math.max(0, Math.min(10, Math.round(level / 10)))]
 }

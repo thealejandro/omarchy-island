@@ -4,7 +4,7 @@
   "name": "Island",
   "version": "0.4.0",
   "author": "thealejandro",
-  "description": "A dynamic island that grows out of the center of the Omarchy bar: now playing, media controls, a month calendar, a focus timer, the weather, quick actions and Omarchy's quick toggles.",
+  "description": "A dynamic island for the Omarchy bar: now playing with media controls and a seek bar, a month calendar, a pomodoro focus timer, the weather, quick actions and Omarchy's quick toggles. Can take over Omarchy's volume and brightness OSD, peeks on track changes, charging and low battery, and follows your theme live.",
   "kinds": [
     "service",
     "bar-widget"

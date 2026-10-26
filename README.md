@@ -14,8 +14,12 @@ as it was.
 
 ## Features
 
-- **Peek**: when the song changes or the timer ends, a one-line glance drops
-  out of the bar for a few seconds.
+- **Peek**: when the song changes, the timer ends, you plug in or unplug a
+  laptop, or the battery runs low (20% and 10%), a one-line glance drops out
+  of the bar for a few seconds.
+- **Volume and brightness in the island** (optional): Omarchy's OSD (volume,
+  brightness, mic mute, keyboard light, media keys) shows up as a peek with
+  a level bar instead of a floating card. See `osd` below.
 - **Open**: hover the bar's clock, or just below it (or bind a key), to open
   the island: cover art, source player,
   title, artist, a progress bar you can click or drag, previous / play /
@@ -108,6 +112,8 @@ Or from the command line: `omarchy bar set thealejandro.island toggles both`.
 | `clock`    | `true`, `false`              | `true`      |
 | `toggles`  | `island`, `both`, `bar`      | `island`    |
 | `units`    | `metric`, `imperial`         | `metric`    |
+| `osd`      | `true`, `false`              | `false`     |
+| `battery`  | `true`, `false`              | `true`      |
 
 `toggles` decides where Omarchy's quick toggles live:
 
@@ -115,6 +121,20 @@ Or from the command line: `omarchy bar set thealejandro.island toggles both`.
 - `both`: in the island, and the bar still reveals all of them when you hover
   its center (Omarchy's own behavior).
 - `bar`: only on the bar; the island's dock keeps the actions and weather.
+
+`osd` makes the island show Omarchy's on-screen display. Only one plugin
+can own it, so turn Omarchy's card off first, then set it:
+
+```bash
+omarchy plugin disable omarchy.osd
+omarchy bar set thealejandro.island osd true
+```
+
+To go back: `omarchy bar set thealejandro.island osd false` and
+`omarchy plugin enable omarchy.osd`.
+
+`battery: false` silences the charging and low-battery peeks. Desktops
+without a battery never show them.
 
 With `"clock": false` the island leaves the clock alone: hover only the top
 edge to open it, and a click on the clock opens Omarchy's calendar again.
@@ -135,12 +155,12 @@ Quickshell caches compiled QML, so after editing the code run
 
 | File               | What it does                                         |
 |--------------------|------------------------------------------------------|
-| `Service.qml`      | State: MPRIS player, timer, toggles, weather, settings, IPC |
+| `Service.qml`      | State: MPRIS player, timer, toggles, weather, OSD, battery, settings, IPC |
 | `BarWidget.qml`    | Invisible bar entry that hides duplicate indicators  |
 | `IslandModel.js`   | Pure helpers: player choice, clock, strings, month grid, weather |
 | `IslandWindow.qml` | Per-screen layer surface, input mask, hover, motion  |
 | `IslandShape.qml`  | The silhouette with concave ears                     |
-| `PeekView.qml`     | The one-line glance                                  |
+| `PeekView.qml`     | The one-line glance: track, timer, OSD or battery    |
 | `OpenView.qml`     | Layout of the open island                            |
 | `MediaCard.qml`    | Cover, track, seek bar and transport                 |
 | `CalendarView.qml` | Month calendar                                       |
