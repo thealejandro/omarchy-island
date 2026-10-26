@@ -21,6 +21,33 @@ Item {
 
   readonly property int peekDuration: 3500
 
+  // ------------------------------------------------------------- settings
+
+  // Omarchy doesn't hand settings to service plugins, so read our own entry
+  // from shell.json: { "id": "thealejandro.island", "language": "es" }.
+  property var settings: ({})
+  readonly property string lang: IslandModel.language(settings.language || Quickshell.env("LANG"))
+  readonly property var locale: Qt.locale(lang === "es" ? "es_ES" : "en_US")
+
+  function tr(key, arg) { return IslandModel.t(lang, key, arg) }
+
+  FileView {
+    path: Quickshell.env("HOME") + "/.config/omarchy/shell.json"
+    watchChanges: true
+    onFileChanged: reload()
+    onLoaded: {
+      try {
+        var plugins = JSON.parse(text()).plugins || []
+        var mine = ({})
+        for (var i = 0; i < plugins.length; i++)
+          if (plugins[i] && plugins[i].id === "thealejandro.island") mine = plugins[i]
+        root.settings = mine
+      } catch (e) {
+        console.warn("island: could not read shell.json:", e)
+      }
+    }
+  }
+
   // ------------------------------------------------------------- media
 
   readonly property var players: Mpris.players ? Mpris.players.values : []
@@ -29,6 +56,7 @@ Item {
   readonly property bool playing: !!player && player.playbackState === MprisPlaybackState.Playing
   readonly property string title: player ? (player.trackTitle || "") : ""
   readonly property string artist: player ? (player.trackArtist || "") : ""
+  readonly property string source: player ? (player.identity || "") : ""
   readonly property string artUrl: player && player.trackArtUrl ? player.trackArtUrl : ""
   readonly property real position: player && player.positionSupported ? player.position : 0
   readonly property real length: player && player.lengthSupported ? player.length : 0
@@ -41,7 +69,8 @@ Item {
     player.position = Math.max(0, Math.min(1, fraction)) * length
   }
 
-  // Mpris only reports position on seeks, so poll it while something plays.
+  // MprisPlayer.position is computed on read but never notifies on its own;
+  // Quickshell's docs say to emit positionChanged() on a timer while playing.
   Timer {
     interval: 1000
     repeat: true
@@ -84,6 +113,14 @@ Item {
     timerRemaining = focusMinutes * 60
   }
 
+  // Only while idle, so a running session never changes length under you.
+  function setFocusMinutes(minutes) {
+    if (timerActive) return false
+    focusMinutes = Math.max(5, Math.min(120, Math.round(minutes / 5) * 5))
+    timerRemaining = timerTotal
+    return true
+  }
+
   Timer {
     interval: 1000
     repeat: true
@@ -98,8 +135,8 @@ Item {
       root.timerRemaining = root.timerTotal
       root.timerRunning = finished === "focus"
       Quickshell.execDetached(["notify-send", "-a", "Island",
-        finished === "focus" ? "Focus done" : "Break over",
-        finished === "focus" ? "Take a " + root.breakMinutes + " minute break." : "Ready for another round?"])
+        finished === "focus" ? root.tr("focusDone") : root.tr("breakOver"),
+        finished === "focus" ? root.tr("takeBreak", root.breakMinutes) : root.tr("readyAgain")])
       root.peek("timer")
     }
   }
@@ -125,9 +162,14 @@ Item {
     function close(): string { root.pinned = false; root.peeking = false; return "ok" }
     function peek(): string { root.peek("ipc"); return "ok" }
     function timer(): string { root.toggleTimer(); return root.timerRunning ? "running" : "paused" }
+    function focus(minutes: int): string {
+      return root.setFocusMinutes(minutes) ? String(root.focusMinutes) : "busy"
+    }
     function state(): string {
       return JSON.stringify({ pinned: root.pinned, peeking: root.peeking, playing: root.playing,
-        title: root.title, timerRunning: root.timerRunning, timerRemaining: root.timerRemaining })
+        title: root.title, position: Math.round(root.position), length: Math.round(root.length),
+        timerRunning: root.timerRunning, timerRemaining: root.timerRemaining,
+        focusMinutes: root.focusMinutes, lang: root.lang })
     }
     function ping(): string { return "ok" }
   }
