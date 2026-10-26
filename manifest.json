@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "id": "thealejandro.island",
   "name": "Island",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "author": "thealejandro",
-  "description": "A dynamic island that grows out of the center of the Omarchy bar: now playing, media controls and a focus timer.",
+  "description": "A dynamic island that grows out of the center of the Omarchy bar: now playing, media controls, a month calendar and a focus timer.",
   "kinds": [
     "service"
   ],
