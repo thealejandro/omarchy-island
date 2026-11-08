@@ -178,7 +178,7 @@ Item {
     return keys.length
   }
   function dismissApp(app) {
-    var keys = rows.filter(function(r) { return NM.appLabel(r) === app }).map(function(r) { return r.key })
+    var keys = liveRows.filter(function(r) { return NM.appLabel(r) === app }).map(function(r) { return r.key })
     for (var i = 0; i < keys.length; i++) dismiss(keys[i])
   }
   function dismissMatching(needle) {
