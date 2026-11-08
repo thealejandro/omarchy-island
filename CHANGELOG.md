@@ -4,6 +4,53 @@ All notable changes to this project are documented here. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the
 project follows [Semantic Versioning](https://semver.org/).
 
+## [0.6.0] - 2026-11-08
+
+### Added
+
+- Notifications in the island (`notifications: island`, off by default):
+  a glance for each new one, a Notifications page grouped by app with
+  actions, inline replies, safe links and close per notification or app,
+  do-not-disturb shared with Omarchy, and a 24-hour history in
+  `~/.local/state/omarchy/island/notifications.json` (`notifyHistory`,
+  `notifyHistoryLimit`). An unread dot under the clock and on the tab
+  (`notifyBadge`), `notifyBody` and `notifyPeekDuration`.
+- Taking over needs both the island's setting and Omarchy's
+  `omarchy.notifications` disabled, so nothing ever shows twice; when
+  Omarchy's plugin comes back by any route the island steps aside live,
+  and if the island is removed or reset while it has them, Omarchy gets
+  them back at the next start. Switch on the System section and IPC
+  `island notifications <island|off>`. Omarchy's `notifications` IPC
+  (`dismissAll`, `toggleDnd`, `invokeLast`, `probe`…) is answered by the
+  island while it has them.
+- A click on Omarchy's world clock or weather on the bar opens the island
+  on the World page (`barClicks`, on by default); middle click still
+  opens their own popup and right click does what the widget does.
+- Light motion: the page change slides in from the side of its tab, the
+  glance drops in, and `animations: false` turns every animation off.
+- "Next" card on Home: the next three events of the agenda, a click opens
+  that day on the Calendar page, and a button to add one.
+- The latest two notifications on Home when the island has them.
+- The author's logo in the READMEs and a credit line in Settings.
+
+### Changed
+
+- Home no longer shows the world clocks (they stay on the World page) and
+  pairs what's playing with the "Next" card instead of the month.
+  `showWorld` is gone; `calendarFirst` now puts "Next" on the left.
+- A click on the clock opens the Calendar page by default
+  (`clockClick: calendar`); `pin` is still there.
+- The open view and the glance are only built while they're shown and let
+  go a moment after, so a closed island holds no pages, cover art or icons
+  (shell PSS with the island closed: 285 → 278 MB).
+- The open view is built in the background as soon as the pointer reaches
+  the clock, the world clock or the weather, and opening straight onto a
+  page loads it over a few frames: the first visible frame comes about
+  24 ms after the island starts opening, with no frame over 25 ms.
+- The track position only ticks while music plays and the island is open;
+  the bar widget looks for the clock less often while the island is
+  closed.
+
 ## [0.5.0] - 2026-11-08
 
 ### Added
@@ -59,5 +106,6 @@ project follows [Semantic Versioning](https://semver.org/).
 - Omarchy's OSD (volume, brightness…) in the island, battery peeks, theme
   border options for light themes.
 
+[0.6.0]: https://github.com/thealejandro/omarchy-island/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/thealejandro/omarchy-island/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/thealejandro/omarchy-island/releases/tag/v0.4.0
