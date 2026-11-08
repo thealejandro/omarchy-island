@@ -8,7 +8,9 @@ Row {
 
   required property var island
 
-  readonly property var glyphs: ({ home: "󰋜", calendar: "󰃭", world: "󰇧", settings: "󰒓" })
+  readonly property bool quiet: !!island.notify && island.notify.doNotDisturb
+  readonly property var glyphs: ({ home: "󰋜", calendar: "󰃭", world: "󰇧",
+    notifications: quiet ? "󰂛" : "󰂚", settings: "󰒓" })
 
   spacing: Style.spacing.xs
 
@@ -33,6 +35,17 @@ Row {
         opacity: tab.active || mouse.containsMouse ? 1 : 0.72
         font.family: Style.font.family
         font.pixelSize: Style.font.body + Style.space(1)
+      }
+      // Unread notifications.
+      Rectangle {
+        visible: tab.modelData === "notifications" && root.island.cfg.notifyBadge
+          && root.island.unread > 0 && !tab.active
+        width: Style.space(6)
+        height: width
+        radius: width / 2
+        x: parent.width - width - Style.space(3)
+        y: Style.space(2)
+        color: Commons.Color.accent
       }
       MouseArea {
         id: mouse

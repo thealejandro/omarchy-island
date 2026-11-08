@@ -94,11 +94,24 @@ Item {
     var stored = entry[key] === undefined ? IslandSettings.spec(key).def : entry[key]
     Quickshell.execDetached(["omarchy", "bar", "set", pluginId, key, JSON.stringify(stored), "--json"])
   }
-  // Back to defaults; the OSD default is Omarchy's own, so give it back too.
+  // Back to defaults; the OSD and the notifications are Omarchy's by
+  // default, so give back whichever the island had.
   function resetSettings() {
     var hadOsd = osdEnabled
+    var hadNotifications = notificationsEnabled
     writeEntry(IslandSettings.withoutOwnKeys(settings, pluginId))
-    if (hadOsd) settleThen(function() { root.runThen(["omarchy", "plugin", "enable", "omarchy.osd"]) })
+    var giveBack = []
+    if (hadOsd) giveBack.push("omarchy.osd")
+    if (hadNotifications) giveBack.push("omarchy.notifications")
+    function next() {
+      if (giveBack.length === 0) return
+      var id = giveBack.shift()
+      root.runThen(["omarchy", "plugin", "enable", id], function() {
+        if (id === "omarchy.notifications") root.writeMarker(false)
+        next()
+      })
+    }
+    if (giveBack.length > 0) settleThen(next)
   }
   function writeEntry(entry) {
     settings = entry
@@ -135,6 +148,24 @@ Item {
     else {
       saveSetting("osd", false)
       settleThen(function() { root.runThen(["omarchy", "plugin", "enable", "omarchy.osd"]) })
+    }
+  }
+  // The island as the notification server. Omarchy's plugin goes first
+  // (only then does the island load its own, see notificationsLive), and on
+  // the way back the island lets go before Omarchy's comes back.
+  function setNotifications(mode) {
+    if (mode === "island") {
+      notifyFailed = false
+      _probeTries = 0
+      runThen(["omarchy", "plugin", "disable", "omarchy.notifications"], function() {
+        root.writeMarker(true)
+        root.saveSetting("notifications", "island")
+      })
+    } else {
+      saveSetting("notifications", "off")
+      settleThen(function() {
+        root.runThen(["omarchy", "plugin", "enable", "omarchy.notifications"], function() { root.writeMarker(false) })
+      })
     }
   }
   function placeByClock() {
@@ -217,6 +248,8 @@ Item {
         if (elsewhen && disabled.indexOf("omarchy.elsewhen") !== -1) elsewhen = null
         root.settings = mine
         root.hasEntry = !!mine.id
+        root.omarchyNotificationsDisabled = disabled.indexOf("omarchy.notifications") !== -1
+        if (!root._configRead) { root._configRead = true; orphanCheck.running = true }
         root.onBar = placed
         root.elsewhenEntry = elsewhen
         var bar = config.bar || {}
@@ -314,7 +347,8 @@ Item {
 
   // Which page of the open island is showing. Goes back to the default one
   // every time the island closes.
-  readonly property var pages: ["home", "calendar", "world", "settings"]
+  readonly property var pages: ["home", "calendar", "world"]
+    .concat(notificationsEnabled ? ["notifications"] : []).concat(["settings"])
   property string page: defaultPage
   onDefaultPageChanged: if (!isOpen) page = defaultPage
   property string tabHint: ""
@@ -327,6 +361,7 @@ Item {
   }
   function islandClosed() {
     isOpen = false
+    if (peekReason === "notification") peeking = false
     calendarDay = ""
     tabHint = ""
     wantsKeyboard = false
@@ -356,6 +391,7 @@ Item {
 
   // MprisPlayer.position is computed on read but never notifies on its own;
   // Quickshell's docs say to emit positionChanged() on a timer while playing.
+  // Only the open island shows the position; closed, nothing needs it.
   Timer {
     interval: 1000
     repeat: true
@@ -440,7 +476,11 @@ Item {
   property var omarchyReminders: []
 
   function toggleNightLight() { runToggle(["omarchy-shell", "nightlight", "toggle"]) }
-  function toggleDoNotDisturb() { runToggle(["omarchy-shell", "notifications", "toggleDnd"]) }
+  function toggleDoNotDisturb() {
+    // The island's own server answers directly instead of over IPC.
+    if (notify) { doNotDisturb = notify.setDnd(!notify.doNotDisturb); return }
+    runToggle(["omarchy-shell", "notifications", "toggleDnd"])
+  }
   function toggleStayAwake() { runToggle(["omarchy-shell", "idle", "toggle"]) }
   function toggleRecording() {
     runToggle(recording ? ["omarchy-capture-screenrecording", "--stop-recording"]
@@ -604,7 +644,7 @@ Item {
     zoneProbeRun.running = true
   }
   onWorldCitiesChanged: probeZones()
-  onIsOpenChanged: if (isOpen) { worldNow = Date.now(); probeZones() }
+  onIsOpenChanged: { if (isOpen) { worldNow = Date.now(); probeZones() }; markSeen() }
 
   Process {
     id: zoneProbeRun
@@ -790,6 +830,132 @@ Item {
     function ping(): string { return "ok" }
   }
 
+  // ------------------------------------------------------------- notifications
+
+  // Off by default. "island" makes the island the desktop's notification
+  // server: Omarchy's notifications plugin is disabled (only one server can
+  // draw them) and the island shows them as a glance and on their own page.
+  readonly property bool notificationsEnabled: cfg.notifications === "island"
+  // From shell.json: whether Omarchy's own server has stepped aside.
+  property bool omarchyNotificationsDisabled: false
+  // The probe never came back; given back to Omarchy for this session.
+  property bool notifyFailed: false
+  property bool _notifyBounce: false
+  property int _probeTries: 0
+  property bool _configRead: false
+  // Both keys: the setting *and* Omarchy's plugin off. Re-enabling Omarchy's
+  // by hand makes the island stand by instead of drawing every
+  // notification a second time.
+  readonly property bool notificationsLive: notificationsEnabled && omarchyNotificationsDisabled && !notifyFailed
+  readonly property bool notificationsStandby: notificationsEnabled && !omarchyNotificationsDisabled
+  readonly property var notify: notifyLoader.item
+  readonly property int unread: notify ? notify.unread : 0
+
+  Loader {
+    id: notifyLoader
+    active: root.notificationsLive && !root._notifyBounce
+    onActiveChanged: if (active) setSource(Qt.resolvedUrl("NotificationService.qml"), { island: root })
+      else setSource("")
+    Component.onCompleted: if (active) setSource(Qt.resolvedUrl("NotificationService.qml"), { island: root })
+  }
+
+  Connections {
+    target: root.notify
+    ignoreUnknownSignals: true
+    function onDoNotDisturbChanged() { root.doNotDisturb = root.notify.doNotDisturb }
+  }
+
+  // The notifications page counts as read once it's on screen.
+  function markSeen() { if (notify && isOpen && page === "notifications") notify.markAllRead() }
+  onPageChanged: markSeen()
+
+  function notifyProbeOk() { _probeTries = 0 }
+  // Retried twice by loading the server again; then the notifications go
+  // back to Omarchy and Settings says why.
+  function notifyProbeFailed() {
+    if (_probeTries < 2) {
+      _probeTries++
+      _notifyBounce = true
+      Qt.callLater(function() { root._notifyBounce = false })
+      return
+    }
+    console.warn("island: the notification server did not answer; giving notifications back to Omarchy")
+    _probeTries = 0
+    notifyFailed = true
+    setNotifications("off")
+  }
+
+  // A marker for "the island took Omarchy's notifications". If it's there
+  // but the setting isn't (reset by hand, reinstall), Omarchy gets them
+  // back at startup.
+  function writeMarker(on) {
+    Quickshell.execDetached(on
+      ? ["sh", "-c", 'mkdir -p "$1" && : > "$1/notifications.takeover"', "sh", agendaDir]
+      : ["rm", "-f", agendaDir + "/notifications.takeover"])
+  }
+  Process {
+    id: orphanCheck
+    command: ["test", "-e", root.agendaDir + "/notifications.takeover"]
+    onExited: (code) => {
+      if (code !== 0 || root.notificationsEnabled) return
+      if (!root.omarchyNotificationsDisabled) { root.writeMarker(false); return }
+      console.warn("island: notifications were left with the island; giving them back to Omarchy")
+      root.runThen(["omarchy", "plugin", "enable", "omarchy.notifications"], function() { root.writeMarker(false) })
+    }
+  }
+
+  // The same IPC Omarchy's notifications plugin answers (names, arguments
+  // and replies), so its menu, scripts and keybindings keep working.
+  IpcHandler {
+    target: "notifications"
+    enabled: root.notificationsLive && !!root.notify
+    function ping(): string { return "ok" }
+    function isDnd(): string { return root.notify && root.notify.doNotDisturb ? "on" : "off" }
+    function toggleDnd(): string { root.toggleDoNotDisturb(); return isDnd() }
+    function setDnd(value: string): string {
+      var v = String(value || "").toLowerCase()
+      if (root.notify) root.doNotDisturb = root.notify.setDnd(v === "true" || v === "1" || v === "on" || v === "yes")
+      return isDnd()
+    }
+    function act(): string { return root.notify && root.notify.actOnNewest() ? "ok" : "none" }
+    function dismissOne(): string {
+      var key = root.notify ? root.notify.newestLive() : ""
+      return key && root.notify.dismiss(key) ? "ok" : "none"
+    }
+    function dismissAll(): string { if (root.notify) root.notify.dismissAll(); return "ok" }
+    function invokeLast(): string {
+      var key = root.notify ? root.notify.newestLive() : ""
+      return key && root.notify.activate(key) ? "ok" : "none"
+    }
+    function invokeAction(n: int): string { return root.notify && root.notify.invokeNth(n) ? "ok" : "none" }
+    // There's no deck to steer: the island opens on its notifications.
+    function keyboard(): string {
+      if (!root.notify || root.notify.rows.length === 0) return "none"
+      root.showPage("notifications")
+      root.pinned = true
+      return "on"
+    }
+    function showHistory(): string { root.showPage("notifications"); root.pinned = true; return "ok" }
+    function dismiss(summary: string): string {
+      var needle = String(summary || "")
+      return needle && root.notify && root.notify.dismissMatching(needle) > 0 ? "ok" : "none"
+    }
+    function count(): string { return String(root.notify ? root.notify.liveCount : 0) }
+    function expand(): string {
+      var open = root.pinned && root.page === "notifications"
+      if (open) root.pinned = false
+      else { root.showPage("notifications"); root.pinned = true }
+      return open ? "collapsed" : "expanded"
+    }
+    function probe(): string {
+      var n = root.notify
+      return JSON.stringify({ server: "thealejandro.island", toasts: n ? n.liveCount : 0,
+        doNotDisturb: !!n && n.doNotDisturb, expanded: root.pinned && root.page === "notifications",
+        keyboardMode: false, keyboardKey: "", unread: n ? n.unread : 0,
+        history: n ? n.historyRows.length : 0, bound: !!n && n.bound })
+    }
+  }
+
   // ------------------------------------------------------------- battery
 
   // Plugging in, unplugging and running low each get a peek. Desktops
@@ -827,6 +993,7 @@ Item {
 
   // ms overrides how long the peek stays; 0 keeps it until closed.
   function peek(reason, ms) {
+    if (!peeking) refreshAnchors()
     peekReason = reason || ""
     peeking = true
     peekTimer.interval = ms === undefined ? peekDuration : ms
@@ -855,13 +1022,23 @@ Item {
         title: root.title, position: Math.round(root.position), length: Math.round(root.length),
         timerRunning: root.timerRunning, timerRemaining: root.timerRemaining,
         focusMinutes: root.focusMinutes, lang: root.lang, page: root.page, osd: root.osdEnabled,
-        battery: root.batteryLevel, charging: root.charging })
+        battery: root.batteryLevel, charging: root.charging,
+        notifications: root.notificationsLive ? "island" : (root.notificationsStandby ? "standby" : "off"),
+        unread: root.unread, dnd: root.doNotDisturb })
     }
     function ping(): string { return "ok" }
-    // Opens the island on one of its pages: home, calendar, world, settings.
+    // Opens the island on one of its pages: home, calendar, world,
+    // notifications (when the island shows them), settings.
     function page(name: string): string {
       if (!root.showPage(name)) return "invalid"
       root.pinned = true
+      return "ok"
+    }
+    // Takes Omarchy's notifications ("island") or gives them back ("off"),
+    // the same as the switch in Settings › System.
+    function notifications(mode: string): string {
+      if (mode !== "island" && mode !== "off") return "invalid"
+      root.setNotifications(mode)
       return "ok"
     }
     // Where to hang from on a screen, along the bar, for bars that can't

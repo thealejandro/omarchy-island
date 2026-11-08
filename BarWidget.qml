@@ -169,6 +169,19 @@ BarWidget {
     font.pixelSize: Style.font.icon
   }
 
+  // Unread notifications, when the island shows them.
+  Rectangle {
+    visible: root.showIcon && !!root.service && root.service.notificationsLive
+      && root.service.unread > 0 && root.service.cfg.notifyBadge
+    width: Style.space(6)
+    height: width
+    radius: width / 2
+    anchors.right: parent.right
+    anchors.top: parent.top
+    anchors.margins: Style.space(4)
+    color: Commons.Color.accent
+  }
+
   MouseArea {
     anchors.fill: parent
     enabled: root.showIcon

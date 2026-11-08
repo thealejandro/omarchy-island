@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "id": "thealejandro.island",
   "name": "Island",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "author": "thealejandro",
-  "description": "A dynamic island for the Omarchy bar, on any edge and hanging from the clock: now playing with media controls, a calendar with a local agenda and reminders, world time and a 3-day forecast, a pomodoro focus timer, quick actions and Omarchy quick toggles, with a visual settings page. Can take over Omarchy volume and brightness OSD, peeks on track changes, events, charging and low battery, and follows your theme live.",
+  "description": "A dynamic island for the Omarchy bar, on any edge and hanging from the clock: now playing with media controls, a calendar with a local agenda and reminders, world time and a 3-day forecast, a pomodoro focus timer, quick actions and Omarchy quick toggles, with a visual settings page. Can take over Omarchy volume and brightness OSD and, when you turn it on, its notifications (with a list and history); peeks on track changes, events, charging and low battery, and follows your theme live.",
   "kinds": [
     "service",
     "bar-widget"
@@ -42,7 +42,13 @@
       "reminderLead": 10,
       "agendaCommand": "",
       "osd": false,
-      "battery": true
+      "battery": true,
+      "notifications": "off",
+      "notifyBody": true,
+      "notifyPeekDuration": 6000,
+      "notifyHistory": true,
+      "notifyHistoryLimit": 100,
+      "notifyBadge": true
     },
     "schema": [
       {
@@ -246,6 +252,52 @@
         "key": "battery",
         "type": "boolean",
         "label": "Battery glances",
+        "defaultValue": true
+      },
+      {
+        "key": "notifications",
+        "type": "enum",
+        "label": "Notifications",
+        "options": [
+          "off",
+          "island"
+        ],
+        "defaultValue": "off"
+      },
+      {
+        "key": "notifyBody",
+        "type": "boolean",
+        "label": "Notification text in the glance",
+        "defaultValue": true
+      },
+      {
+        "key": "notifyPeekDuration",
+        "type": "integer",
+        "label": "Notification glance duration",
+        "min": 2000,
+        "max": 15000,
+        "step": 500,
+        "defaultValue": 6000
+      },
+      {
+        "key": "notifyHistory",
+        "type": "boolean",
+        "label": "Keep notification history",
+        "defaultValue": true
+      },
+      {
+        "key": "notifyHistoryLimit",
+        "type": "integer",
+        "label": "History size",
+        "min": 20,
+        "max": 500,
+        "step": 20,
+        "defaultValue": 100
+      },
+      {
+        "key": "notifyBadge",
+        "type": "boolean",
+        "label": "Unread dot",
         "defaultValue": true
       }
     ]

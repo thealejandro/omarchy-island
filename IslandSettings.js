@@ -8,7 +8,7 @@
 // type: "bool" | "enum" | "int" | "string" | "tristate" (unset/true/false)
 //       | "weekday" (unset/1..7) | "cities" ([{name, zone}])
 
-var SECTIONS = ["general", "look", "open", "bar", "world", "agenda", "system"]
+var SECTIONS = ["general", "look", "open", "bar", "world", "agenda", "notify", "system"]
 
 var SCHEMA = [
   { key: "language", type: "enum", options: ["", "en", "es"], def: "", section: "general" },
@@ -42,6 +42,13 @@ var SCHEMA = [
   { key: "reminderLead", type: "int", min: 0, max: 120, step: 5, def: 10, section: "agenda" },
   { key: "agendaCommand", type: "string", def: "", section: "agenda" },
 
+  { key: "notifyBody", type: "bool", def: true, section: "notify" },
+  { key: "notifyPeekDuration", type: "int", min: 2000, max: 15000, step: 500, def: 6000, section: "notify" },
+  { key: "notifyHistory", type: "bool", def: true, section: "notify" },
+  { key: "notifyHistoryLimit", type: "int", min: 20, max: 500, step: 20, def: 100, section: "notify" },
+  { key: "notifyBadge", type: "bool", def: true, section: "notify" },
+
+  { key: "notifications", type: "enum", options: ["off", "island"], def: "off", section: "system" },
   { key: "osd", type: "bool", def: false, section: "system" },
   { key: "battery", type: "bool", def: true, section: "system" }
 ]

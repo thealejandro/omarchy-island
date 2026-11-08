@@ -176,14 +176,33 @@ PanelWindow {
       if (hovered) {
         leaveTimer.stop()
         win.island.refreshAnchors()
-        if (win.peeking) win.hovered = true
-        else enterTimer.restart()
+        if (win.peeking) {
+          // Reaching for a notification's glance opens its page.
+          if (win.island.peekReason === "notification" && win.island.pages.indexOf("notifications") >= 0)
+            win.island.page = "notifications"
+          win.hovered = true
+        } else enterTimer.restart()
       } else {
         enterTimer.stop()
         // A text field being edited keeps the island up.
         if (!win.island.wantsKeyboard) leaveTimer.restart()
       }
     }
+  }
+
+  // Unread notifications while the island is closed: a small dot just
+  // past the bar, under the clock. Not part of the input region.
+  Rectangle {
+    readonly property bool lit: win.mode === "closed" && win.island.cfg.notifyBadge
+      && win.island.notificationsLive && win.island.unread > 0 && !win.island.barHidden
+    readonly property int d: Style.space(6)
+    readonly property var r: win.place(win.clockCenter - d / 2, d, win.barSize + Style.space(3), d)
+    x: r.x; y: r.y; width: d; height: d
+    radius: d / 2
+    color: Commons.Color.accent
+    opacity: lit ? 0.9 : 0
+    visible: opacity > 0
+    Behavior on opacity { NumberAnimation { duration: 180 } }
   }
 
   Item {

@@ -33,13 +33,15 @@ Column {
   }
 
   function suffixFor(key) {
-    if (key === "hoverDelay" || key === "peekDuration") return " ms"
+    if (key === "hoverDelay" || key === "peekDuration" || key === "notifyPeekDuration") return " ms"
+    if (key === "notifyHistoryLimit") return ""
     if (key === "reminderLead") return " min"
     return " px"
   }
 
   function save(key, value) {
     if (key === "osd") island.setOsd(value)
+    else if (key === "notifications") island.setNotifications(value)
     else island.saveSetting(key, value)
   }
 
@@ -212,6 +214,10 @@ Column {
       label: root.tr(root.island.osdEnabled ? "act_osdOff" : "act_osdOn")
       onClicked: root.island.setOsd(!root.island.osdEnabled)
     }
+    Pill {
+      label: root.tr(root.island.notificationsEnabled ? "act_notifyOff" : "act_notifyOn")
+      onClicked: root.island.setNotifications(root.island.notificationsEnabled ? "off" : "island")
+    }
     Pill { label: root.tr("act_place"); onClicked: root.island.placeByClock() }
     Pill { label: root.tr("act_openConfig"); onClicked: root.island.openConfig() }
     Pill { label: root.tr("act_reset"); onClicked: root.island.resetSettings() }
@@ -223,7 +229,9 @@ Column {
     wrapMode: Text.WordWrap
     text: !root.island.hasEntry ? root.tr("note_noEntry")
       : (!root.island.omarchyTested ? root.tr("note_version", root.island.omarchyVersion)
-        : (root.section === "system" ? root.tr("note_reset") : ""))
+        : ((root.section === "system" || root.section === "notify") && root.island.notifyFailed ? root.tr("note_notifyFailed")
+        : ((root.section === "system" || root.section === "notify") && root.island.notificationsStandby ? root.tr("note_notifyStandby")
+        : (root.section === "system" ? root.tr("note_reset") : ""))))
     color: root.dimColor
     font.family: Style.font.family
     font.pixelSize: Style.font.caption

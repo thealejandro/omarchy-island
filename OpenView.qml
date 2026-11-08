@@ -19,6 +19,7 @@ Column {
   readonly property var sources: ({
     calendar: "CalendarPage.qml",
     world: "WorldPage.qml",
+    notifications: "NotificationsPage.qml",
     settings: "SettingsView.qml"
   })
   readonly property string page: island.page
