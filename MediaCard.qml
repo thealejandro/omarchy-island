@@ -11,7 +11,7 @@ Column {
   required property var island
 
   readonly property color textColor: Commons.Color.bar.text
-  readonly property color dimColor: Util.alpha(Commons.Color.bar.text, 0.6)
+  readonly property color dimColor: Util.alpha(Commons.Color.bar.text, 0.72)
   readonly property int artSize: Style.space(64)
 
   spacing: Style.spacing.xl

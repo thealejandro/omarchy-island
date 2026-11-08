@@ -176,6 +176,8 @@ PanelWindow {
       radius: win.radius
       ear: win.ear
       fillColor: Commons.Color.bar.background
+      strokeColor: Util.alpha(Commons.Color.bar.text, 0.42)
+      strokeWidth: 1
     }
 
     Item {

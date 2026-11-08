@@ -13,7 +13,7 @@ Item {
   readonly property bool showToggles: island.togglesMode !== "bar"
   readonly property int buttonSize: Style.space(32)
   readonly property color textColor: Commons.Color.bar.text
-  readonly property color dimColor: Util.alpha(Commons.Color.bar.text, 0.6)
+  readonly property color dimColor: Util.alpha(Commons.Color.bar.text, 0.72)
   property string hint: ""
 
   implicitHeight: buttonSize
@@ -33,7 +33,7 @@ Item {
     height: root.buttonSize
     radius: Style.space(10)
     color: on ? Util.alpha(Commons.Color.accent, mouse.containsMouse ? 0.3 : 0.2)
-      : Util.alpha(root.textColor, mouse.containsMouse ? 0.1 : 0.05)
+      : Util.alpha(root.textColor, mouse.containsMouse ? 0.12 : 0.07)
     scale: mouse.pressed ? 0.9 : (mouse.containsMouse ? 1.08 : 1)
     Behavior on color { ColorAnimation { duration: 160 } }
     Behavior on scale { NumberAnimation { duration: 220; easing.type: Easing.OutBack; easing.overshoot: 2.4 } }
@@ -145,7 +145,7 @@ Item {
     height: root.buttonSize
     width: info.implicitWidth + 2 * Style.spacing.xl
     radius: Style.space(10)
-    color: Util.alpha(root.textColor, weatherMouse.containsMouse && root.hint === "" ? 0.1 : 0.05)
+    color: Util.alpha(root.textColor, weatherMouse.containsMouse && root.hint === "" ? 0.12 : 0.07)
     visible: hasWeather || root.hint !== ""
     clip: true
     Behavior on color { ColorAnimation { duration: 120 } }

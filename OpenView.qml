@@ -11,7 +11,7 @@ Column {
   property bool shown: false
 
   readonly property int calendarWidth: Style.space(196)
-  readonly property color lineColor: Util.alpha(Commons.Color.bar.text, 0.1)
+  readonly property color lineColor: Util.alpha(Commons.Color.bar.text, 0.2)
   readonly property int rise: Style.space(10)
 
   // One clock for the whole entrance. Each section starts a little after the
