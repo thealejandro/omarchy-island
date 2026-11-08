@@ -1,11 +1,20 @@
+<p align="left">
+  <a href="https://thealejandro.dev">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="docs/marca/logotipo-oscuro.svg">
+      <img src="docs/marca/logotipo-claro.svg" alt="thealejandro" height="32">
+    </picture>
+  </a>
+</p>
+
 # omarchy-island
 
 [English](README.md)
 
 Una isla dinámica para [Omarchy](https://omarchy.org) que sale de la barra
 de Omarchy, justo donde está el reloj, en el borde que tenga la barra.
-Muestra lo que suena, te da controles de música, un calendario con tu
-propia agenda, la hora en el mundo, el clima con pronóstico de 3 días, un
+Muestra lo que suena, te da controles de música, tus notificaciones (si
+las quieres ahí), un calendario con tu propia agenda, la hora en el mundo, el clima con pronóstico de 3 días, un
 temporizador de enfoque, acciones rápidas y los toggles de Omarchy, y se
 aparta cuando terminas. Todo se configura desde una página de ajustes dentro
 de la isla.
@@ -31,12 +40,21 @@ nada de Omarchy. Si lo quitas, tu escritorio queda exactamente como estaba.
   brillo, micrófono, luz del teclado, teclas multimedia) aparece como un
   vistazo con su barra de nivel en lugar de una tarjeta flotante. Ver `osd`
   abajo.
+- **Notificaciones en la isla** (opcional, desactivado por defecto): las
+  notificaciones nuevas bajan de la barra como un vistazo, y una página
+  Notificaciones las agrupa por app, con sus botones, respuestas y
+  enlaces, más un historial de 24 horas. Las tarjetas de Omarchy se
+  apartan mientras está activo, así que nada sale dos veces. Ver
+  [Notificaciones](#notificaciones).
 - **Abrir**: pasa el ratón por el reloj de la barra, o justo debajo (o usa
   un atajo), y se abre la isla: portada,
   reproductor, título, artista, barra de progreso que puedes pulsar o
   arrastrar, anterior / reproducir / siguiente.
-- **Páginas**: la isla abierta tiene cuatro, en las pestañas de su esquina:
-  Inicio (todo lo de abajo), Calendario, Mundo y Ajustes.
+- **Páginas**: la isla abierta tiene cinco, en las pestañas de su esquina:
+  Inicio, Calendario, Mundo, Notificaciones y Ajustes.
+- **Inicio**: lo que suena junto a lo próximo (los tres siguientes eventos
+  de tu agenda, con un botón para añadir uno), las últimas notificaciones
+  cuando la isla las tiene, el temporizador y el dock.
 - **Calendario y agenda**: el mes con hoy resaltado y un punto en los días
   con algo. Las flechas o la rueda del ratón cambian de mes; pulsa el título
   para volver a hoy. La página Calendario lista el día elegido: tus eventos
@@ -44,9 +62,10 @@ nada de Omarchy. Si lo quitas, tu escritorio queda exactamente como estaba.
   Omarchy y lo que viene en la próxima semana. La isla te avisa antes de un
   evento (vistazo y notificación) o lo pasa a `omarchy reminder` con un
   clic. Ver [Agenda](#agenda).
-- **Mundo y clima**: las ciudades del widget elsewhen de Omarchy como
-  chips en Inicio y una lista completa en la página Mundo (hora, día,
-  diferencia con aquí), más el clima con pronóstico de 3 días. Ver
+- **Mundo y clima**: las ciudades del widget elsewhen de Omarchy en la
+  página Mundo (hora, día, diferencia con aquí), más el clima con
+  pronóstico de 3 días. Un clic en la hora mundial o el clima de la barra
+  la abre. Ver
   [Hora mundial y clima](#hora-mundial-y-clima).
 - **Página de ajustes**: todos los ajustes de abajo, con interruptores,
   opciones y botones +/−. Los cambios se guardan al momento en `shell.json`
@@ -73,17 +92,23 @@ nada de Omarchy. Si lo quitas, tu escritorio queda exactamente como estaba.
   funden con la barra, y un contorno muy sutil (algo más marcado en temas
   claros). Un tema puede ajustarlo en su `shell.toml`: `[island]` `border`,
   `border-alpha`, `border-width`.
+- **Movimiento**: la isla se abre con un muelle, y las páginas y los
+  vistazos entran deslizándose un instante; solo transformaciones y
+  opacidad. `animations: false` lo quita todo.
 - **Ligera**: sin procesos extra. La música llega por MPRIS (Spotify,
   navegadores, mpv…); lo único que se consulta solo es el clima, cada 20
   minutos, los husos de la hora mundial mientras la isla está abierta y
-  `agendaCommand` si lo configuras.
+  `agendaCommand` si lo configuras. Cerrada, la isla no guarda páginas,
+  portadas ni iconos. Ver [Rendimiento](#rendimiento).
 
 ## Novedades
 
-La versión 0.5.0 abre la isla en cualquier borde y sobre el reloj real,
-añade las páginas Calendario (con agenda y recordatorios), Mundo (hora
-mundial y pronóstico) y Ajustes, y deja clicables elsewhen y el clima con la
-isla abierta. El detalle está en [CHANGELOG.md](CHANGELOG.md) (en inglés).
+La versión 0.6.0 puede mostrar las notificaciones en la isla (vistazo,
+página con grupos e historial; desactivado por defecto), rehace Inicio con
+lo próximo de tu agenda en lugar de los relojes mundiales, hace que el reloj
+abra el Calendario y la hora mundial y el clima de la barra abran la página
+Mundo, añade animaciones ligeras y gasta menos memoria con la isla cerrada.
+El detalle está en [CHANGELOG.md](CHANGELOG.md) (en inglés).
 
 ## Requisitos
 
@@ -108,9 +133,11 @@ reloj en la barra para colgar exactamente de él:
 omarchy bar put thealejandro.island --after omarchy.clock
 ```
 
-Para quitarla cuando quieras:
+Para quitarla cuando quieras. Si la isla tiene tus notificaciones,
+devuélveselas antes a Omarchy (si no, las de Omarchy siguen apagadas):
 
 ```bash
+omarchy-shell island notifications off
 omarchy plugin remove thealejandro.island
 ```
 
@@ -119,12 +146,18 @@ omarchy plugin remove thealejandro.island
 - Pasa el ratón por el reloj de la barra, o por la franja fina junto a él,
   para abrir la isla; al alejarte se cierra. Se abre sobre el reloj esté
   donde esté (centro, izquierda, derecha) y en el borde que tenga la barra.
-- Pulsa el reloj para fijar la isla abierta; vuelve a pulsar para cerrarla.
-  Con `clockClick` ese clic puede abrir la página Calendario o dejar el reloj
-  al calendario de Omarchy. El clic derecho sigue cambiando el formato del
-  reloj y el central sigue abriendo el menú de zonas horarias.
-- Con la isla abierta, los demás widgets de la barra (elsewhen, clima…)
-  siguen siendo clicables y sus paneles se abren encima.
+- Pulsa el reloj para abrir la isla en la página Calendario; vuelve a
+  pulsar para cerrarla. Con `clockClick` ese clic puede solo fijar la isla
+  abierta en su página o dejar el reloj al calendario de Omarchy. El clic
+  derecho sigue cambiando el formato del reloj y el central sigue abriendo
+  el menú de zonas horarias.
+- Pulsa la hora mundial (elsewhen) o el clima de Omarchy en la barra para
+  abrir la isla en la página Mundo en lugar de sus paneles (`barClicks`).
+  El clic central sigue abriendo su panel y el derecho hace lo mismo que en
+  el widget (actualizar, o el clima como notificación). Pasar el ratón por
+  ellos no abre la isla.
+- Con la isla abierta, los demás widgets de la barra siguen siendo
+  clicables y sus paneles se abren encima.
 - Elige página en las pestañas de la esquina. Un clic en un día del
   calendario pequeño abre la página Calendario en ese día.
 - Para abrirla con una tecla, en `~/.config/hypr/bindings.lua`:
@@ -140,7 +173,8 @@ IPC (`omarchy-shell island <método>`):
 | `toggle`      | Fija la isla abierta / cerrada                  |
 | `open`        | La fija abierta                                 |
 | `close`       | La cierra                                       |
-| `page <nombre>` | La abre en `home`, `calendar`, `world` o `settings` |
+| `page <nombre>` | La abre en `home`, `calendar`, `world`, `notifications` o `settings` |
+| `notifications <island\|off>` | Toma las notificaciones de Omarchy o se las devuelve (ver [Notificaciones](#notificaciones)) |
 | `peek`        | Muestra el vistazo                              |
 | `timer`       | Inicia / pausa el temporizador                  |
 | `focus <min>` | Duración del enfoque (con el temporizador parado, 5–120) |
@@ -168,12 +202,14 @@ quita solo las claves propias de la isla.
 |-------|---------|-------------|----------|
 | `language` | `en`, `es` | según `LANG` | Idioma de la isla |
 | `defaultPage` | `home`, `calendar`, `world` | `home` | Página con la que se abre |
-| `calendarFirst` | `true`, `false` | `false` | Calendario a la izquierda en Inicio |
-| `showMedia`, `showTimer`, `showDock`, `showWorld` | `true`, `false` | `true` | Partes de la página Inicio |
+| `calendarFirst` | `true`, `false` | `false` | Lo próximo a la izquierda en Inicio |
+| `showMedia`, `showTimer`, `showDock` | `true`, `false` | `true` | Partes de la página Inicio |
+| `animations` | `true`, `false` | `true` | Muelle y movimiento de páginas y vistazos |
 | `openWidth` | 420–800 | `560` | Ancho de la isla abierta |
 | `blur` | `true`, `false` | `true` | Desenfoque detrás de la isla con la barra de cristal |
 | `clock` | `true`, `false` | `true` | Abrir al pasar sobre el reloj (`false`: solo la franja del borde) |
-| `clockClick` | `pin`, `calendar`, `omarchy` | `pin` | Clic en el reloj: fijar la isla, abrirla en el calendario o el calendario de Omarchy |
+| `clockClick` | `pin`, `calendar`, `omarchy` | `calendar` | Clic en el reloj: fijar la isla, abrirla en el calendario o el calendario de Omarchy |
+| `barClicks` | `true`, `false` | `true` | Un clic en la hora mundial o el clima de la barra abre la página Mundo |
 | `anchor` | `clock`, `widget`, `center` | `clock` | Colgar del reloj de Omarchy, del sitio de la isla en la barra o del centro |
 | `clockWidth` | 60–400 | `120` | Zona de hover si no se encuentra el reloj |
 | `hoverOpen` | `true`, `false` | `true` | Abrir al pasar el puntero |
@@ -190,6 +226,12 @@ quita solo las claves propias de la isla.
 | `agendaCommand` | comando | `""` | Eventos extra de otro calendario |
 | `osd` | `true`, `false` | `false` | Mostrar el OSD de Omarchy en la isla |
 | `battery` | `true`, `false` | `true` | Vistazos de carga y batería baja |
+| `notifications` | `off`, `island` | `off` | Mostrar las notificaciones en la isla en lugar de las tarjetas de Omarchy |
+| `notifyBody` | `true`, `false` | `true` | El texto en el vistazo (`false`: solo app y título) |
+| `notifyPeekDuration` | 2000–15000 ms | `6000` | Duración del vistazo de una notificación |
+| `notifyHistory` | `true`, `false` | `true` | Guardar las notificaciones cerradas 24 h |
+| `notifyHistoryLimit` | 20–500 | `100` | Notificaciones cerradas que se guardan |
+| `notifyBadge` | `true`, `false` | `true` | Punto de no leídas bajo el reloj y en la pestaña |
 
 `toggles` decide dónde viven los toggles rápidos de Omarchy:
 
@@ -213,6 +255,53 @@ Para volver: `omarchy bar set thealejandro.island osd false` y
 
 `battery: false` silencia los vistazos de carga y batería baja. En equipos
 sin batería nunca aparecen.
+
+## Notificaciones
+
+Desactivado por defecto. Con `notifications: island` la isla es tu
+servidor de notificaciones:
+
+- Una notificación nueva baja de la barra como un vistazo con el icono de
+  la app, el título y (con `notifyBody`) el texto, durante
+  `notifyPeekDuration` o el tiempo que pida quien la envía. Las críticas se
+  quedan hasta que las atiendes. Al ir con el ratón al vistazo se abre la
+  página Notificaciones.
+- La página Notificaciones las agrupa por app, la más nueva primero, con
+  sus botones, respuesta en línea cuando la app la ofrece, un enlace
+  seguro para abrir y un botón de cerrar por notificación o por app.
+  **Silencio** es el mismo «no molestar» de Omarchy (se guarda en el
+  propio `~/.local/state/omarchy/notifications/quiet.json` de Omarchy), así
+  que el indicador de la barra y el toggle del dock coinciden.
+- **Anteriores** lista las notificaciones cerradas de las últimas 24 horas
+  (como mucho `notifyHistoryLimit`), guardadas en
+  `~/.local/state/omarchy/island/notifications.json`, legible solo por ti.
+  No se guardan las imágenes enviadas por el bus ni los botones.
+  **Limpiar historial** lo vacía.
+- Inicio muestra las dos últimas, y un punto bajo el reloj y en la pestaña
+  avisa de que hay algo sin leer (`notifyBadge`).
+
+Solo un programa puede recibir las notificaciones del escritorio, así que
+las tarjetas de Omarchy tienen que apartarse, igual que con el OSD. El
+interruptor de la sección Sistema de Ajustes hace los dos pasos; desde una
+terminal:
+
+```bash
+omarchy-shell island notifications island   # la isla las toma
+omarchy-shell island notifications off      # Omarchy las recupera
+```
+
+Para que la isla las tome hacen falta las dos cosas: su ajuste **y**
+`omarchy.notifications` deshabilitado. Si el plugin de Omarchy se vuelve a
+habilitar por cualquier vía (`omarchy plugin enable omarchy.notifications`,
+un restablecimiento, una actualización de Omarchy), la isla se aparta al
+momento y Omarchy muestra las tarjetas; Ajustes indica entonces que la isla
+está a la espera. Si se quita la isla o se restablece su ajuste mientras
+las tenía, Omarchy las recupera la próxima vez que arranque el shell. El IPC
+`notifications` de Omarchy (`dismissAll`, `toggleDnd`, `invokeLast`…) sigue
+funcionando con la isla, así que su menú y sus atajos también.
+
+Las notificaciones que están en pantalla cuando se reinicia el shell se
+guardan como cerradas en el historial; sus botones se pierden.
 
 ## Agenda
 
@@ -250,18 +339,44 @@ omarchy bar set thealejandro.island agendaCommand "khal list --format '{start-da
 
 ## Hora mundial y clima
 
-La página Mundo y los chips de Inicio usan las ciudades del widget elsewhen
-de Omarchy, leídas de su entrada en `shell.json`, así mantienes una sola
+La página Mundo usa las ciudades del widget elsewhen de Omarchy, leídas de su entrada en `shell.json`, así mantienes una sola
 lista. Pon `cities` para darle a la isla la suya (`Nombre|Zona/Ciudad, …`
 en la página de ajustes). La isla calcula las horas a partir del desfase de
-cada zona (`TZ=zona date`), así que no necesita elsewhen en la barra; si
-está, un clic en un chip abre su panel. Sin ciudades no hay fila de mundo.
+cada zona (`TZ=zona date`), así que no necesita elsewhen en la barra. Sin
+ciudades, la página Mundo muestra solo el clima.
 
 El clima es el mismo parte de wttr.in de la píldora del dock, para el lugar
 configurado en el widget de clima de Omarchy (o por IP), cada 20 minutos.
 **Abrir pronóstico** abre el panel del clima de Omarchy (si el widget está
 en la barra) y **Cambiar ubicación** su selector de lugar, o el archivo que
 lee.
+
+## Rendimiento
+
+La isla corre dentro de `omarchy-shell`, así que lo que cuesta es lo que
+crece el proceso del shell. Medido en Omarchy 4.0.0.alpha (una pantalla
+1920×1080 a 120 Hz), como PSS del shell, tres pasadas intercaladas:
+
+| | Shell sin la isla | 0.5.0 | 0.6.0 |
+|---|---|---|---|
+| Isla cerrada | ~273 MB | 285 MB | 278 MB |
+| Isla abierta (Inicio) | | 289 MB | 289 MB |
+| Tras visitar todas las páginas y cerrar | | 286 MB | 289 MB* |
+
+\* La memoria que usaron las vistas no siempre se devuelve al sistema al
+momento; no crece al abrir y cerrar más (cinco ciclos seguidos se quedan
+planos). Con `notifications: island` el shell pesa unos MB menos (cerrada
+~270 MB), porque se descarga el plugin de notificaciones de Omarchy.
+
+- Cerrada, la isla no guarda páginas, portadas ni iconos: la vista abierta
+  y el vistazo se crean al mostrarse y se sueltan un momento después de
+  irse.
+- La vista abierta se empieza a crear en segundo plano en cuanto el puntero
+  llega al reloj, así que está lista cuando la isla se abre: el primer
+  fotograma visible llega unos 24 ms después de empezar a abrirse (0.5.0:
+  25 ms), sin ningún fotograma de más de 25 ms al abrir o cerrar.
+- La posición de la canción solo avanza mientras suena música y la isla
+  está abierta.
 
 ## Compatibilidad
 
@@ -277,8 +392,12 @@ de darlo por hecho:
 - Los ajustes se guardan con `updateEntryInline` de la API de plugins, o con
   `omarchy bar set` si falta.
 - Nunca escribe archivos de Omarchy; solo su entrada en `shell.json` (y
-  `disabledPlugins` mediante `omarchy plugin` cuando le pides usar el OSD) y
-  `~/.local/state/omarchy/island/`.
+  `disabledPlugins` mediante `omarchy plugin` cuando le pides usar el OSD o
+  las notificaciones), el estado de «no molestar» de Omarchy en el mismo
+  archivo que usa Omarchy, y `~/.local/state/omarchy/island/`.
+- Los clics en la hora mundial y el clima de la barra no necesitan nada de
+  esos widgets: la isla los cubre en la barra y usa su IPC pública para el
+  clic central y el derecho. `barClicks: false` los deja como estaban.
 
 ### Problemas frecuentes
 
@@ -287,8 +406,17 @@ de darlo por hecho:
   omarchy.clock`) o revisa `omarchy-shell island anchors`.
 - *`osd: true` pero no hay OSD en la isla*: `omarchy.osd` de Omarchy sigue
   habilitado; usa el botón de la sección Sistema.
-- *No hay fila de mundo*: elsewhen no tiene ciudades (o está deshabilitado) y
-  `cities` está vacío.
+- *No hay ciudades en la página Mundo*: elsewhen no tiene ciudades (o está
+  deshabilitado) y `cities` está vacío.
+- *Las notificaciones están activas pero siguen saliendo las tarjetas de
+  Omarchy*: `omarchy.notifications` vuelve a estar habilitado (Ajustes dice
+  que la isla está a la espera); usa el interruptor de la sección Sistema o
+  `omarchy-shell island notifications island`.
+- *No llega ninguna notificación*: mira `omarchy-shell notifications probe`
+  (`server` dice quién las tiene). `omarchy-shell island notifications off`
+  siempre se las devuelve a Omarchy.
+- *Al pulsar el clima o la hora mundial se abre el panel de Omarchy*: pon
+  la isla en la barra (los encuentra desde ahí) y deja `barClicks` activo.
 - *Una barra de terceros*: sin la API de barra de Omarchy la isla usa
   `shell.json`; la barra puede indicar el reloj con `omarchy-shell island
   anchor <pantalla> <centro> <largo>`.
@@ -309,26 +437,29 @@ ejecuta `omarchy restart shell` para ver los cambios.
 
 | Archivo            | Qué hace                                               |
 |--------------------|--------------------------------------------------------|
-| `Service.qml`      | Estado: reproductor MPRIS, temporizador, toggles, clima, mundo, agenda, OSD, batería, ajustes, anclas, IPC |
-| `BarWidget.qml`    | Entrada en la barra: oculta indicadores duplicados, encuentra el reloj, botón opcional |
+| `Service.qml`      | Estado: reproductor MPRIS, temporizador, toggles, clima, mundo, agenda, OSD, batería, modo de notificaciones, ajustes, anclas, IPC |
+| `BarWidget.qml`    | Entrada en la barra: oculta indicadores duplicados, encuentra el reloj, la hora mundial y el clima, botón opcional |
+| `NotificationService.qml` | El servidor de notificaciones de la isla: filas, vistazos, acciones, no molestar, historial |
+| `NotificationModel.js`, `NotificationSecurity.js` | Funciones puras: filas, grupos e historial; comprobación de enlaces, comandos e imágenes |
 | `IslandSettings.js` | Esquema de ajustes: valores por defecto, normalización, guardado, esquema del manifest |
 | `IslandGeometry.js` | Bordes de la barra, posición a lo largo de ella, búsqueda del reloj |
 | `IslandModel.js`   | Funciones puras: elegir reproductor, reloj, textos, mes, clima, horas del mundo |
 | `AgendaModel.js`   | Funciones puras de eventos: repeticiones, próximos, avisos, líneas externas |
-| `IslandWindow.qml` | Capa por pantalla, máscara de entrada, hover, animación |
+| `IslandWindow.qml` | Capa por pantalla, máscara de entrada, hover, clics de la barra, animación |
 | `IslandShape.qml`  | La silueta con orejas cóncavas, girada al borde de la barra |
-| `PeekView.qml`     | El vistazo de una línea: canción, temporizador, OSD, batería o evento |
+| `PeekView.qml`     | El vistazo de una línea: canción, temporizador, OSD, batería, evento o notificación |
 | `OpenView.qml`     | Cabecera, pestañas y página actual                     |
-| `HomePage.qml`     | La página de inicio                                    |
+| `HomePage.qml`, `TodayCard.qml` | La página de inicio y su tarjeta «Lo próximo» |
+| `NotificationsPage.qml`, `NotificationGroup.qml`, `NotificationCard.qml`, `NotificationIcon.qml` | Página Notificaciones |
 | `CalendarPage.qml`, `AgendaList.qml`, `EventEditor.qml` | Página de calendario y agenda |
-| `WorldPage.qml`, `WorldRow.qml` | Página Mundo y los chips de Inicio        |
+| `WorldPage.qml`    | Página Mundo                                           |
 | `SettingsView.qml`, `PageTabs.qml` | Página de ajustes y pestañas         |
 | `IslandToggle.qml`, `IslandSegment.qml`, `IslandStepper.qml`, `IslandField.qml` | Controles de los ajustes |
 | `MediaCard.qml`    | Portada, canción, barra de progreso y controles        |
 | `CalendarView.qml` | Calendario del mes                                     |
 | `TimerRow.qml`     | Temporizador de enfoque                                |
 | `Dock.qml`         | Fila de toggles, acciones y clima                      |
-| `IslandButton.qml` | Botón redondo con icono                                |
+| `IslandButton.qml`, `IslandPill.qml` | Botón redondo con icono y píldora de texto |
 | `Glyph.qml`        | Icono centrado por su tinta, no por su caja            |
 | `Equalizer.qml`    | Barritas animadas mientras suena música                |
 
@@ -340,3 +471,7 @@ ninguno.
 ## Licencia
 
 MIT
+
+---
+
+Hecho por [thealejandro](https://thealejandro.dev).

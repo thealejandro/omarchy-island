@@ -89,6 +89,7 @@ BarWidget {
     var span = null, kind = ""
     if (mode === "center") {
       send(name, 0, 0, "center")
+      reportSides(name)
       return
     }
     try {
@@ -109,6 +110,36 @@ BarWidget {
       span = null
     }
     if (span) send(name, span.center, span.length, kind)
+    reportSides(name)
+  }
+
+  // Omarchy's world clock and weather, for the island's click zones.
+  property var sideItems: ({})
+  function reportSides(name) {
+    if (!service || typeof service.setSideZones !== "function") return
+    if (!service.barClicks) { service.setSideZones(name, []); return }
+    var zones = []
+    var list = service.sideWidgets || []
+    var cache = sideItems
+    for (var i = 0; i < list.length; i++) {
+      var id = list[i].id
+      if (!service.isOnBar(id)) continue
+      var item = null
+      try {
+        item = cache[id]
+        if (!item || item.moduleName !== id || !(item.width > 0 && item.height > 0) || item.visible === false)
+          item = IslandGeometry.findModule(windowRoot(), id, 4000)
+      } catch (e) { item = null }
+      cache[id] = item
+      if (!item) continue
+      try {
+        var span = IslandGeometry.alongSpan(item, vertical)
+        if (span && span.length > 0)
+          zones.push({ id: id, page: list[i].page, center: Math.round(span.center), length: Math.round(span.length) })
+      } catch (e) { }
+    }
+    sideItems = cache
+    service.setSideZones(name, zones)
   }
 
   function send(name, center, length, kind) {
@@ -132,8 +163,10 @@ BarWidget {
     interval: 250
     onTriggered: root.reportAnchor()
   }
+  // Often while the island is up; a slow check while it's closed, since
+  // hovering asks for a fresh report anyway.
   Timer {
-    interval: 2000
+    interval: root.service && (root.service.isOpen || root.service.peeking) ? 2000 : 10000
     repeat: true
     running: !!root.bar
     onTriggered: root.reportAnchor()
@@ -142,9 +175,9 @@ BarWidget {
   Connections {
     target: root.bar
     ignoreUnknownSignals: true
-    function onPositionChanged() { root.clockItem = null; reportSoon.restart() }
+    function onPositionChanged() { root.clockItem = null; root.sideItems = ({}); reportSoon.restart() }
     function onBarSizeChanged() { reportSoon.restart() }
-    function onLayoutConfigChanged() { root.clockItem = null; reportSoon.restart() }
+    function onLayoutConfigChanged() { root.clockItem = null; root.sideItems = ({}); reportSoon.restart() }
     function onShellChanged() { root.connect() }
   }
 
@@ -154,6 +187,7 @@ BarWidget {
   onSettingsChanged: reportSoon.restart()
   Component.onCompleted: { apply(); connect() }
   Component.onDestruction: {
+    if (service && typeof service.setSideZones === "function") service.setSideZones(screenName(), [])
     if (suppress && bar) bar.setCenterHoverRevealSuppressed(false)
     if (service) service.unregisterWidget(root)
   }
@@ -167,6 +201,19 @@ BarWidget {
     color: root.bar && root.bar.foreground.a > 0 ? root.bar.foreground : Commons.Color.bar.text
     font.family: Style.font.family
     font.pixelSize: Style.font.icon
+  }
+
+  // Unread notifications, when the island shows them.
+  Rectangle {
+    visible: root.showIcon && !!root.service && root.service.notificationsLive
+      && root.service.unread > 0 && root.service.cfg.notifyBadge
+    width: Style.space(6)
+    height: width
+    radius: width / 2
+    anchors.right: parent.right
+    anchors.top: parent.top
+    anchors.margins: Style.space(4)
+    color: Commons.Color.accent
   }
 
   MouseArea {

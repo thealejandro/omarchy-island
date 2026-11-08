@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "id": "thealejandro.island",
   "name": "Island",
-  "version": "0.5.0",
+  "version": "0.6.0",
   "author": "thealejandro",
-  "description": "A dynamic island for the Omarchy bar, on any edge and hanging from the clock: now playing with media controls, a calendar with a local agenda and reminders, world time and a 3-day forecast, a pomodoro focus timer, quick actions and Omarchy quick toggles, with a visual settings page. Can take over Omarchy volume and brightness OSD, peeks on track changes, events, charging and low battery, and follows your theme live.",
+  "description": "A dynamic island for the Omarchy bar, on any edge and hanging from the clock: now playing with media controls, a calendar with a local agenda and reminders, world time and a 3-day forecast, a pomodoro focus timer, quick actions and Omarchy quick toggles, with a visual settings page. Can take over Omarchy volume and brightness OSD and, when you turn it on, its notifications (with a list and history); peeks on track changes, events, charging and low battery, and follows your theme live.",
   "kinds": [
     "service",
     "bar-widget"
@@ -25,24 +25,31 @@
       "showMedia": true,
       "showTimer": true,
       "showDock": true,
-      "showWorld": true,
       "openWidth": 560,
       "blur": true,
       "clock": true,
-      "clockClick": "pin",
+      "clockClick": "calendar",
       "anchor": "clock",
       "clockWidth": 120,
       "hoverOpen": true,
       "hoverDelay": 120,
       "peekDuration": 3500,
       "toggles": "island",
+      "barClicks": true,
       "widgetIcon": false,
       "units": "metric",
       "forecast": true,
       "reminderLead": 10,
       "agendaCommand": "",
       "osd": false,
-      "battery": true
+      "battery": true,
+      "animations": true,
+      "notifications": "off",
+      "notifyBody": true,
+      "notifyPeekDuration": 6000,
+      "notifyHistory": true,
+      "notifyHistoryLimit": 100,
+      "notifyBadge": true
     },
     "schema": [
       {
@@ -68,7 +75,7 @@
       {
         "key": "calendarFirst",
         "type": "boolean",
-        "label": "Calendar first on Home",
+        "label": "Agenda first on Home",
         "defaultValue": false
       },
       {
@@ -87,12 +94,6 @@
         "key": "showDock",
         "type": "boolean",
         "label": "Toggles and launchers",
-        "defaultValue": true
-      },
-      {
-        "key": "showWorld",
-        "type": "boolean",
-        "label": "World clock row",
         "defaultValue": true
       },
       {
@@ -125,7 +126,7 @@
           "calendar",
           "omarchy"
         ],
-        "defaultValue": "pin"
+        "defaultValue": "calendar"
       },
       {
         "key": "anchor",
@@ -172,6 +173,12 @@
         "defaultValue": 3500
       },
       {
+        "key": "animations",
+        "type": "boolean",
+        "label": "Animations",
+        "defaultValue": true
+      },
+      {
         "key": "toggles",
         "type": "enum",
         "label": "Quick toggles",
@@ -181,6 +188,12 @@
           "bar"
         ],
         "defaultValue": "island"
+      },
+      {
+        "key": "barClicks",
+        "type": "boolean",
+        "label": "Clock, world clock and weather open the island",
+        "defaultValue": true
       },
       {
         "key": "widgetIcon",
@@ -246,6 +259,52 @@
         "key": "battery",
         "type": "boolean",
         "label": "Battery glances",
+        "defaultValue": true
+      },
+      {
+        "key": "notifications",
+        "type": "enum",
+        "label": "Notifications",
+        "options": [
+          "off",
+          "island"
+        ],
+        "defaultValue": "off"
+      },
+      {
+        "key": "notifyBody",
+        "type": "boolean",
+        "label": "Notification text in the glance",
+        "defaultValue": true
+      },
+      {
+        "key": "notifyPeekDuration",
+        "type": "integer",
+        "label": "Notification glance duration",
+        "min": 2000,
+        "max": 15000,
+        "step": 500,
+        "defaultValue": 6000
+      },
+      {
+        "key": "notifyHistory",
+        "type": "boolean",
+        "label": "Keep notification history",
+        "defaultValue": true
+      },
+      {
+        "key": "notifyHistoryLimit",
+        "type": "integer",
+        "label": "History size",
+        "min": 20,
+        "max": 500,
+        "step": 20,
+        "defaultValue": 100
+      },
+      {
+        "key": "notifyBadge",
+        "type": "boolean",
+        "label": "Unread dot",
         "defaultValue": true
       }
     ]

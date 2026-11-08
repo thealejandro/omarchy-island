@@ -19,6 +19,7 @@ Column {
   readonly property var sources: ({
     calendar: "CalendarPage.qml",
     world: "WorldPage.qml",
+    notifications: "NotificationsPage.qml",
     settings: "SettingsView.qml"
   })
   readonly property string page: island.page
@@ -31,7 +32,7 @@ Column {
     width: parent.width
     height: tabs.height
     opacity: root.shown ? 1 : 0
-    Behavior on opacity { NumberAnimation { duration: 260 } }
+    Behavior on opacity { enabled: root.island.animate; NumberAnimation { duration: 260 } }
 
     Text {
       anchors.left: parent.left
@@ -70,6 +71,16 @@ Column {
     Item {
       id: content
       width: flick.width
+      // A page change slides the new page in a little from the side of its
+      // tab, with a short fade; transforms and opacity only.
+      property real slide: 0
+      opacity: 1
+      transform: Translate { x: content.slide }
+      ParallelAnimation {
+        id: pageIn
+        NumberAnimation { target: content; property: "slide"; to: 0; duration: 200; easing.type: Easing.OutCubic }
+        NumberAnimation { target: content; property: "opacity"; to: 1; duration: 160; easing.type: Easing.OutCubic }
+      }
       height: root.onHome ? home.height : (loader.item ? loader.item.height : fallback.height)
 
       HomePage {
@@ -84,8 +95,11 @@ Column {
         id: loader
         width: parent.width
         active: !root.onHome
+        // Opening straight onto a page (the clock's calendar, the weather's
+        // world) builds it over a few frames while the island grows, not
+        // in the frame the click lands; a tab change while open is at once.
+        asynchronous: !root.shown
         visible: !root.onHome && status === Loader.Ready
-        opacity: 0
         function load() {
           if (!active || !root.sources[root.page]) return
           var url = Qt.resolvedUrl(root.sources[root.page])
@@ -93,8 +107,7 @@ Column {
           setSource(String(url), { "island": root.island })
         }
         onActiveChanged: load()
-        onLoaded: { item.width = Qt.binding(function() { return loader.width }); opacity = 0; fadeIn.restart() }
-        NumberAnimation on opacity { id: fadeIn; running: false; to: 1; duration: 220; easing.type: Easing.OutCubic }
+        onLoaded: item.width = Qt.binding(function() { return loader.width })
       }
 
       Text {
@@ -110,5 +123,16 @@ Column {
     }
   }
 
-  onPageChanged: { flick.contentY = 0; loader.load() }
+  property string lastPage: page
+  onPageChanged: {
+    flick.contentY = 0
+    loader.load()
+    var pages = island.pages
+    var dir = pages.indexOf(page) >= pages.indexOf(lastPage) ? 1 : -1
+    lastPage = page
+    if (!island.animate || !shown) return
+    content.slide = dir * Style.space(18)
+    content.opacity = 0
+    pageIn.restart()
+  }
 }
