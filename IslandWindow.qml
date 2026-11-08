@@ -52,7 +52,10 @@ PanelWindow {
   readonly property bool expanded: hovered || island.pinned
   readonly property bool peeking: !expanded && island.peeking
   readonly property string mode: expanded ? "open" : (peeking ? "peek" : "closed")
-  onModeChanged: if (mode === "closed") island.islandClosed()
+  onModeChanged: {
+    if (mode === "closed") island.islandClosed()
+    else if (mode === "open") island.isOpen = true
+  }
 
   readonly property Item activeView: mode === "open" ? openView : (mode === "peek" ? peekView : null)
   readonly property real targetWidth: !activeView ? 0

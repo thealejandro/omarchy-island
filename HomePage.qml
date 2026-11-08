@@ -3,7 +3,7 @@ import qs.Commons
 import qs.Commons as Commons
 
 // The island's first page: now playing next to the month, focus timer
-// underneath and a dock of toggles, launchers and the weather along the
+// underneath, the world clock and a dock of toggles, launchers and the weather along the
 // bottom. Each part can be switched off in the settings.
 Column {
   id: root
@@ -78,6 +78,13 @@ Column {
     width: parent.width
     opacity: root.reveal(2)
     transform: Translate { y: (1 - root.reveal(2)) * root.rise }
+  }
+
+  WorldRow {
+    island: root.island
+    width: parent.width
+    opacity: root.reveal(3)
+    transform: Translate { y: (1 - root.reveal(3)) * root.rise }
   }
 
   Dock {

@@ -204,6 +204,11 @@ Item {
           if (entries[i].id === "thealejandro.island") mine = entries[i]
           else if (entries[i].id === "omarchy.elsewhen") elsewhen = entries[i]
         }
+        // A disabled plugin's entry can stay in the layout; it's not on the
+        // bar for anything the island links to.
+        var disabled = Array.isArray(config.disabledPlugins) ? config.disabledPlugins.map(String) : []
+        placed = placed.filter(function(id) { return disabled.indexOf(id) === -1 })
+        if (elsewhen && disabled.indexOf("omarchy.elsewhen") !== -1) elsewhen = null
         root.settings = mine
         root.hasEntry = !!mine.id
         root.onBar = placed
@@ -312,6 +317,7 @@ Item {
     return true
   }
   function islandClosed() {
+    isOpen = false
     tabHint = ""
     wantsKeyboard = false
     page = defaultPage
@@ -525,11 +531,84 @@ Item {
     onExited: if (root.weatherLang !== root.lang) root.refreshWeather()
     stdout: StdioCollector {
       onStreamFinished: {
-        var report = IslandModel.parseWeather(text, root.lang, root.imperial)
-        if (!report) return
-        report.hour = new Date().getHours()
-        root.weather = report
+        if (!IslandModel.parseWeather(text, root.lang, root.imperial)) return
+        root._weatherRaw = text
+        root.parseWeatherRaw()
       }
+    }
+  }
+
+  // The last good report as wttr.in sent it, so switching units doesn't
+  // need a new request.
+  property string _weatherRaw: ""
+  function parseWeatherRaw() {
+    var report = IslandModel.parseWeather(_weatherRaw, lang, imperial)
+    if (!report) return
+    report.hour = new Date().getHours()
+    weather = report
+  }
+  onImperialChanged: parseWeatherRaw()
+
+  readonly property bool weatherOnBar: isOnBar("omarchy.weather")
+  function openForecast() {
+    if (weatherOnBar) runAction(["omarchy-shell", "omarchy.weather", "toggle"])
+  }
+  // Omarchy's weather widget has its own place picker; without it on the
+  // bar, the file it reads is opened instead.
+  function changeWeatherPlace() {
+    if (weatherOnBar) runAction(["omarchy-shell", "omarchy.weather", "edit"])
+    else runAction(["sh", "-c", 'command -v omarchy-launch-config-editor >/dev/null && exec omarchy-launch-config-editor "$1" || exec xdg-open "$1"',
+      "sh", Quickshell.env("HOME") + "/.local/state/omarchy/settings/weather.json"])
+  }
+
+  // ------------------------------------------------------------- world
+
+  // The cities of Omarchy's elsewhen widget (its entry in shell.json, read
+  // only), or the island's own list when it has one. No cities, no world.
+  readonly property var worldCities: cfg.cities.length > 0 ? cfg.cities
+    : (elsewhenEntry ? IslandSettings.parseCities(elsewhenEntry.cities !== undefined ? elsewhenEntry.cities : elsewhenEntry.zones) : [])
+  readonly property bool elsewhenOnBar: isOnBar("omarchy.elsewhen")
+  // The island's setting, else elsewhen's, else what the locale does.
+  readonly property bool hour24: cfg.hour24 !== null ? cfg.hour24
+    : (elsewhenEntry && (elsewhenEntry.hour24 === true || elsewhenEntry.hour24 === false) ? elsewhenEntry.hour24
+      : String(locale.timeFormat(Locale.ShortFormat)).toLowerCase().indexOf("a") === -1)
+  property var zoneProbe: ({})
+  property real worldNow: Date.now()
+  // True while some screen has the island open; the world clock only ticks
+  // then.
+  property bool isOpen: false
+  readonly property var worldRows: {
+    var rows = []
+    for (var i = 0; i < worldCities.length; i++) {
+      var row = IslandModel.worldRow(worldCities[i], zoneProbe, worldNow, hour24)
+      if (row) rows.push(row)
+    }
+    return rows
+  }
+
+  function probeZones() {
+    if (worldCities.length === 0 || zoneProbeRun.running) return
+    zoneProbeRun.command = IslandModel.zoneProbeCommand(worldCities.map(function(c) { return c.zone }))
+    zoneProbeRun.running = true
+  }
+  onWorldCitiesChanged: probeZones()
+  onIsOpenChanged: if (isOpen) { worldNow = Date.now(); probeZones() }
+
+  Process {
+    id: zoneProbeRun
+    stdout: StdioCollector { onStreamFinished: root.zoneProbe = IslandModel.parseZoneProbe(text) }
+  }
+  // Every minute on the minute while open; offsets again every half hour
+  // in case a city changed to or from summer time.
+  Timer {
+    running: root.isOpen && root.worldCities.length > 0
+    repeat: true
+    interval: 1000
+    property int _probeAt: 0
+    onTriggered: {
+      var now = Date.now()
+      if (Math.floor(now / 60000) !== Math.floor(root.worldNow / 60000)) root.worldNow = now
+      if (now - _probeAt > 30 * 60 * 1000) { _probeAt = now; root.probeZones() }
     }
   }
 

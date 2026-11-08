@@ -114,6 +114,11 @@ var STRINGS = {
     act_osdOn: "Use as OSD",
     act_osdOff: "Give the OSD back",
     act_place: "Next to the clock",
+    act_forecast: "Open forecast",
+    act_weatherPlace: "Change location",
+    tomorrow: "Tomorrow",
+    yesterday: "Yesterday",
+    world_empty: "No cities yet. Add them to Omarchy's elsewhen widget or under Settings › World.",
     act_reset: "Reset",
     act_openConfig: "Open shell.json",
     note_noEntry: "The island has no entry in shell.json, so changes last until restart. Use “Next to the clock”.",
@@ -210,6 +215,11 @@ var STRINGS = {
     act_osdOn: "Usar como OSD",
     act_osdOff: "Devolver el OSD",
     act_place: "Junto al reloj",
+    act_forecast: "Abrir pronóstico",
+    act_weatherPlace: "Cambiar ubicación",
+    tomorrow: "Mañana",
+    yesterday: "Ayer",
+    world_empty: "Aún no hay ciudades. Añádelas en el widget elsewhen de Omarchy o en Ajustes › Mundo.",
     act_reset: "Restablecer",
     act_openConfig: "Abrir shell.json",
     note_noEntry: "La isla no tiene entrada en shell.json: los cambios duran hasta reiniciar. Usa «Junto al reloj».",
@@ -277,10 +287,82 @@ function parseWeather(raw, lang, imperial) {
       ? data.nearest_area[0].areaName[0].value : ""
     var temp = imperial ? now.temp_F : now.temp_C
     if (temp === undefined || temp === "") return null
-    return { temp: temp + "°", code: parseInt(now.weatherCode, 10), desc: desc.trim(), place: area }
+    // The next days from the same report (wttr.in gives three), for the
+    // world page. Midday's code stands for the day.
+    var days = []
+    var list = Array.isArray(data.weather) ? data.weather : []
+    for (var i = 0; i < list.length && days.length < 3; i++) {
+      var d = list[i]
+      var hourly = Array.isArray(d.hourly) ? d.hourly : []
+      var noon = hourly[Math.min(4, hourly.length - 1)] || {}
+      var dayDesc = noon["lang_" + lang] && noon["lang_" + lang][0] ? noon["lang_" + lang][0].value
+        : (noon.weatherDesc && noon.weatherDesc[0] ? noon.weatherDesc[0].value : "")
+      var hi = imperial ? d.maxtempF : d.maxtempC, lo = imperial ? d.mintempF : d.mintempC
+      if (!d.date || hi === undefined || lo === undefined) continue
+      days.push({ date: String(d.date), max: hi + "°", min: lo + "°",
+        code: parseInt(noon.weatherCode, 10), desc: String(dayDesc).trim() })
+    }
+    return { temp: temp + "°", code: parseInt(now.weatherCode, 10), desc: desc.trim(), place: area, days: days }
   } catch (e) {
     return null
   }
+}
+
+// ------------------------------------------------------------- world
+
+// One shell for every zone: `TZ=zone date` prints its abbreviation and UTC
+// offset, the same probe Omarchy's elsewhen uses. Times are then worked out
+// here from the offset, so the probe only runs now and then (for DST).
+function zoneProbeCommand(zones) {
+  return ["bash", "-c", 'for z in "$@"; do TZ="$z" date "+$z|%Z|%z"; done', "bash"].concat(zones)
+}
+
+// Probe output → { "Asia/Tokyo": { abbr: "JST", offset: 540 }, ... }
+function parseZoneProbe(text) {
+  var map = {}
+  var lines = String(text || "").split("\n")
+  for (var i = 0; i < lines.length; i++) {
+    var f = lines[i].split("|")
+    if (f.length < 3) continue
+    var m = /^([+-])(\d{2})(\d{2})$/.exec(f[2].trim())
+    if (!m || f[0].trim() === "") continue
+    var minutes = parseInt(m[2], 10) * 60 + parseInt(m[3], 10)
+    map[f[0].trim()] = { abbr: f[1].trim(), offset: m[1] === "-" ? -minutes : minutes }
+  }
+  return map
+}
+
+function pad2(n) { return (n < 10 ? "0" : "") + n }
+
+// A city's row at instant nowMs: wall-clock time, day relative to here,
+// whether it's night there, and the hours it is ahead or behind.
+function worldRow(city, probe, nowMs, hour24) {
+  var p = probe ? probe[city.zone] : null
+  if (!p) return null
+  var there = new Date(Number(nowMs) + p.offset * 60000)
+  var here = new Date(Number(nowMs))
+  var hour = there.getUTCHours(), minute = there.getUTCMinutes()
+  var delta = Math.round((Date.UTC(there.getUTCFullYear(), there.getUTCMonth(), there.getUTCDate())
+    - Date.UTC(here.getFullYear(), here.getMonth(), here.getDate())) / 86400000)
+  var diff = p.offset + here.getTimezoneOffset()
+  var h12 = hour % 12 === 0 ? 12 : hour % 12
+  return {
+    name: city.name,
+    zone: city.zone,
+    abbr: p.abbr,
+    time: hour24 ? pad2(hour) + ":" + pad2(minute) : h12 + ":" + pad2(minute),
+    meridiem: hour24 ? "" : (hour < 12 ? "am" : "pm"),
+    dayDelta: delta,
+    night: hour < 6 || hour >= 19,
+    diffMinutes: diff
+  }
+}
+
+// "+3 h", "-5:30 h", "" for the same time as here.
+function diffLabel(minutes) {
+  if (!minutes) return ""
+  var abs = Math.abs(minutes), h = Math.floor(abs / 60), m = abs % 60
+  return (minutes < 0 ? "-" : "+") + h + (m ? ":" + pad2(m) : "") + " h"
 }
 
 // Nerd Font icon for a wttr.in weather code, the same set Omarchy's weather
