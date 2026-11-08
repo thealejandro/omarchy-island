@@ -17,7 +17,6 @@ var SCHEMA = [
   { key: "showMedia", type: "bool", def: true, section: "general" },
   { key: "showTimer", type: "bool", def: true, section: "general" },
   { key: "showDock", type: "bool", def: true, section: "general" },
-  { key: "showWorld", type: "bool", def: true, section: "general" },
 
   { key: "openWidth", type: "int", min: 420, max: 800, step: 20, def: 560, section: "look" },
   { key: "blur", type: "bool", def: true, section: "look" },

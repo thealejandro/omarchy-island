@@ -25,7 +25,6 @@
       "showMedia": true,
       "showTimer": true,
       "showDock": true,
-      "showWorld": true,
       "openWidth": 560,
       "blur": true,
       "clock": true,
@@ -76,7 +75,7 @@
       {
         "key": "calendarFirst",
         "type": "boolean",
-        "label": "Calendar first on Home",
+        "label": "Agenda first on Home",
         "defaultValue": false
       },
       {
@@ -95,12 +94,6 @@
         "key": "showDock",
         "type": "boolean",
         "label": "Toggles and launchers",
-        "defaultValue": true
-      },
-      {
-        "key": "showWorld",
-        "type": "boolean",
-        "label": "World clock row",
         "defaultValue": true
       },
       {

@@ -191,3 +191,22 @@ function parseOmarchyReminders(json) {
   } catch (e) { }
   return out
 }
+
+// What's next from `now`: today's events not over yet (all-day ones count
+// all day; a timed one until an hour after it starts), then the coming
+// `days` days, at most `limit` in all. Each carries `on`.
+function nextEvents(events, now, days, limit) {
+  var out = []
+  for (var i = 0; i <= days && out.length < limit; i++) {
+    var d = new Date(now.getFullYear(), now.getMonth(), now.getDate() + i)
+    var list = eventsOn(events, isoDate(d))
+    for (var k = 0; k < list.length && out.length < limit; k++) {
+      if (i === 0 && list[k].time) {
+        var left = minutesUntil(list[k], list[k].on, now)
+        if (left !== null && left < -60) continue
+      }
+      out.push(list[k])
+    }
+  }
+  return out
+}

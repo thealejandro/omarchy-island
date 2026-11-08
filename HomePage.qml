@@ -2,9 +2,11 @@ import QtQuick
 import qs.Commons
 import qs.Commons as Commons
 
-// The island's first page: now playing next to the month, focus timer
-// underneath, the world clock and a dock of toggles, launchers and the weather along the
-// bottom. Each part can be switched off in the settings.
+// The island's first page, for a glance: now playing next to what's next
+// on the agenda, the newest notifications when the island shows them, the
+// focus timer, and a dock of toggles, launchers and the weather along the
+// bottom. The month and the world clocks have their own pages. Each part
+// can be switched off in the settings.
 Column {
   id: root
 
@@ -57,9 +59,78 @@ Column {
       color: root.lineColor
     }
 
-    CalendarView {
+    TodayCard {
       island: root.island
       width: root.cfg.showMedia ? root.calendarWidth : top.width
+      anchors.verticalCenter: parent.verticalCenter
+    }
+  }
+
+  // The newest notifications still open, when the island shows them. A
+  // click goes to the notifications page.
+  Column {
+    id: recent
+    readonly property var rows: root.island.notify ? root.island.notify.liveRows : []
+    visible: root.island.notificationsLive && rows.length > 0
+    width: parent.width
+    spacing: Style.spacing.xs
+    opacity: root.reveal(1)
+    transform: Translate { y: (1 - root.reveal(1)) * root.rise }
+
+    Repeater {
+      model: recent.rows.slice(0, 2)
+      Rectangle {
+        id: note
+        required property var modelData
+        required property int index
+        width: recent.width
+        height: Style.space(30)
+        radius: Style.space(8)
+        color: Util.alpha(Commons.Color.bar.text, noteMouse.containsMouse ? 0.1 : 0.05)
+        Behavior on color { ColorAnimation { duration: 120 } }
+        Row {
+          anchors.left: parent.left
+          anchors.right: parent.right
+          anchors.leftMargin: Style.spacing.md
+          anchors.rightMargin: Style.spacing.md
+          anchors.verticalCenter: parent.verticalCenter
+          spacing: Style.spacing.md
+          NotificationIcon {
+            anchors.verticalCenter: parent.verticalCenter
+            row: note.modelData
+            size: Style.space(18)
+          }
+          Text {
+            anchors.verticalCenter: parent.verticalCenter
+            width: parent.width - Style.space(18) - more.width - 2 * parent.spacing
+            elide: Text.ElideRight
+            textFormat: Text.PlainText
+            text: (note.modelData.app ? note.modelData.app + "  ·  " : "") + (note.modelData.summary || note.modelData.body)
+            color: note.modelData.urgency === 2 ? Commons.Color.urgent : Commons.Color.bar.text
+            font.family: Style.font.family
+            font.pixelSize: Style.font.bodySmall
+            font.bold: !note.modelData.read
+          }
+          Text {
+            id: more
+            anchors.verticalCenter: parent.verticalCenter
+            visible: note.index === 0 && recent.rows.length > 2
+            width: visible ? implicitWidth : 0
+            text: root.island.tr("nt_more", recent.rows.length - 2)
+            color: Util.alpha(Commons.Color.bar.text, 0.6)
+            font.family: Style.font.family
+            font.pixelSize: Style.font.caption
+            font.bold: true
+          }
+        }
+        MouseArea {
+          id: noteMouse
+          anchors.fill: parent
+          hoverEnabled: true
+          cursorShape: Qt.PointingHandCursor
+          onClicked: root.island.showPage("notifications")
+        }
+      }
     }
   }
 
@@ -78,13 +149,6 @@ Column {
     width: parent.width
     opacity: root.reveal(2)
     transform: Translate { y: (1 - root.reveal(2)) * root.rise }
-  }
-
-  WorldRow {
-    island: root.island
-    width: parent.width
-    opacity: root.reveal(3)
-    transform: Translate { y: (1 - root.reveal(3)) * root.rise }
   }
 
   Dock {
