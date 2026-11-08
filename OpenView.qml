@@ -95,6 +95,10 @@ Column {
         id: loader
         width: parent.width
         active: !root.onHome
+        // Opening straight onto a page (the clock's calendar, the weather's
+        // world) builds it over a few frames while the island grows, not
+        // in the frame the click lands; a tab change while open is at once.
+        asynchronous: !root.shown
         visible: !root.onHome && status === Loader.Ready
         function load() {
           if (!active || !root.sources[root.page]) return

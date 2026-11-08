@@ -65,7 +65,17 @@ PanelWindow {
   // after they're gone (once the closing motion is over), so a closed
   // island holds no pages, cover art or icons. Reopening within that
   // moment reuses them.
+  //
+  // The open view is started in the background as soon as the pointer
+  // reaches the clock (or the world clock or weather beside it), so it's
+  // ready by the time the hover delay is over or the click lands; opening
+  // without the pointer there (IPC, a key) builds it on the spot.
   property bool keepOpen: false
+  function prewarm() {
+    if (keepOpen) return
+    keepOpen = true
+    openRelease.restart()
+  }
   property bool keepPeek: false
   Timer {
     id: openRelease
@@ -188,6 +198,7 @@ PanelWindow {
   readonly property bool sideHovered: worldZone.containsMouse || weatherZone.containsMouse
   onSideHoveredChanged: {
     if (sideHovered) {
+      prewarm()
       enterTimer.stop()
       if (!island.wantsKeyboard) leaveTimer.restart()
     } else if (hover.hovered) {
@@ -257,6 +268,7 @@ PanelWindow {
   HoverHandler {
     id: hover
     onHoveredChanged: {
+      if (hovered) win.prewarm()
       if (hovered && win.sideHovered) {
         // Resting on the world clock or weather: no opening.
       } else if (hovered) {
@@ -395,6 +407,9 @@ PanelWindow {
         Loader {
           id: openLoader
           active: win.keepOpen
+          // Built over several frames while the island is still closed; if
+          // it opens first, the rest is finished at once.
+          asynchronous: win.mode !== "open"
           sourceComponent: Component {
             OpenView {
               id: openItem
