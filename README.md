@@ -51,7 +51,9 @@ as it was.
 - **English and Spanish**: follows `LANG`, or set it in `shell.json`.
 - **Theme-aware**: follows `omarchy theme set` live: colors, font and accent.
   The island keeps rounded corners with concave "ears" that melt into the
-  bar.
+  bar, and a very subtle outline (a little stronger on light themes). A theme
+  can tune it in its `shell.toml`: `[island]` `border`, `border-alpha`,
+  `border-width`.
 - **Light**: no extra process. Media comes from MPRIS (Spotify, browsers,
   mpv…); the only polling is the weather, every 20 minutes.
 

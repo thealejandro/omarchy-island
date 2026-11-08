@@ -13,6 +13,12 @@ Shape {
   property real radius: 0
   property real ear: radius
   property color fillColor: "black"
+  // Colour the body fades to below `fadeLength` px. Matches fillColor unless
+  // the bar is glassy: the island starts with the bar's frosted tint where they
+  // meet and turns more solid further down, so content behind it can't show
+  // through the text.
+  property color fillColorEnd: fillColor
+  property real fadeLength: 40
   // Outline along the sides and bottom only: the top edge stays open so the
   // body still reads as part of the bar. Without it the island disappears on
   // light themes, where the bar colour is close to the wallpaper.
@@ -28,7 +34,12 @@ Shape {
   preferredRendererType: Shape.CurveRenderer
 
   ShapePath {
-    fillColor: shape.fillColor
+    fillGradient: LinearGradient {
+      x1: 0; y1: 0
+      x2: 0; y2: Math.max(1, Math.min(shape.fadeLength, shape.bodyHeight))
+      GradientStop { position: 0; color: shape.fillColor }
+      GradientStop { position: 1; color: shape.fillColorEnd }
+    }
     strokeWidth: -1
     startX: 0; startY: 0
 
