@@ -236,4 +236,15 @@ Column {
     font.family: Style.font.family
     font.pixelSize: Style.font.caption
   }
+
+  // Who made it, small and quiet, at the very end.
+  Text {
+    width: parent.width
+    topPadding: Style.spacing.sm
+    horizontalAlignment: Text.AlignRight
+    text: root.tr("credit", "thealejandro.island" + (root.island.version ? " v" + root.island.version : ""))
+    color: Util.alpha(Commons.Color.bar.text, 0.45)
+    font.family: Style.font.family
+    font.pixelSize: Style.font.caption
+  }
 }

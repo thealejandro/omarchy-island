@@ -190,6 +190,13 @@ Item {
     printErrors: false
     onLoaded: root.omarchyVersion = text().trim()
   }
+  // The island's own version, from its manifest, for the credit line.
+  property string version: ""
+  FileView {
+    path: String(Qt.resolvedUrl("manifest.json")).replace(/^file:\/\//, "")
+    printErrors: false
+    onLoaded: { try { root.version = String(JSON.parse(text()).version || "") } catch (e) { } }
+  }
 
   // The bar's look in shell.json: "opaque", "glassy" or "none". A glassy bar
   // is see-through with Hyprland blurring what is behind it, so the island

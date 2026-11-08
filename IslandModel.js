@@ -176,7 +176,8 @@ var STRINGS = {
     nt_openLink: "Open link",
     nt_close: "Close",
     nt_more: "+%1",
-    nt_recent: "Notifications"
+    nt_recent: "Notifications",
+    credit: "%1 · by thealejandro"
   },
   es: {
     nothingPlaying: "Nada sonando",
@@ -330,7 +331,8 @@ var STRINGS = {
     nt_openLink: "Abrir enlace",
     nt_close: "Cerrar",
     nt_more: "+%1",
-    nt_recent: "Notificaciones"
+    nt_recent: "Notificaciones",
+    credit: "%1 · por thealejandro"
   }
 }
 

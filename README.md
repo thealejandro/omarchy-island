@@ -1,3 +1,12 @@
+<p align="left">
+  <a href="https://thealejandro.dev">
+    <picture>
+      <source media="(prefers-color-scheme: dark)" srcset="docs/marca/logotipo-oscuro.svg">
+      <img src="docs/marca/logotipo-claro.svg" alt="thealejandro" height="32">
+    </picture>
+  </a>
+</p>
+
 # omarchy-island
 
 [Español](README.es.md)
@@ -330,3 +339,7 @@ Ideas and bugs go to the issues. Inspired by
 ## License
 
 MIT
+
+---
+
+Made by [thealejandro](https://thealejandro.dev).
