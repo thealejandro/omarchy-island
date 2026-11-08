@@ -88,7 +88,7 @@ PanelWindow {
   WlrLayershell.layer: WlrLayer.Top
   // Only while a text field in the island is being edited, so the island
   // never takes the keyboard from the window you were typing in.
-  WlrLayershell.keyboardFocus: island.wantsKeyboard && expanded ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
+  WlrLayershell.keyboardFocus: island.wantsKeyboard && expanded ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
 
   // The input region follows the island's *final* size, not the animated
   // one. If it shrank under a still pointer the compositor would send a
