@@ -9,6 +9,8 @@ Column {
 
   required property var island
   property bool shown: false
+  // Room the island has for this view; taller pages scroll.
+  property real maxHeight: 10000
 
   readonly property int calendarWidth: Style.space(196)
   readonly property color lineColor: Util.alpha(Commons.Color.bar.text, 0.2)

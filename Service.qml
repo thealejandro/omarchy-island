@@ -5,6 +5,7 @@ import Quickshell.Hyprland
 import Quickshell.Services.Mpris
 import Quickshell.Services.UPower
 import "IslandModel.js" as IslandModel
+import "IslandGeometry.js" as IslandGeometry
 
 // Headless owner of the island state. One IslandWindow is mounted per screen;
 // they all read media and timer state from here, so two monitors never show
@@ -31,6 +32,13 @@ Item {
   // lives under "plugins", or in the bar layout once the island is put on the
   // bar to hide Omarchy's indicators.
   property var settings: ({})
+  readonly property var barSections: ["left", "centerBegin", "center", "centerEnd", "right", "tray"]
+  // Ids of every widget on the bar, to know whether Omarchy's clock,
+  // elsewhen or weather are there before handing a click to them.
+  property var onBar: []
+  property var elsewhenEntry: null
+  property string jsonPosition: "top"
+  function isOnBar(id) { return onBar.indexOf(id) !== -1 }
   readonly property string lang: IslandModel.language(settings.language || Quickshell.env("LANG"))
   readonly property var locale: Qt.locale(lang === "es" ? "es_ES" : "en_US")
   // The island sits over the bar's clock by default: hovering it opens the
@@ -46,6 +54,27 @@ Item {
   // disabled first (omarchy plugin disable omarchy.osd).
   readonly property bool osdEnabled: String(settings.osd) === "true"
   readonly property bool batteryEnabled: String(settings.battery) !== "false"
+  // Left click on the clock: "pin" the island, open it on the "calendar"
+  // page, or leave it to "omarchy"'s own calendar panel.
+  readonly property string clockClick: ["pin", "calendar", "omarchy"].indexOf(settings.clockClick) !== -1
+    ? settings.clockClick : "pin"
+  // What the island hangs from: Omarchy's "clock", its own bar "widget", or
+  // the "center" of the bar.
+  readonly property string anchorMode: ["clock", "widget", "center"].indexOf(settings.anchor) !== -1
+    ? settings.anchor : "clock"
+  function intSetting(key, fallback, lo, hi) {
+    var n = parseInt(settings[key], 10)
+    return isNaN(n) ? fallback : Math.max(lo, Math.min(hi, n))
+  }
+  readonly property int openWidth: intSetting("openWidth", 560, 420, 800)
+  readonly property int clockWidth: intSetting("clockWidth", 120, 60, 400)
+  readonly property bool hoverOpen: String(settings.hoverOpen) !== "false"
+  readonly property int hoverDelay: intSetting("hoverDelay", 120, 0, 600)
+  // A text field in the island is being edited: the island takes the
+  // keyboard and stays open until it's done.
+  property bool wantsKeyboard: false
+  readonly property string defaultPage: ["home", "calendar", "world"].indexOf(settings.defaultPage) !== -1
+    ? settings.defaultPage : "home"
 
   // The bar's look in shell.json: "opaque", "glassy" or "none". A glassy bar
   // is see-through with Hyprland blurring what is behind it, so the island
@@ -78,17 +107,124 @@ Item {
       try {
         var config = JSON.parse(text())
         var layout = config.bar && config.bar.layout ? config.bar.layout : {}
-        var entries = (config.plugins || []).concat(layout.left || [], layout.center || [], layout.right || [])
+        // Every section the bar draws, the same list as Omarchy's
+        // Util.barSections, plus the "plugins" list for a service-only entry.
+        var entries = (config.plugins || []).slice()
+        var placed = []
+        for (var s = 0; s < root.barSections.length; s++) {
+          var list = Array.isArray(layout[root.barSections[s]]) ? layout[root.barSections[s]] : []
+          entries = entries.concat(list)
+          for (var j = 0; j < list.length; j++) if (list[j] && list[j].id) placed.push(String(list[j].id))
+        }
         var mine = ({})
-        for (var i = 0; i < entries.length; i++)
-          if (entries[i] && entries[i].id === "thealejandro.island") mine = entries[i]
+        var elsewhen = null
+        for (var i = 0; i < entries.length; i++) {
+          if (!entries[i]) continue
+          if (entries[i].id === "thealejandro.island") mine = entries[i]
+          else if (entries[i].id === "omarchy.elsewhen") elsewhen = entries[i]
+        }
         root.settings = mine
+        root.onBar = placed
+        root.elsewhenEntry = elsewhen
         var bar = config.bar || {}
         root.barLook = bar.background || (bar.transparent === true ? "none" : "opaque")
+        root.jsonPosition = String(bar.position || "top")
       } catch (e) {
         console.warn("island: could not read shell.json:", e)
       }
     }
+  }
+
+  // ------------------------------------------------------------- bar & anchors
+
+  // What the host offers, checked once instead of assumed: an Omarchy update
+  // that drops or renames one of these degrades that one feature only.
+  readonly property var caps: ({
+    barState: !!(shell && shell.bar && "position" in shell.bar),
+    persist: !!(shell && typeof shell.updateEntryInline === "function")
+  })
+
+  // Which edge the bar is on, live from the host, or from shell.json.
+  readonly property string barPosition: IslandGeometry.edge(caps.barState ? shell.bar.position : jsonPosition)
+  readonly property bool barVertical: IslandGeometry.isVertical(barPosition)
+  readonly property bool barHidden: caps.barState ? shell.bar.barHidden === true : false
+
+  // The bar's thickness on a screen: the host knows about notch floors and
+  // vertical bars; without it fall back to the theme's sizes.
+  function barSizeFor(screenName, fallback) {
+    if (caps.barState) {
+      var sizes = shell.bar.barSizes
+      var size = sizes && sizes[screenName] ? Number(sizes[screenName]) : Number(shell.bar.barSize)
+      if (size > 0) return size
+    }
+    return fallback
+  }
+
+  // Where to hang from, per screen: { center, length, kind } along the bar,
+  // reported by the island's bar widget (the clock's slot, or its own spot)
+  // or by IPC. "*" is used for screens nobody reported for.
+  property var anchorMap: ({})
+  property var _widgets: []
+
+  function setAnchor(screenName, center, length, kind) {
+    var key = String(screenName || "*")
+    var old = anchorMap[key]
+    var c = Math.round(Number(center)), l = Math.round(Number(length))
+    if (isNaN(c) || isNaN(l) || l <= 0) return false
+    if (old && old.center === c && old.length === l && old.kind === kind) return true
+    var next = ({})
+    for (var k in anchorMap) next[k] = anchorMap[k]
+    next[key] = { center: c, length: l, kind: String(kind || "ipc") }
+    anchorMap = next
+    return true
+  }
+  function clearAnchor(screenName) {
+    var key = String(screenName || "*")
+    if (!anchorMap[key]) return
+    var next = ({})
+    for (var k in anchorMap) if (k !== key) next[k] = anchorMap[k]
+    anchorMap = next
+  }
+  function anchorFor(screenName) {
+    if (anchorMode === "center") return null
+    return anchorMap[screenName] || anchorMap["*"] || null
+  }
+
+  // Bar widgets reach this service through bar.shell.serviceFor(), the
+  // channel Omarchy's own bar hands third-party widgets.
+  function registerWidget(w) {
+    if (!w || _widgets.indexOf(w) !== -1) return
+    _widgets = _widgets.concat([w])
+  }
+  function unregisterWidget(w) {
+    _widgets = _widgets.filter(function(x) { return x !== w })
+  }
+  function refreshAnchors() {
+    for (var i = 0; i < _widgets.length; i++) {
+      try { if (_widgets[i] && typeof _widgets[i].reportAnchor === "function") _widgets[i].reportAnchor() }
+      catch (e) { }
+    }
+  }
+
+  // Left click on the clock. Right and middle stay with Omarchy's clock.
+  // Returns false when the click went to Omarchy's own panel, so the
+  // window can let go of its hover.
+  function clockClicked() {
+    if (clockClick === "omarchy" && isOnBar("omarchy.clock")) {
+      Quickshell.execDetached(["omarchy-shell", "omarchy.clock", "toggle"])
+      return false
+    }
+    pinned = !pinned
+    if (pinned && clockClick === "calendar") page = "calendar"
+    return true
+  }
+
+  // Which page of the open island is showing. Goes back to the default one
+  // every time the island closes.
+  property string page: defaultPage
+  function islandClosed() {
+    wantsKeyboard = false
+    page = defaultPage
   }
 
   // ------------------------------------------------------------- media
@@ -406,6 +542,13 @@ Item {
         battery: root.batteryLevel, charging: root.charging })
     }
     function ping(): string { return "ok" }
+    // Where to hang from on a screen, along the bar, for bars that can't
+    // reach the service directly. A length of 0 forgets it.
+    function anchor(screen: string, center: int, length: int): string {
+      if (length <= 0) { root.clearAnchor(screen); return "ok" }
+      return root.setAnchor(screen, center, length, "ipc") ? "ok" : "invalid"
+    }
+    function anchors(): string { return JSON.stringify({ position: root.barPosition, anchors: root.anchorMap }) }
   }
 
   Variants {

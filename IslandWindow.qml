@@ -3,56 +3,99 @@ import Quickshell
 import Quickshell.Wayland
 import qs.Commons
 import qs.Commons as Commons
+import "IslandGeometry.js" as IslandGeometry
 
-// One full-width strip per screen, just tall enough for the open island. The
-// surface itself is transparent and its input region is only a few hot zones
-// while closed, so it never steals clicks from the bar or from windows.
+// One strip per screen along the bar's edge, just deep enough for the open
+// island. The surface itself is transparent and its input region is only a
+// few hot zones while closed, so it never steals clicks from the bar or from
+// windows.
+//
+// Everything is laid out in "along" (with the bar) and "across" (depth from
+// the screen edge) terms, so a bar at the bottom or on a side gets the same
+// island hanging from it, pointing into the screen.
 PanelWindow {
   id: win
 
   required property var island
 
-  readonly property int barSize: Style.bar.sizeHorizontal
+  readonly property string edge: island.barPosition
+  readonly property bool vertical: IslandGeometry.isVertical(edge)
+  readonly property string screenName: screen ? String(screen.name || "") : ""
+  readonly property int barSize: island.barHidden ? 0
+    : island.barSizeFor(screenName, vertical ? Style.bar.sizeVertical : Style.bar.sizeHorizontal)
   readonly property int pad: Style.spacing.xxxl
   // An island needs soft corners to read as one; sharp themes still get
   // their square bar, the island just rounds off below it.
   readonly property int radius: Math.max(Style.cornerRadius, Style.space(18))
   readonly property int ear: Style.space(10)
-  readonly property int openWidth: Style.space(560)
+  readonly property int openWidth: Style.space(island.openWidth)
+  // How far into the screen the window reaches; the open island is capped
+  // to it.
+  readonly property int maxDepth: vertical ? openWidth + Style.space(24)
+    : Math.max(Style.space(300), Math.min(Style.space(640), (screen ? screen.height : 1080) - barSize - Style.space(60)))
+  readonly property real screenLength: vertical ? height : width
 
-  // Hot zones: throwing the pointer at the top edge over the bar's center
-  // (the notch gesture), resting it on the clock, or just under the bar.
-  readonly property int edgeHeight: 2
-  readonly property int edgeWidth: Style.space(220)
-  readonly property int stripHeight: Style.space(8)
-  readonly property int stripWidth: Style.space(320)
-  // The bar's clock is its center anchor, so it sits right in the middle.
-  readonly property int clockWidth: Style.space(120)
+  // Hot zones: throwing the pointer at the screen edge over the clock (the
+  // notch gesture), resting it on the clock, or just past the bar.
+  readonly property bool hotZones: island.hoverOpen && !island.barHidden
+  readonly property int edgeThickness: 2
+  readonly property int stripDepth: Style.space(8)
+  readonly property int stripLength: Style.space(320)
+
+  // Where the clock is along the bar, as the island's bar widget found it;
+  // the middle of the bar when nothing was reported.
+  readonly property var anchorInfo: island.anchorFor(screenName)
+  readonly property real clockCenter: anchorInfo ? anchorInfo.center : screenLength / 2
+  readonly property real clockLength: anchorInfo ? anchorInfo.length : Style.space(island.clockWidth)
 
   property bool hovered: false
   readonly property bool expanded: hovered || island.pinned
   readonly property bool peeking: !expanded && island.peeking
   readonly property string mode: expanded ? "open" : (peeking ? "peek" : "closed")
+  onModeChanged: if (mode === "closed") island.islandClosed()
 
   readonly property Item activeView: mode === "open" ? openView : (mode === "peek" ? peekView : null)
   readonly property real targetWidth: !activeView ? 0
     : (mode === "open" ? openWidth : Math.min(openWidth, activeView.implicitWidth + 2 * Style.spacing.xxl))
   readonly property real targetHeight: !activeView ? 0
-    : activeView.implicitHeight + 2 * (mode === "open" ? pad : Style.spacing.lg)
+    : Math.min(vertical ? height - Style.space(40) : maxDepth,
+      activeView.implicitHeight + 2 * (mode === "open" ? pad : Style.spacing.lg))
+  readonly property real targetAlong: vertical ? targetHeight : targetWidth
+  readonly property real targetAcross: vertical ? targetWidth : targetHeight
 
-  anchors { top: true; left: true; right: true }
-  implicitHeight: barSize + Style.space(400)
+  // The body centers on the clock but never runs off the screen; it glides
+  // when a page change resizes it next to a screen corner.
+  readonly property real wantedCenter: IslandGeometry.clampCenter(clockCenter,
+    Math.max(targetAlong, vertical ? 0 : openWidth) + 2 * ear, screenLength, Style.space(8))
+  property real bodyCenter: wantedCenter
+  Behavior on bodyCenter { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+
+  function place(alongStart, alongLen, acrossFrom, acrossLen) {
+    return IslandGeometry.rect(edge, width, height, alongStart, alongLen, acrossFrom, acrossLen)
+  }
+
+  anchors {
+    top: win.edge === "top" || win.vertical
+    bottom: win.edge === "bottom" || win.vertical
+    left: win.edge === "left" || !win.vertical
+    right: win.edge === "right" || !win.vertical
+  }
+  implicitHeight: vertical ? 0 : barSize + maxDepth
+  implicitWidth: vertical ? barSize + maxDepth : 0
   color: "transparent"
   exclusionMode: ExclusionMode.Ignore
   WlrLayershell.namespace: "omarchy-island"
   WlrLayershell.layer: WlrLayer.Top
-  WlrLayershell.keyboardFocus: WlrKeyboardFocus.None
+  // Only while a text field in the island is being edited, so the island
+  // never takes the keyboard from the window you were typing in.
+  WlrLayershell.keyboardFocus: island.wantsKeyboard && expanded ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None
 
   // The input region follows the island's *final* size, not the animated
-  // one, and always keeps the hot zones and the bar column above the island.
-  // If it shrank under a still pointer the compositor would send a leave
-  // without a matching enter, which is what made the first version snap shut
-  // a second after opening.
+  // one. If it shrank under a still pointer the compositor would send a
+  // leave without a matching enter, which is what made the first version
+  // snap shut a second after opening. Over the bar only the clock is
+  // covered, so its neighbours (world clock, weather...) stay clickable
+  // with the island open.
   mask: Region {
     Region { item: edgeZone }
     Region { item: stripZone }
@@ -62,27 +105,27 @@ PanelWindow {
 
   Item {
     id: edgeZone
-    x: Math.round((win.width - width) / 2)
-    width: win.edgeWidth
-    height: win.edgeHeight
+    readonly property real len: win.hotZones && win.island.overClock ? win.clockLength + Style.space(100) : 0
+    readonly property var r: win.place(win.clockCenter - len / 2, len, 0, len > 0 ? win.edgeThickness : 0)
+    x: r.x; y: r.y; width: r.width; height: r.height
   }
 
   Item {
     id: stripZone
-    x: Math.round((win.width - width) / 2)
-    y: win.barSize
-    width: win.stripWidth
-    height: win.stripHeight
+    readonly property real len: win.hotZones ? win.stripLength : 0
+    readonly property var r: win.place(win.clockCenter - len / 2, len, win.barSize, len > 0 ? win.stripDepth : 0)
+    x: r.x; y: r.y; width: r.width; height: r.height
   }
 
   // Covers the clock so hovering it opens the island. Clicks that would have
-  // reached the clock are handled here: left pins the island (its calendar
-  // stands in for Omarchy's), right and middle are passed on to the clock.
+  // reached the clock are handled here: left goes to the island (pin, the
+  // calendar page, or Omarchy's own panel, as set), right and middle are
+  // passed on to the clock.
   MouseArea {
     id: clockZone
-    x: Math.round((win.width - width) / 2)
-    width: win.island.overClock ? win.clockWidth : 0
-    height: win.barSize
+    readonly property real len: win.island.overClock && win.barSize > 0 ? win.clockLength : 0
+    readonly property var r: win.place(win.clockCenter - len / 2, len, 0, len > 0 ? win.barSize : 0)
+    x: r.x; y: r.y; width: r.width; height: r.height
     acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
     cursorShape: Qt.PointingHandCursor
     onPressed: (mouse) => {
@@ -91,8 +134,10 @@ PanelWindow {
       else if (mouse.button === Qt.MiddleButton)
         Quickshell.execDetached(["omarchy-menu-timezone"])
       else {
-        win.island.pinned = !win.island.pinned
-        if (win.island.pinned) {
+        if (!win.island.clockClicked()) {
+          enterTimer.stop()
+          win.hovered = false
+        } else if (win.island.pinned) {
           enterTimer.stop()
           win.hovered = true
         }
@@ -100,20 +145,21 @@ PanelWindow {
     }
   }
 
+  // Only the island itself, from the bar's inner edge inwards.
   Item {
     id: islandZone
     readonly property bool active: win.mode !== "closed"
-    x: Math.round((win.width - width) / 2)
-    width: active ? Math.ceil(win.targetWidth) + 2 * win.ear : 0
-    height: active ? win.barSize + Math.ceil(win.targetHeight) : 0
+    readonly property real len: active ? Math.ceil(win.targetAlong) + 2 * win.ear : 0
+    readonly property var r: win.place(win.bodyCenter - len / 2, len, win.barSize, active ? Math.ceil(win.targetAcross) : 0)
+    x: r.x; y: r.y; width: r.width; height: r.height
   }
 
-  // A short dwell before opening, so sweeping across the top of the screen
-  // doesn't flash the island; leaving gets a grace period so brushing the
-  // edge while reaching for a control doesn't snap it shut.
+  // A short dwell before opening, so sweeping across the bar doesn't flash
+  // the island; leaving gets a grace period so brushing the edge while
+  // reaching for a control doesn't snap it shut.
   Timer {
     id: enterTimer
-    interval: 120
+    interval: win.island.hoverDelay
     onTriggered: win.hovered = true
   }
   Timer {
@@ -126,24 +172,26 @@ PanelWindow {
     onHoveredChanged: {
       if (hovered) {
         leaveTimer.stop()
+        win.island.refreshAnchors()
         if (win.peeking) win.hovered = true
         else enterTimer.restart()
       } else {
         enterTimer.stop()
-        leaveTimer.restart()
+        // A text field being edited keeps the island up.
+        if (!win.island.wantsKeyboard) leaveTimer.restart()
       }
     }
   }
 
   Item {
     id: body
-    y: win.barSize
-    width: Math.max(0, Math.ceil(bodyWidth))
-    height: Math.max(0, Math.ceil(bodyHeight))
-    x: Math.round((win.width - width) / 2)
 
     property real bodyWidth: win.targetWidth
     property real bodyHeight: win.targetHeight
+    readonly property real along: Math.max(0, win.vertical ? bodyHeight : bodyWidth)
+    readonly property real across: Math.max(0, win.vertical ? bodyWidth : bodyHeight)
+    readonly property var r: win.place(win.bodyCenter - Math.ceil(along) / 2, Math.ceil(along), win.barSize, Math.ceil(across))
+    x: r.x; y: r.y; width: r.width; height: r.height
 
     // Springs rather than timed curves: they keep their velocity when the
     // target changes mid-flight, so a quick in-and-out of the pointer bends
@@ -169,10 +217,10 @@ PanelWindow {
     }
 
     IslandShape {
-      x: -win.ear
+      edge: win.edge
       // A spring can dip just below zero while closing.
-      bodyWidth: Math.max(0, body.bodyWidth)
-      bodyHeight: Math.max(0, body.bodyHeight)
+      bodyWidth: body.along
+      bodyHeight: body.across
       radius: win.radius
       ear: win.ear
       // Same tint as the bar where they meet: Omarchy's glassy bar draws its
@@ -180,7 +228,7 @@ PanelWindow {
       readonly property color bg: Commons.Color.bar.background
       fillColor: win.island.glassy ? Qt.rgba(bg.r, bg.g, bg.b, Math.min(bg.a, 0.35)) : bg
       fillColorEnd: win.island.glassy ? Qt.rgba(bg.r, bg.g, bg.b, Math.min(bg.a, 0.88)) : bg
-      fadeLength: win.barSize
+      fadeLength: Math.max(win.barSize, Style.space(26))
       // Very subtle, and a bit stronger on light bars, where the island would
       // otherwise vanish into the wallpaper. Themes can set it in shell.toml:
       // [island] border = "<color>", border-alpha = 0..1, border-width = px.
@@ -194,39 +242,54 @@ PanelWindow {
       anchors.fill: parent
       clip: true
 
-      PeekView {
-        id: peekView
-        island: win.island
-        x: Style.spacing.xxl
-        y: Style.spacing.lg
-        width: Math.max(0, body.width - 2 * Style.spacing.xxl)
-        // Drops in from the bar as the body grows; when the island opens
-        // further it shrinks back into the content instead of just vanishing.
-        readonly property bool shown: win.mode === "peek"
-        opacity: shown ? 1 : 0
-        visible: opacity > 0
-        transformOrigin: Item.Top
-        scale: shown ? 1 : (win.mode === "open" ? 0.9 : 0.96)
-        transform: Translate {
-          y: peekView.shown ? 0 : -Style.space(6)
-          Behavior on y { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
-        }
-        Behavior on opacity { NumberAnimation { duration: peekView.shown ? 220 : 140; easing.type: Easing.OutCubic } }
-        Behavior on scale { NumberAnimation { duration: 260; easing.type: Easing.OutBack; easing.overshoot: 1.2 } }
-      }
+      // The content keeps its final size and stays pinned to the bar side,
+      // so it is uncovered from the bar outwards as the body grows.
+      Item {
+        id: inner
+        width: Math.max(body.width, win.targetWidth)
+        height: Math.max(body.height, win.targetHeight)
+        x: win.edge === "right" ? body.width - width : 0
+        y: win.edge === "bottom" ? body.height - height : 0
 
-      OpenView {
-        id: openView
-        island: win.island
-        x: win.pad
-        y: win.pad
-        width: win.openWidth - 2 * win.pad
-        // Sections come in one after another once the body is about half
-        // grown, and everything goes at once on the way out.
-        shown: win.mode === "open" && body.bodyHeight > win.targetHeight * 0.45
-        opacity: shown ? 1 : 0
-        visible: opacity > 0
-        Behavior on opacity { NumberAnimation { duration: openView.shown ? 80 : 140 } }
+        PeekView {
+          id: peekView
+          island: win.island
+          x: Style.spacing.xxl
+          y: win.edge === "bottom" ? inner.height - height - Style.spacing.lg : Style.spacing.lg
+          width: Math.max(0, body.width - 2 * Style.spacing.xxl)
+          // Drops in from the bar as the body grows; when the island opens
+          // further it shrinks back into the content instead of just vanishing.
+          readonly property bool shown: win.mode === "peek"
+          readonly property real drop: shown ? 0 : Style.space(6)
+          opacity: shown ? 1 : 0
+          visible: opacity > 0
+          transformOrigin: win.edge === "bottom" ? Item.Bottom : (win.edge === "left" ? Item.Left
+            : (win.edge === "right" ? Item.Right : Item.Top))
+          scale: shown ? 1 : (win.mode === "open" ? 0.9 : 0.96)
+          transform: Translate {
+            x: win.edge === "left" ? -peekView.drop : (win.edge === "right" ? peekView.drop : 0)
+            y: win.edge === "top" ? -peekView.drop : (win.edge === "bottom" ? peekView.drop : 0)
+            Behavior on x { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
+            Behavior on y { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
+          }
+          Behavior on opacity { NumberAnimation { duration: peekView.shown ? 220 : 140; easing.type: Easing.OutCubic } }
+          Behavior on scale { NumberAnimation { duration: 260; easing.type: Easing.OutBack; easing.overshoot: 1.2 } }
+        }
+
+        OpenView {
+          id: openView
+          island: win.island
+          x: win.pad
+          y: win.edge === "bottom" ? inner.height - win.targetHeight + win.pad : win.pad
+          width: win.openWidth - 2 * win.pad
+          maxHeight: (win.vertical ? win.height - Style.space(40) : win.maxDepth) - 2 * win.pad
+          // Sections come in one after another once the body is about half
+          // grown, and everything goes at once on the way out.
+          shown: win.mode === "open" && (win.vertical ? body.bodyWidth : body.bodyHeight) > win.targetAcross * 0.45
+          opacity: shown ? 1 : 0
+          visible: opacity > 0
+          Behavior on opacity { NumberAnimation { duration: openView.shown ? 80 : 140 } }
+        }
       }
     }
   }
