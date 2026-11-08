@@ -29,13 +29,14 @@
       "openWidth": 560,
       "blur": true,
       "clock": true,
-      "clockClick": "pin",
+      "clockClick": "calendar",
       "anchor": "clock",
       "clockWidth": 120,
       "hoverOpen": true,
       "hoverDelay": 120,
       "peekDuration": 3500,
       "toggles": "island",
+      "barClicks": true,
       "widgetIcon": false,
       "units": "metric",
       "forecast": true,
@@ -132,7 +133,7 @@
           "calendar",
           "omarchy"
         ],
-        "defaultValue": "pin"
+        "defaultValue": "calendar"
       },
       {
         "key": "anchor",
@@ -194,6 +195,12 @@
           "bar"
         ],
         "defaultValue": "island"
+      },
+      {
+        "key": "barClicks",
+        "type": "boolean",
+        "label": "Clock, world clock and weather open the island",
+        "defaultValue": true
       },
       {
         "key": "widgetIcon",

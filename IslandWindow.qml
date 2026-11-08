@@ -129,6 +129,8 @@ PanelWindow {
     Region { item: edgeZone }
     Region { item: stripZone }
     Region { item: clockZone }
+    Region { item: worldZone }
+    Region { item: weatherZone }
     Region { item: islandZone }
   }
 
@@ -174,6 +176,61 @@ PanelWindow {
     }
   }
 
+  // Omarchy's world clock and weather beside the clock (barClicks): a left
+  // click opens the island's World page, a middle click still opens their
+  // own popup, and a right click does what it does on Omarchy's widget.
+  // Hovering them doesn't open the island.
+  readonly property var sideZones: island.sideZonesFor(screenName)
+  function sideZone(id) {
+    for (var i = 0; i < sideZones.length; i++) if (sideZones[i].id === id) return sideZones[i]
+    return null
+  }
+  readonly property bool sideHovered: worldZone.containsMouse || weatherZone.containsMouse
+  onSideHoveredChanged: {
+    if (sideHovered) {
+      enterTimer.stop()
+      if (!island.wantsKeyboard) leaveTimer.restart()
+    } else if (hover.hovered) {
+      leaveTimer.stop()
+      if (!expanded) enterTimer.restart()
+    }
+  }
+
+  component SideZone: MouseArea {
+    id: zone
+    property string widgetId: ""
+    readonly property var info: win.barSize > 0 ? win.sideZone(widgetId) : null
+    readonly property real len: info ? info.length : 0
+    readonly property var r: win.place((info ? info.center : 0) - len / 2, len, 0, len > 0 ? win.barSize : 0)
+    signal secondary(int button)
+    x: r.x; y: r.y; width: r.width; height: r.height
+    hoverEnabled: true
+    acceptedButtons: Qt.LeftButton | Qt.RightButton | Qt.MiddleButton
+    cursorShape: Qt.PointingHandCursor
+    onPressed: (mouse) => {
+      if (mouse.button === Qt.MiddleButton) {
+        Quickshell.execDetached(["omarchy-shell", zone.widgetId, "toggle"])
+      } else if (mouse.button === Qt.RightButton) {
+        zone.secondary(mouse.button)
+      } else if (zone.info) {
+        enterTimer.stop()
+        win.island.openOn(zone.info.page)
+        win.hovered = win.island.pinned
+      }
+    }
+  }
+
+  SideZone {
+    id: worldZone
+    widgetId: "omarchy.elsewhen"
+    onSecondary: Quickshell.execDetached(["omarchy-shell", "omarchy.elsewhen", "refresh"])
+  }
+  SideZone {
+    id: weatherZone
+    widgetId: "omarchy.weather"
+    onSecondary: Quickshell.execDetached(["sh", "-c", "omarchy-notification-send \"$(omarchy-weather-status)\""])
+  }
+
   // Only the island itself, from the bar's inner edge inwards.
   Item {
     id: islandZone
@@ -198,8 +255,11 @@ PanelWindow {
   }
 
   HoverHandler {
+    id: hover
     onHoveredChanged: {
-      if (hovered) {
+      if (hovered && win.sideHovered) {
+        // Resting on the world clock or weather: no opening.
+      } else if (hovered) {
         leaveTimer.stop()
         win.island.refreshAnchors()
         if (win.peeking) {

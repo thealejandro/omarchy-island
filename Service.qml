@@ -349,9 +349,39 @@ Item {
       Quickshell.execDetached(["omarchy-shell", "omarchy.clock", "toggle"])
       return false
     }
+    if (clockClick === "calendar") return openOn("calendar")
     pinned = !pinned
-    if (pinned && clockClick === "calendar") page = "calendar"
     return true
+  }
+
+  // Opens the island on `name`, or closes it if it's already up there.
+  function openOn(name) {
+    if (pinned && page === name) { pinned = false; return true }
+    pinned = true
+    showPage(name)
+    return true
+  }
+
+  // Omarchy's world clock and weather next to the clock: where they sit on
+  // each screen's bar, as the island's bar widget found them, so a left
+  // click on them opens the island's World page instead of their popups.
+  readonly property bool barClicks: cfg.barClicks
+  readonly property var sideWidgets: [
+    { id: "omarchy.elsewhen", page: "world" },
+    { id: "omarchy.weather", page: "world" }
+  ]
+  property var sideMap: ({})
+  function setSideZones(screenName, zones) {
+    var key = String(screenName || "*")
+    var next = ({})
+    for (var k in sideMap) next[k] = sideMap[k]
+    if (JSON.stringify(next[key] || []) === JSON.stringify(zones || [])) return
+    next[key] = zones || []
+    sideMap = next
+  }
+  function sideZonesFor(screenName) {
+    if (!barClicks) return []
+    return sideMap[screenName] || sideMap["*"] || []
   }
 
   // Which page of the open island is showing. Goes back to the default one
@@ -1066,7 +1096,7 @@ Item {
     function events(date: string): string {
       return JSON.stringify(root.eventsOn(date || AgendaModel.isoDate(new Date())))
     }
-    function anchors(): string { return JSON.stringify({ position: root.barPosition, anchors: root.anchorMap }) }
+    function anchors(): string { return JSON.stringify({ position: root.barPosition, anchors: root.anchorMap, sides: root.sideMap }) }
   }
 
   Variants {

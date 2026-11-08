@@ -24,7 +24,7 @@ var SCHEMA = [
   { key: "animations", type: "bool", def: true, section: "look" },
 
   { key: "clock", type: "bool", def: true, section: "open" },
-  { key: "clockClick", type: "enum", options: ["pin", "calendar", "omarchy"], def: "pin", section: "open" },
+  { key: "clockClick", type: "enum", options: ["pin", "calendar", "omarchy"], def: "calendar", section: "open" },
   { key: "anchor", type: "enum", options: ["clock", "widget", "center"], def: "clock", section: "open" },
   { key: "clockWidth", type: "int", min: 60, max: 400, step: 10, def: 120, section: "open" },
   { key: "hoverOpen", type: "bool", def: true, section: "open" },
@@ -32,6 +32,7 @@ var SCHEMA = [
   { key: "peekDuration", type: "int", min: 1000, max: 10000, step: 500, def: 3500, section: "open" },
 
   { key: "toggles", type: "enum", options: ["island", "both", "bar"], def: "island", section: "bar" },
+  { key: "barClicks", type: "bool", def: true, section: "bar" },
   { key: "widgetIcon", type: "bool", def: false, section: "bar" },
 
   { key: "units", type: "enum", options: ["metric", "imperial"], def: "metric", section: "world" },
