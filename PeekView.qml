@@ -11,13 +11,14 @@ Row {
 
   required property var island
 
-  // "osd" | "battery" | "timer" | "media"
+  // "osd" | "battery" | "agenda" | "timer" | "media"
   readonly property string kind: island.peekReason === "osd" && island.osd ? "osd"
+    : island.peekReason === "agenda" && island.agendaNote ? "agenda"
     : island.peekReason === "battery" && island.hasBattery ? "battery"
     : island.peekReason === "timer" || (!island.hasMedia && island.timerActive) ? "timer"
     : "media"
   readonly property bool showTimer: kind === "timer"
-  readonly property bool indicator: kind === "osd" || kind === "battery"
+  readonly property bool indicator: kind === "osd" || kind === "battery" || kind === "agenda"
   readonly property bool showBar: kind === "osd" ? island.osd.hasProgress : kind === "battery"
   readonly property real level: kind === "osd" ? island.osd.progress
     : kind === "battery" ? island.batteryLevel / 100 : 0
@@ -48,6 +49,7 @@ Row {
       visible: root.kind !== "media" || root.island.artUrl === ""
       text: root.kind === "osd" ? root.island.osd.icon
         : root.kind === "battery" ? IslandModel.batteryIcon(root.island.batteryLevel, root.island.charging)
+        : root.kind === "agenda" ? "󰃰"
         : root.showTimer ? "󰔛" : "󰝚"
       color: root.batteryLow ? Commons.Color.urgent : Commons.Color.accent
       font.family: Style.font.family
@@ -83,6 +85,8 @@ Row {
     textFormat: Text.PlainText
     text: root.kind === "osd" ? (root.island.osd.hasProgress ? root.island.osd.label : root.island.osd.message)
       : root.kind === "battery" ? root.island.tr(root.island.batteryNote) + "  " + root.island.batteryLevel + "%"
+      : root.kind === "agenda" ? root.island.agendaNote.title + "  ·  " + (root.island.agendaNote.minutes > 0
+        ? root.island.tr("eventIn", root.island.agendaNote.minutes) : root.island.tr("eventNow"))
       : root.showTimer ? root.island.tr(root.island.timerPhase) + "  " + IslandModel.clock(root.island.timerRemaining)
       : root.island.title + (root.island.artist ? "  ·  " + root.island.artist : "")
     color: Commons.Color.bar.text

@@ -2,9 +2,9 @@
   "schemaVersion": 1,
   "id": "thealejandro.island",
   "name": "Island",
-  "version": "0.4.0",
+  "version": "0.5.0",
   "author": "thealejandro",
-  "description": "A dynamic island for the Omarchy bar: now playing with media controls and a seek bar, a month calendar, a pomodoro focus timer, the weather, quick actions and Omarchy's quick toggles. Can take over Omarchy's volume and brightness OSD, peeks on track changes, charging and low battery, and follows your theme live.",
+  "description": "A dynamic island for the Omarchy bar, on any edge and hanging from the clock: now playing with media controls, a calendar with a local agenda and reminders, world time and a 3-day forecast, a pomodoro focus timer, quick actions and Omarchy quick toggles, with a visual settings page. Can take over Omarchy volume and brightness OSD, peeks on track changes, events, charging and low battery, and follows your theme live.",
   "kinds": [
     "service",
     "bar-widget"
@@ -16,8 +16,238 @@
   },
   "barWidget": {
     "displayName": "Island",
-    "description": "Hides Omarchy's inactive indicators from the bar while the island carries them",
+    "description": "Lets the island hang from the clock and hides Omarchy inactive indicators while the island carries them",
     "category": "System",
-    "allowMultiple": false
+    "allowMultiple": false,
+    "defaults": {
+      "defaultPage": "home",
+      "calendarFirst": false,
+      "showMedia": true,
+      "showTimer": true,
+      "showDock": true,
+      "showWorld": true,
+      "openWidth": 560,
+      "blur": true,
+      "clock": true,
+      "clockClick": "pin",
+      "anchor": "clock",
+      "clockWidth": 120,
+      "hoverOpen": true,
+      "hoverDelay": 120,
+      "peekDuration": 3500,
+      "toggles": "island",
+      "widgetIcon": false,
+      "units": "metric",
+      "forecast": true,
+      "reminderLead": 10,
+      "agendaCommand": "",
+      "osd": false,
+      "battery": true
+    },
+    "schema": [
+      {
+        "key": "language",
+        "type": "enum",
+        "label": "Language",
+        "options": [
+          "en",
+          "es"
+        ]
+      },
+      {
+        "key": "defaultPage",
+        "type": "enum",
+        "label": "Opens on",
+        "options": [
+          "home",
+          "calendar",
+          "world"
+        ],
+        "defaultValue": "home"
+      },
+      {
+        "key": "calendarFirst",
+        "type": "boolean",
+        "label": "Calendar first on Home",
+        "defaultValue": false
+      },
+      {
+        "key": "showMedia",
+        "type": "boolean",
+        "label": "Now playing",
+        "defaultValue": true
+      },
+      {
+        "key": "showTimer",
+        "type": "boolean",
+        "label": "Focus timer",
+        "defaultValue": true
+      },
+      {
+        "key": "showDock",
+        "type": "boolean",
+        "label": "Toggles and launchers",
+        "defaultValue": true
+      },
+      {
+        "key": "showWorld",
+        "type": "boolean",
+        "label": "World clock row",
+        "defaultValue": true
+      },
+      {
+        "key": "openWidth",
+        "type": "integer",
+        "label": "Width",
+        "min": 420,
+        "max": 800,
+        "step": 20,
+        "defaultValue": 560
+      },
+      {
+        "key": "blur",
+        "type": "boolean",
+        "label": "Blur behind a glassy bar",
+        "defaultValue": true
+      },
+      {
+        "key": "clock",
+        "type": "boolean",
+        "label": "Open by hovering the clock",
+        "defaultValue": true
+      },
+      {
+        "key": "clockClick",
+        "type": "enum",
+        "label": "Clicking the clock",
+        "options": [
+          "pin",
+          "calendar",
+          "omarchy"
+        ],
+        "defaultValue": "pin"
+      },
+      {
+        "key": "anchor",
+        "type": "enum",
+        "label": "Hang from",
+        "options": [
+          "clock",
+          "widget",
+          "center"
+        ],
+        "defaultValue": "clock"
+      },
+      {
+        "key": "clockWidth",
+        "type": "integer",
+        "label": "Clock zone when not found",
+        "min": 60,
+        "max": 400,
+        "step": 10,
+        "defaultValue": 120
+      },
+      {
+        "key": "hoverOpen",
+        "type": "boolean",
+        "label": "Open on hover",
+        "defaultValue": true
+      },
+      {
+        "key": "hoverDelay",
+        "type": "integer",
+        "label": "Hover delay",
+        "min": 0,
+        "max": 600,
+        "step": 20,
+        "defaultValue": 120
+      },
+      {
+        "key": "peekDuration",
+        "type": "integer",
+        "label": "Glance duration",
+        "min": 1000,
+        "max": 10000,
+        "step": 500,
+        "defaultValue": 3500
+      },
+      {
+        "key": "toggles",
+        "type": "enum",
+        "label": "Quick toggles",
+        "options": [
+          "island",
+          "both",
+          "bar"
+        ],
+        "defaultValue": "island"
+      },
+      {
+        "key": "widgetIcon",
+        "type": "boolean",
+        "label": "Island button on the bar",
+        "defaultValue": false
+      },
+      {
+        "key": "units",
+        "type": "enum",
+        "label": "Units",
+        "options": [
+          "metric",
+          "imperial"
+        ],
+        "defaultValue": "metric"
+      },
+      {
+        "key": "forecast",
+        "type": "boolean",
+        "label": "3-day forecast",
+        "defaultValue": true
+      },
+      {
+        "key": "hour24",
+        "type": "boolean",
+        "label": "Clock format"
+      },
+      {
+        "key": "cities",
+        "type": "string",
+        "label": "Cities (Name|Zone, …)"
+      },
+      {
+        "key": "weekStart",
+        "type": "integer",
+        "label": "Week starts on",
+        "min": 1,
+        "max": 7
+      },
+      {
+        "key": "reminderLead",
+        "type": "integer",
+        "label": "Remind me before",
+        "min": 0,
+        "max": 120,
+        "step": 5,
+        "defaultValue": 10
+      },
+      {
+        "key": "agendaCommand",
+        "type": "string",
+        "label": "External agenda command",
+        "defaultValue": ""
+      },
+      {
+        "key": "osd",
+        "type": "boolean",
+        "label": "Show Omarchy's OSD here",
+        "defaultValue": false
+      },
+      {
+        "key": "battery",
+        "type": "boolean",
+        "label": "Battery glances",
+        "defaultValue": true
+      }
+    ]
   }
 }

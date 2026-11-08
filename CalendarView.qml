@@ -2,6 +2,7 @@ import QtQuick
 import qs.Commons
 import qs.Commons as Commons
 import "IslandModel.js" as IslandModel
+import "AgendaModel.js" as AgendaModel
 
 // Month at a glance. Arrows or the scroll wheel page through months; the
 // header (or "today") jumps back to the current one.
@@ -14,6 +15,19 @@ Column {
   readonly property color textColor: Commons.Color.bar.text
   readonly property color dimColor: Util.alpha(Commons.Color.bar.text, 0.72)
   readonly property int cell: Math.floor(width / 7)
+  // The calendar page's version: taller rows and a day you can pick. On the
+  // home page a click on a day opens that page on it.
+  property bool large: false
+  readonly property int rowHeight: Style.space(large ? 32 : 24)
+  readonly property int firstDow: island.cfg.weekStart !== null ? island.cfg.weekStart
+    : (locale.firstDayOfWeek === 0 ? 7 : locale.firstDayOfWeek)
+  readonly property string selected: island.calendarDay !== "" ? island.calendarDay : AgendaModel.isoDate(today)
+  readonly property var dots: AgendaModel.dotsForGrid(island.allEvents, year, month, firstDow)
+
+  function pick(iso) {
+    island.calendarDay = iso
+    if (!large) island.page = "calendar"
+  }
 
   property date today: new Date()
   property int year: today.getFullYear()
@@ -48,7 +62,19 @@ Column {
 
   // Keep "today" right across midnight and snap back to it each time the
   // island opens.
-  onVisibleChanged: if (visible) goToday()
+  onVisibleChanged: if (visible) showStart()
+  Component.onCompleted: showStart()
+  Connections {
+    target: root.island
+    function onCalendarDayChanged() { if (root.large && root.island.calendarDay !== "") root.showStart() }
+  }
+  // The calendar page opens on the day picked from the home page.
+  function showStart() {
+    var d = large && island.calendarDay !== "" ? AgendaModel.parseDate(island.calendarDay) : null
+    if (!d) { goToday(); return }
+    year = d.getFullYear()
+    month = d.getMonth()
+  }
   Timer {
     interval: 60 * 1000
     repeat: true
@@ -77,7 +103,7 @@ Column {
       MouseArea {
         anchors.fill: parent
         cursorShape: root.onCurrentMonth ? Qt.ArrowCursor : Qt.PointingHandCursor
-        onClicked: root.goToday()
+        onClicked: { root.island.calendarDay = ""; root.goToday() }
       }
     }
     Row {
@@ -94,7 +120,7 @@ Column {
     transform: Translate { id: daysShift }
 
     Repeater {
-      model: IslandModel.weekdayOrder(root.locale.firstDayOfWeek === 0 ? 7 : root.locale.firstDayOfWeek)
+      model: IslandModel.weekdayOrder(root.firstDow)
       Text {
         required property int modelData
         width: root.cell
@@ -109,20 +135,41 @@ Column {
     }
 
     Repeater {
-      model: IslandModel.monthGrid(root.year, root.month,
-        root.locale.firstDayOfWeek === 0 ? 7 : root.locale.firstDayOfWeek, root.today)
+      model: IslandModel.monthGrid(root.year, root.month, root.firstDow, root.today)
       Item {
+        id: dayCell
         required property var modelData
+        readonly property bool isSelected: root.large && modelData.iso === root.selected && !modelData.isToday
         width: root.cell
-        height: Style.space(24)
+        height: root.rowHeight
 
         Rectangle {
           anchors.centerIn: parent
           width: Math.min(parent.width, parent.height) - Style.space(2)
           height: width
           radius: width / 2
-          color: Commons.Color.accent
-          visible: modelData.isToday
+          color: dayCell.modelData.isToday ? Commons.Color.accent
+            : (dayCell.isSelected ? Util.alpha(Commons.Color.accent, 0.2)
+              : Util.alpha(Commons.Color.bar.text, dayMouse.containsMouse ? 0.08 : 0))
+        }
+        // One dot under a day with events.
+        Rectangle {
+          anchors.horizontalCenter: parent.horizontalCenter
+          anchors.bottom: parent.bottom
+          anchors.bottomMargin: root.large ? Style.space(2) : 0
+          width: Style.space(4)
+          height: width
+          radius: width / 2
+          visible: !!root.dots[dayCell.modelData.iso]
+          color: dayCell.modelData.isToday ? Commons.Color.bar.background : Commons.Color.accent
+          z: 1
+        }
+        MouseArea {
+          id: dayMouse
+          anchors.fill: parent
+          hoverEnabled: true
+          cursorShape: Qt.PointingHandCursor
+          onClicked: root.pick(dayCell.modelData.iso)
         }
         Text {
           anchors.centerIn: parent

@@ -5,6 +5,9 @@ import Quickshell.Hyprland
 import Quickshell.Services.Mpris
 import Quickshell.Services.UPower
 import "IslandModel.js" as IslandModel
+import "IslandGeometry.js" as IslandGeometry
+import "IslandSettings.js" as IslandSettings
+import "AgendaModel.js" as AgendaModel
 
 // Headless owner of the island state. One IslandWindow is mounted per screen;
 // they all read media and timer state from here, so two monitors never show
@@ -22,7 +25,6 @@ Item {
   property bool pinned: false
   property string peekReason: ""
 
-  readonly property int peekDuration: 3500
 
   // ------------------------------------------------------------- settings
 
@@ -31,21 +33,130 @@ Item {
   // lives under "plugins", or in the bar layout once the island is put on the
   // bar to hide Omarchy's indicators.
   property var settings: ({})
-  readonly property string lang: IslandModel.language(settings.language || Quickshell.env("LANG"))
+  // The same entry with every key validated and defaulted (IslandSettings).
+  readonly property var cfg: IslandSettings.normalize(settings)
+  // Whether shell.json holds an entry for the island at all; without one
+  // there is nowhere to save settings to.
+  property bool hasEntry: false
+  readonly property var barSections: ["left", "centerBegin", "center", "centerEnd", "right", "tray"]
+  // Ids of every widget on the bar, to know whether Omarchy's clock,
+  // elsewhen or weather are there before handing a click to them.
+  property var onBar: []
+  property var elsewhenEntry: null
+  property string jsonPosition: "top"
+  function isOnBar(id) { return onBar.indexOf(id) !== -1 }
+
+  readonly property string lang: IslandModel.language(cfg.language || Quickshell.env("LANG"))
   readonly property var locale: Qt.locale(lang === "es" ? "es_ES" : "en_US")
   // The island sits over the bar's clock by default: hovering it opens the
   // island and a left click pins it, instead of Omarchy's calendar popup.
-  readonly property bool overClock: settings.clock !== false
+  readonly property bool overClock: cfg.clock
   // Where Omarchy's quick toggles live: "island" (here, and the bar only
   // shows the ones that are on), "both", or "bar" (Omarchy's own, untouched).
-  readonly property string togglesMode: ["island", "both", "bar"].indexOf(settings.toggles) !== -1
-    ? settings.toggles : "island"
-  readonly property bool imperial: settings.units === "imperial"
+  readonly property string togglesMode: cfg.toggles
+  readonly property bool imperial: cfg.units === "imperial"
   // Take over Omarchy's OSD (volume, brightness, mic...). Off by default:
   // only one plugin can own the "osd" IPC target, so Omarchy's has to be
   // disabled first (omarchy plugin disable omarchy.osd).
-  readonly property bool osdEnabled: String(settings.osd) === "true"
-  readonly property bool batteryEnabled: String(settings.battery) !== "false"
+  readonly property bool osdEnabled: cfg.osd
+  readonly property bool batteryEnabled: cfg.battery
+  // Left click on the clock: "pin" the island, open it on the "calendar"
+  // page, or leave it to "omarchy"'s own calendar panel.
+  readonly property string clockClick: cfg.clockClick
+  // What the island hangs from: Omarchy's "clock", its own bar "widget", or
+  // the "center" of the bar.
+  readonly property string anchorMode: cfg.anchor
+  readonly property int openWidth: cfg.openWidth
+  readonly property int clockWidth: cfg.clockWidth
+  readonly property bool hoverOpen: cfg.hoverOpen
+  readonly property int hoverDelay: cfg.hoverDelay
+  readonly property int peekDuration: cfg.peekDuration
+  readonly property string defaultPage: cfg.defaultPage
+  // A text field in the island is being edited: the island takes the
+  // keyboard and stays open until it's done.
+  property bool wantsKeyboard: false
+
+  // ------------------------------------------------------------- saving
+
+  readonly property string pluginId: "thealejandro.island"
+
+  // Through the host's own entry writer (the same one Omarchy's clock uses
+  // when cycling formats), applied locally first so the page reacts on the
+  // click; the shell.json watcher closes the loop. Without that API, the
+  // CLI writes one key at a time.
+  function saveSetting(key, value) {
+    var entry = IslandSettings.withValue(settings, key, value, pluginId)
+    if (caps.persist) {
+      writeEntry(entry)
+      return
+    }
+    settings = entry
+    var stored = entry[key] === undefined ? IslandSettings.spec(key).def : entry[key]
+    Quickshell.execDetached(["omarchy", "bar", "set", pluginId, key, JSON.stringify(stored), "--json"])
+  }
+  // Back to defaults; the OSD default is Omarchy's own, so give it back too.
+  function resetSettings() {
+    var hadOsd = osdEnabled
+    writeEntry(IslandSettings.withoutOwnKeys(settings, pluginId))
+    if (hadOsd) settleThen(function() { root.runThen(["omarchy", "plugin", "enable", "omarchy.osd"]) })
+  }
+  function writeEntry(entry) {
+    settings = entry
+    if (!caps.persist) return false
+    try { return shell.updateEntryInline(pluginId, entry) } catch (e) {
+      console.warn("island: could not save settings:", e)
+      return false
+    }
+  }
+
+  // Settings that need Omarchy to change too. Each command runs to the end
+  // before the island writes its own entry, so two writers never race on
+  // shell.json.
+  property var _afterCommand: null
+  Process {
+    id: commandRunner
+    onExited: {
+      var next = root._afterCommand
+      root._afterCommand = null
+      if (next) root.settleThen(next)
+    }
+  }
+  function runThen(command, next) {
+    if (commandRunner.running) return false
+    _afterCommand = next || null
+    commandRunner.command = command
+    commandRunner.running = true
+    return true
+  }
+  // The island as the OSD: Omarchy's has to step aside first, since only
+  // one plugin can own the "osd" IPC target. And back.
+  function setOsd(on) {
+    if (on) runThen(["omarchy", "plugin", "disable", "omarchy.osd"], function() { root.saveSetting("osd", true) })
+    else {
+      saveSetting("osd", false)
+      settleThen(function() { root.runThen(["omarchy", "plugin", "enable", "omarchy.osd"]) })
+    }
+  }
+  function placeByClock() {
+    runThen(["omarchy", "bar", isOnBar(pluginId) ? "move" : "put", pluginId, "--after", "omarchy.clock"])
+  }
+  function openConfig() {
+    runAction(["sh", "-c", 'command -v omarchy-launch-config-editor >/dev/null && exec omarchy-launch-config-editor "$1" || exec xdg-open "$1"',
+      "sh", Quickshell.env("HOME") + "/.config/omarchy/shell.json"])
+  }
+  // shell.json is re-read after each write; give that a moment before the
+  // next writer goes.
+  Timer { id: settle; interval: 600; property var next: null; onTriggered: if (next) next() }
+  function settleThen(fn) { settle.next = fn; settle.restart() }
+
+  // Tested against Omarchy 4.x; another major gets a quiet note in Settings.
+  property string omarchyVersion: ""
+  readonly property bool omarchyTested: omarchyVersion === "" || /^4\./.test(omarchyVersion)
+  FileView {
+    path: "/usr/share/omarchy/version"
+    printErrors: false
+    onLoaded: root.omarchyVersion = text().trim()
+  }
 
   // The bar's look in shell.json: "opaque", "glassy" or "none". A glassy bar
   // is see-through with Hyprland blurring what is behind it, so the island
@@ -54,13 +165,18 @@ Item {
   property string barLook: "opaque"
   readonly property bool glassy: barLook === "glassy"
 
+  // The only Hyprland call the island makes; off with "blur": false.
+  readonly property bool wantsBlur: glassy && cfg.blur
+  property bool _blurApplied: false
   function syncBlur() {
-    if (!glassy) return
+    if (!wantsBlur && !_blurApplied) return
+    _blurApplied = wantsBlur
     Quickshell.execDetached(["hyprctl", "eval",
-      'hl.layer_rule({ match = { namespace = "^omarchy-island$" }, blur = true, ignore_alpha = 0.3 })'])
+      'hl.layer_rule({ match = { namespace = "^omarchy-island$" }, blur = ' + (wantsBlur ? "true" : "false")
+        + ', ignore_alpha = 0.3 })'])
   }
 
-  onGlassyChanged: syncBlur()
+  onWantsBlurChanged: syncBlur()
 
   // A Hyprland reload (theme change, config edit) drops rules added at runtime.
   Connections {
@@ -78,17 +194,143 @@ Item {
       try {
         var config = JSON.parse(text())
         var layout = config.bar && config.bar.layout ? config.bar.layout : {}
-        var entries = (config.plugins || []).concat(layout.left || [], layout.center || [], layout.right || [])
+        // Every section the bar draws, the same list as Omarchy's
+        // Util.barSections, plus the "plugins" list for a service-only entry.
+        var entries = (config.plugins || []).slice()
+        var placed = []
+        for (var s = 0; s < root.barSections.length; s++) {
+          var list = Array.isArray(layout[root.barSections[s]]) ? layout[root.barSections[s]] : []
+          entries = entries.concat(list)
+          for (var j = 0; j < list.length; j++) if (list[j] && list[j].id) placed.push(String(list[j].id))
+        }
         var mine = ({})
-        for (var i = 0; i < entries.length; i++)
-          if (entries[i] && entries[i].id === "thealejandro.island") mine = entries[i]
+        var elsewhen = null
+        for (var i = 0; i < entries.length; i++) {
+          if (!entries[i]) continue
+          if (entries[i].id === "thealejandro.island") mine = entries[i]
+          else if (entries[i].id === "omarchy.elsewhen") elsewhen = entries[i]
+        }
+        // A disabled plugin's entry can stay in the layout; it's not on the
+        // bar for anything the island links to.
+        var disabled = Array.isArray(config.disabledPlugins) ? config.disabledPlugins.map(String) : []
+        placed = placed.filter(function(id) { return disabled.indexOf(id) === -1 })
+        if (elsewhen && disabled.indexOf("omarchy.elsewhen") !== -1) elsewhen = null
         root.settings = mine
+        root.hasEntry = !!mine.id
+        root.onBar = placed
+        root.elsewhenEntry = elsewhen
         var bar = config.bar || {}
         root.barLook = bar.background || (bar.transparent === true ? "none" : "opaque")
+        root.jsonPosition = String(bar.position || "top")
       } catch (e) {
         console.warn("island: could not read shell.json:", e)
       }
     }
+  }
+
+  // ------------------------------------------------------------- bar & anchors
+
+  // What the host offers, checked once instead of assumed: an Omarchy update
+  // that drops or renames one of these degrades that one feature only.
+  readonly property var caps: ({
+    barState: !!(shell && shell.bar && "position" in shell.bar),
+    persist: !!(shell && typeof shell.updateEntryInline === "function")
+  })
+
+  // Which edge the bar is on, live from the host, or from shell.json.
+  readonly property string barPosition: IslandGeometry.edge(caps.barState ? shell.bar.position : jsonPosition)
+  readonly property bool barVertical: IslandGeometry.isVertical(barPosition)
+  readonly property bool barHidden: caps.barState ? shell.bar.barHidden === true : false
+
+  // The bar's thickness on a screen: the host knows about notch floors and
+  // vertical bars; without it fall back to the theme's sizes.
+  function barSizeFor(screenName, fallback) {
+    if (caps.barState) {
+      var sizes = shell.bar.barSizes
+      var size = sizes && sizes[screenName] ? Number(sizes[screenName]) : Number(shell.bar.barSize)
+      if (size > 0) return size
+    }
+    return fallback
+  }
+
+  // Where to hang from, per screen: { center, length, kind } along the bar,
+  // reported by the island's bar widget (the clock's slot, or its own spot)
+  // or by IPC. "*" is used for screens nobody reported for.
+  property var anchorMap: ({})
+  property var _widgets: []
+
+  function setAnchor(screenName, center, length, kind) {
+    var key = String(screenName || "*")
+    var old = anchorMap[key]
+    var c = Math.round(Number(center)), l = Math.round(Number(length))
+    if (isNaN(c) || isNaN(l) || l <= 0) return false
+    if (old && old.center === c && old.length === l && old.kind === kind) return true
+    var next = ({})
+    for (var k in anchorMap) next[k] = anchorMap[k]
+    next[key] = { center: c, length: l, kind: String(kind || "ipc") }
+    anchorMap = next
+    return true
+  }
+  function clearAnchor(screenName) {
+    var key = String(screenName || "*")
+    if (!anchorMap[key]) return
+    var next = ({})
+    for (var k in anchorMap) if (k !== key) next[k] = anchorMap[k]
+    anchorMap = next
+  }
+  function anchorFor(screenName) {
+    if (anchorMode === "center") return null
+    return anchorMap[screenName] || anchorMap["*"] || null
+  }
+
+  // Bar widgets reach this service through bar.shell.serviceFor(), the
+  // channel Omarchy's own bar hands third-party widgets.
+  function registerWidget(w) {
+    if (!w || _widgets.indexOf(w) !== -1) return
+    _widgets = _widgets.concat([w])
+  }
+  function unregisterWidget(w) {
+    _widgets = _widgets.filter(function(x) { return x !== w })
+  }
+  function refreshAnchors() {
+    for (var i = 0; i < _widgets.length; i++) {
+      try { if (_widgets[i] && typeof _widgets[i].reportAnchor === "function") _widgets[i].reportAnchor() }
+      catch (e) { }
+    }
+  }
+
+  // Left click on the clock. Right and middle stay with Omarchy's clock.
+  // Returns false when the click went to Omarchy's own panel, so the
+  // window can let go of its hover.
+  function clockClicked() {
+    if (clockClick === "omarchy" && isOnBar("omarchy.clock")) {
+      Quickshell.execDetached(["omarchy-shell", "omarchy.clock", "toggle"])
+      return false
+    }
+    pinned = !pinned
+    if (pinned && clockClick === "calendar") page = "calendar"
+    return true
+  }
+
+  // Which page of the open island is showing. Goes back to the default one
+  // every time the island closes.
+  readonly property var pages: ["home", "calendar", "world", "settings"]
+  property string page: defaultPage
+  onDefaultPageChanged: if (!isOpen) page = defaultPage
+  property string tabHint: ""
+  // The day picked on the calendar page; "" is today.
+  property string calendarDay: ""
+  function showPage(name) {
+    if (pages.indexOf(name) === -1) return false
+    page = name
+    return true
+  }
+  function islandClosed() {
+    isOpen = false
+    calendarDay = ""
+    tabHint = ""
+    wantsKeyboard = false
+    page = defaultPage
   }
 
   // ------------------------------------------------------------- media
@@ -195,6 +437,7 @@ Item {
   property bool stayAwake: false
   property bool recording: false
   property int reminderCount: 0
+  property var omarchyReminders: []
 
   function toggleNightLight() { runToggle(["omarchy-shell", "nightlight", "toggle"]) }
   function toggleDoNotDisturb() { runToggle(["omarchy-shell", "notifications", "toggleDnd"]) }
@@ -234,6 +477,7 @@ Item {
         root.stayAwake = json(2).stayAwake === true
         root.recording = Number(lines[3]) > 0
         root.reminderCount = Number(json(4).count || 0)
+        root.omarchyReminders = AgendaModel.parseOmarchyReminders(json(4))
       }
     }
   }
@@ -299,11 +543,84 @@ Item {
     onExited: if (root.weatherLang !== root.lang) root.refreshWeather()
     stdout: StdioCollector {
       onStreamFinished: {
-        var report = IslandModel.parseWeather(text, root.lang, root.imperial)
-        if (!report) return
-        report.hour = new Date().getHours()
-        root.weather = report
+        if (!IslandModel.parseWeather(text, root.lang, root.imperial)) return
+        root._weatherRaw = text
+        root.parseWeatherRaw()
       }
+    }
+  }
+
+  // The last good report as wttr.in sent it, so switching units doesn't
+  // need a new request.
+  property string _weatherRaw: ""
+  function parseWeatherRaw() {
+    var report = IslandModel.parseWeather(_weatherRaw, lang, imperial)
+    if (!report) return
+    report.hour = new Date().getHours()
+    weather = report
+  }
+  onImperialChanged: parseWeatherRaw()
+
+  readonly property bool weatherOnBar: isOnBar("omarchy.weather")
+  function openForecast() {
+    if (weatherOnBar) runAction(["omarchy-shell", "omarchy.weather", "toggle"])
+  }
+  // Omarchy's weather widget has its own place picker; without it on the
+  // bar, the file it reads is opened instead.
+  function changeWeatherPlace() {
+    if (weatherOnBar) runAction(["omarchy-shell", "omarchy.weather", "edit"])
+    else runAction(["sh", "-c", 'command -v omarchy-launch-config-editor >/dev/null && exec omarchy-launch-config-editor "$1" || exec xdg-open "$1"',
+      "sh", Quickshell.env("HOME") + "/.local/state/omarchy/settings/weather.json"])
+  }
+
+  // ------------------------------------------------------------- world
+
+  // The cities of Omarchy's elsewhen widget (its entry in shell.json, read
+  // only), or the island's own list when it has one. No cities, no world.
+  readonly property var worldCities: cfg.cities.length > 0 ? cfg.cities
+    : (elsewhenEntry ? IslandSettings.parseCities(elsewhenEntry.cities !== undefined ? elsewhenEntry.cities : elsewhenEntry.zones) : [])
+  readonly property bool elsewhenOnBar: isOnBar("omarchy.elsewhen")
+  // The island's setting, else elsewhen's, else what the locale does.
+  readonly property bool hour24: cfg.hour24 !== null ? cfg.hour24
+    : (elsewhenEntry && (elsewhenEntry.hour24 === true || elsewhenEntry.hour24 === false) ? elsewhenEntry.hour24
+      : String(locale.timeFormat(Locale.ShortFormat)).toLowerCase().indexOf("a") === -1)
+  property var zoneProbe: ({})
+  property real worldNow: Date.now()
+  // True while some screen has the island open; the world clock only ticks
+  // then.
+  property bool isOpen: false
+  readonly property var worldRows: {
+    var rows = []
+    for (var i = 0; i < worldCities.length; i++) {
+      var row = IslandModel.worldRow(worldCities[i], zoneProbe, worldNow, hour24)
+      if (row) rows.push(row)
+    }
+    return rows
+  }
+
+  function probeZones() {
+    if (worldCities.length === 0 || zoneProbeRun.running) return
+    zoneProbeRun.command = IslandModel.zoneProbeCommand(worldCities.map(function(c) { return c.zone }))
+    zoneProbeRun.running = true
+  }
+  onWorldCitiesChanged: probeZones()
+  onIsOpenChanged: if (isOpen) { worldNow = Date.now(); probeZones() }
+
+  Process {
+    id: zoneProbeRun
+    stdout: StdioCollector { onStreamFinished: root.zoneProbe = IslandModel.parseZoneProbe(text) }
+  }
+  // Every minute on the minute while open; offsets again every half hour
+  // in case a city changed to or from summer time.
+  Timer {
+    running: root.isOpen && root.worldCities.length > 0
+    repeat: true
+    interval: 1000
+    property int _probeAt: 0
+    onTriggered: {
+      var now = Date.now()
+      if (Math.floor(now / 60000) !== Math.floor(root.worldNow / 60000)) root.worldNow = now
+      if (now - _probeAt > 30 * 60 * 1000) { _probeAt = now; root.probeZones() }
     }
   }
 
@@ -312,6 +629,141 @@ Item {
     running: true
     repeat: true
     onTriggered: root.refreshWeather()
+  }
+
+  // ------------------------------------------------------------- agenda
+
+  // The island's own events live in a small file of their own (data, not
+  // configuration), written atomically. Omarchy's reminders are listed
+  // alongside, and an optional command can add events from elsewhere
+  // (khal, gcalcli…), one "YYYY-MM-DD<TAB>HH:MM<TAB>title" per line.
+  readonly property string agendaDir: Quickshell.env("HOME") + "/.local/state/omarchy/island"
+  property var localEvents: []
+  property var externalEvents: []
+  readonly property var allEvents: localEvents.concat(externalEvents)
+  // What the agenda peek is about: { title, time, minutes }.
+  property var agendaNote: null
+
+  FileView {
+    id: eventsFile
+    path: root.agendaDir + "/events.json"
+    printErrors: false
+    atomicWrites: true
+    watchChanges: true
+    onFileChanged: reload()
+    onLoaded: {
+      try {
+        var data = JSON.parse(text())
+        root.localEvents = AgendaModel.cleanAll(Array.isArray(data) ? data : data.events)
+      } catch (e) {
+        console.warn("island: events.json is not valid JSON; leaving it as it is")
+      }
+    }
+    onLoadFailed: root.localEvents = []
+  }
+
+  Process {
+    id: agendaDirMaker
+    command: ["mkdir", "-p", root.agendaDir]
+    property var then: null
+    onExited: if (then) { var t = then; then = null; t() }
+  }
+
+  function saveEvents(list) {
+    var stored = list.map(function(e) {
+      return { id: e.id, date: e.date, time: e.time, title: e.title, repeat: e.repeat, remind: e.remind }
+    })
+    localEvents = AgendaModel.cleanAll(stored)
+    var body = JSON.stringify({ version: 1, events: stored }, null, 2) + "\n"
+    agendaDirMaker.then = function() { eventsFile.setText(body) }
+    agendaDirMaker.running = true
+  }
+
+  // fields: { date, time, title, repeat, remind }. Returns the event, or
+  // null when it isn't valid (no title, bad date or time).
+  function addEvent(fields) {
+    var time = AgendaModel.normalizeTime(fields.time)
+    if (time === null) return null
+    var ev = AgendaModel.clean({ id: AgendaModel.newId(Date.now()), date: fields.date, time: time,
+      title: fields.title, repeat: fields.repeat, remind: fields.remind })
+    if (!ev) return null
+    saveEvents(localEvents.concat([ev]))
+    return ev
+  }
+  function updateEvent(id, fields) {
+    var time = AgendaModel.normalizeTime(fields.time)
+    if (time === null) return null
+    var next = null
+    var list = localEvents.map(function(e) {
+      if (e.id !== id) return e
+      next = AgendaModel.clean({ id: id, date: fields.date, time: time, title: fields.title,
+        repeat: fields.repeat, remind: fields.remind })
+      return next || e
+    })
+    if (next) saveEvents(list)
+    return next
+  }
+  function removeEvent(id) {
+    saveEvents(localEvents.filter(function(e) { return e.id !== id }))
+  }
+  function eventsOn(iso) { return AgendaModel.eventsOn(allEvents, iso) }
+
+  // Hands an event of today to Omarchy's reminders, reminderLead minutes
+  // before it. False when that moment has already passed.
+  function remindViaOmarchy(ev, on) {
+    var mins = AgendaModel.minutesUntil(ev, on, new Date())
+    if (mins === null) return false
+    var lead = ev.remind === null || ev.remind === undefined ? cfg.reminderLead : ev.remind
+    var wait = mins - lead
+    if (wait < 1) return false
+    Quickshell.execDetached(["omarchy-reminder", String(wait), ev.title])
+    toggleSettle.restart()
+    return true
+  }
+
+  // The island's own reminder: a glance and a notification when an event
+  // is reminderLead minutes away. Each fires once per day.
+  property var _fired: ({})
+  Timer {
+    interval: 20 * 1000
+    repeat: true
+    running: root.allEvents.length > 0
+    triggeredOnStart: true
+    onTriggered: {
+      var due = AgendaModel.dueReminders(root.allEvents, new Date(), root.cfg.reminderLead)
+      for (var i = 0; i < due.length; i++) {
+        if (root._fired[due[i].key]) continue
+        root._fired[due[i].key] = true
+        var ev = due[i].event
+        root.agendaNote = { title: ev.title, time: ev.time, minutes: due[i].minutes }
+        Quickshell.execDetached(["notify-send", "-a", "Island", ev.title,
+          due[i].minutes > 0 ? root.tr("eventIn", due[i].minutes) + " · " + ev.time : root.tr("eventNow")])
+        root.peek("agenda", 8000)
+      }
+    }
+  }
+
+  function refreshExternal() {
+    if (cfg.agendaCommand.trim() === "") { externalEvents = []; return }
+    if (agendaRun.running) return
+    agendaRun.command = ["bash", "-c", cfg.agendaCommand]
+    agendaRun.running = true
+  }
+  Connections {
+    target: root
+    function onCfgChanged() { if (agendaRun.lastCommand !== root.cfg.agendaCommand) root.refreshExternal() }
+  }
+  Process {
+    id: agendaRun
+    property string lastCommand: ""
+    onStarted: lastCommand = root.cfg.agendaCommand
+    stdout: StdioCollector { onStreamFinished: root.externalEvents = AgendaModel.parseExternal(text) }
+  }
+  Timer {
+    interval: 15 * 60 * 1000
+    repeat: true
+    running: root.cfg.agendaCommand !== ""
+    onTriggered: root.refreshExternal()
   }
 
   // ------------------------------------------------------------- osd
@@ -402,10 +854,32 @@ Item {
       return JSON.stringify({ pinned: root.pinned, peeking: root.peeking, playing: root.playing,
         title: root.title, position: Math.round(root.position), length: Math.round(root.length),
         timerRunning: root.timerRunning, timerRemaining: root.timerRemaining,
-        focusMinutes: root.focusMinutes, lang: root.lang, osd: root.osdEnabled,
+        focusMinutes: root.focusMinutes, lang: root.lang, page: root.page, osd: root.osdEnabled,
         battery: root.batteryLevel, charging: root.charging })
     }
     function ping(): string { return "ok" }
+    // Opens the island on one of its pages: home, calendar, world, settings.
+    function page(name: string): string {
+      if (!root.showPage(name)) return "invalid"
+      root.pinned = true
+      return "ok"
+    }
+    // Where to hang from on a screen, along the bar, for bars that can't
+    // reach the service directly. A length of 0 forgets it.
+    function anchor(screen: string, center: int, length: int): string {
+      if (length <= 0) { root.clearAnchor(screen); return "ok" }
+      return root.setAnchor(screen, center, length, "ipc") ? "ok" : "invalid"
+    }
+    // Adds an event to the island's agenda: date YYYY-MM-DD, time HH:MM or
+    // "" for all day.
+    function event(date: string, time: string, title: string): string {
+      var ev = root.addEvent({ date: date, time: time, title: title, repeat: "none", remind: null })
+      return ev ? ev.id : "invalid"
+    }
+    function events(date: string): string {
+      return JSON.stringify(root.eventsOn(date || AgendaModel.isoDate(new Date())))
+    }
+    function anchors(): string { return JSON.stringify({ position: root.barPosition, anchors: root.anchorMap }) }
   }
 
   Variants {

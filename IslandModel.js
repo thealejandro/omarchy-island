@@ -50,7 +50,99 @@ var STRINGS = {
     charging: "Charging",
     onBattery: "On battery",
     batteryLow: "Battery low",
-    fullyCharged: "Fully charged"
+    fullyCharged: "Fully charged",
+    page_home: "Home",
+    page_calendar: "Calendar",
+    page_world: "World",
+    page_settings: "Settings",
+    page_missing: "This page could not be loaded.",
+    sec_general: "General",
+    sec_look: "Look",
+    sec_open: "Opening",
+    sec_bar: "Bar",
+    sec_world: "World",
+    sec_agenda: "Agenda",
+    sec_system: "System",
+    set_language: "Language",
+    set_defaultPage: "Opens on",
+    set_calendarFirst: "Calendar first on Home",
+    set_showMedia: "Now playing",
+    set_showTimer: "Focus timer",
+    set_showDock: "Toggles and launchers",
+    set_showWorld: "World clock row",
+    set_openWidth: "Width",
+    set_blur: "Blur behind a glassy bar",
+    set_clock: "Open by hovering the clock",
+    set_clockClick: "Clicking the clock",
+    set_anchor: "Hang from",
+    set_clockWidth: "Clock zone when not found",
+    set_hoverOpen: "Open on hover",
+    set_hoverDelay: "Hover delay",
+    set_peekDuration: "Glance duration",
+    set_toggles: "Quick toggles",
+    set_widgetIcon: "Island button on the bar",
+    set_units: "Units",
+    set_forecast: "3-day forecast",
+    set_hour24: "Clock format",
+    set_cities: "Cities (Name|Zone, …)",
+    set_weekStart: "Week starts on",
+    set_reminderLead: "Remind me before",
+    set_agendaCommand: "External agenda command",
+    set_osd: "Show Omarchy's OSD here",
+    set_battery: "Battery glances",
+    opt_auto: "Auto",
+    opt_home: "Home",
+    opt_calendar: "Calendar",
+    opt_world: "World",
+    opt_pin: "Pin island",
+    opt_omarchy: "Omarchy panel",
+    opt_clock: "Clock",
+    opt_widget: "Its widget",
+    opt_center: "Center",
+    opt_island: "Island",
+    opt_both: "Both",
+    opt_bar: "Bar",
+    opt_metric: "°C",
+    opt_imperial: "°F",
+    opt_h12: "12 h",
+    opt_h24: "24 h",
+    opt_mon: "Mon",
+    opt_sat: "Sat",
+    opt_sun: "Sun",
+    hint_cities: "Empty uses Elsewhen's cities",
+    hint_agendaCommand: "Prints YYYY-MM-DD<TAB>HH:MM<TAB>title lines",
+    act_osdOn: "Use as OSD",
+    act_osdOff: "Give the OSD back",
+    act_place: "Next to the clock",
+    act_forecast: "Open forecast",
+    act_weatherPlace: "Change location",
+    tomorrow: "Tomorrow",
+    yesterday: "Yesterday",
+    world_empty: "No cities yet. Add them to Omarchy's elsewhen widget or under Settings › World.",
+    allDay: "All day",
+    eventIn: "in %1 min",
+    eventNow: "now",
+    ev_title: "What's happening?",
+    ev_repeat: "Repeat",
+    ev_remind: "Remind me (minutes before)",
+    ev_save: "Save",
+    ev_cancel: "Cancel",
+    ev_delete: "Delete",
+    ev_invalid: "Needs a title and a time like 09:30.",
+    ev_reminded: "Omarchy will remind you.",
+    ev_tooLate: "Too late for a reminder.",
+    ev_none: "Nothing on this day.",
+    ev_omarchyReminders: "Omarchy reminders",
+    ev_next: "Next days",
+    rep_none: "Once",
+    rep_weekly: "Weekly",
+    rep_monthly: "Monthly",
+    rep_yearly: "Yearly",
+    act_reset: "Reset",
+    act_openConfig: "Open shell.json",
+    note_noEntry: "The island has no entry in shell.json, so changes last until restart. Use “Next to the clock”.",
+    note_version: "Tested with Omarchy 4.x; this is %1.",
+    note_reset: "Reset removes only the island's own keys."
   },
   es: {
     nothingPlaying: "Nada sonando",
@@ -74,7 +166,103 @@ var STRINGS = {
     colorPicker: "Cuentagotas",
     clipboard: "Portapapeles",
     emoji: "Emoji",
-    weather: "Clima"
+    weather: "Clima",
+    charging: "Cargando",
+    onBattery: "Con batería",
+    batteryLow: "Batería baja",
+    fullyCharged: "Carga completa",
+    page_home: "Inicio",
+    page_calendar: "Calendario",
+    page_world: "Mundo",
+    page_settings: "Ajustes",
+    page_missing: "No se pudo cargar esta página.",
+    sec_general: "General",
+    sec_look: "Aspecto",
+    sec_open: "Apertura",
+    sec_bar: "Barra",
+    sec_world: "Mundo",
+    sec_agenda: "Agenda",
+    sec_system: "Sistema",
+    set_language: "Idioma",
+    set_defaultPage: "Abre en",
+    set_calendarFirst: "Calendario primero en Inicio",
+    set_showMedia: "Reproducción",
+    set_showTimer: "Temporizador de enfoque",
+    set_showDock: "Interruptores y accesos",
+    set_showWorld: "Fila de hora mundial",
+    set_openWidth: "Anchura",
+    set_blur: "Desenfoque con barra de cristal",
+    set_clock: "Abrir al pasar sobre el reloj",
+    set_clockClick: "Click en el reloj",
+    set_anchor: "Colgar de",
+    set_clockWidth: "Zona del reloj si no se encuentra",
+    set_hoverOpen: "Abrir al pasar el puntero",
+    set_hoverDelay: "Retardo al pasar",
+    set_peekDuration: "Duración del vistazo",
+    set_toggles: "Interruptores rápidos",
+    set_widgetIcon: "Botón de la isla en la barra",
+    set_units: "Unidades",
+    set_forecast: "Pronóstico de 3 días",
+    set_hour24: "Formato de hora",
+    set_cities: "Ciudades (Nombre|Zona, …)",
+    set_weekStart: "La semana empieza en",
+    set_reminderLead: "Avisarme antes",
+    set_agendaCommand: "Comando de agenda externa",
+    set_osd: "Mostrar aquí el OSD de Omarchy",
+    set_battery: "Avisos de batería",
+    opt_auto: "Auto",
+    opt_home: "Inicio",
+    opt_calendar: "Calendario",
+    opt_world: "Mundo",
+    opt_pin: "Fijar isla",
+    opt_omarchy: "Panel de Omarchy",
+    opt_clock: "Reloj",
+    opt_widget: "Su widget",
+    opt_center: "Centro",
+    opt_island: "Isla",
+    opt_both: "Ambos",
+    opt_bar: "Barra",
+    opt_metric: "°C",
+    opt_imperial: "°F",
+    opt_h12: "12 h",
+    opt_h24: "24 h",
+    opt_mon: "Lun",
+    opt_sat: "Sáb",
+    opt_sun: "Dom",
+    hint_cities: "Vacío usa las ciudades de Elsewhen",
+    hint_agendaCommand: "Imprime líneas AAAA-MM-DD<TAB>HH:MM<TAB>título",
+    act_osdOn: "Usar como OSD",
+    act_osdOff: "Devolver el OSD",
+    act_place: "Junto al reloj",
+    act_forecast: "Abrir pronóstico",
+    act_weatherPlace: "Cambiar ubicación",
+    tomorrow: "Mañana",
+    yesterday: "Ayer",
+    world_empty: "Aún no hay ciudades. Añádelas en el widget elsewhen de Omarchy o en Ajustes › Mundo.",
+    allDay: "Todo el día",
+    eventIn: "en %1 min",
+    eventNow: "ahora",
+    ev_title: "¿Qué pasa?",
+    ev_repeat: "Repetir",
+    ev_remind: "Avisarme (minutos antes)",
+    ev_save: "Guardar",
+    ev_cancel: "Cancelar",
+    ev_delete: "Borrar",
+    ev_invalid: "Falta el título o una hora como 09:30.",
+    ev_reminded: "Omarchy te avisará.",
+    ev_tooLate: "Ya es tarde para avisar.",
+    ev_none: "Nada para este día.",
+    ev_omarchyReminders: "Recordatorios de Omarchy",
+    ev_next: "Próximos días",
+    rep_none: "Una vez",
+    rep_weekly: "Semanal",
+    rep_monthly: "Mensual",
+    rep_yearly: "Anual",
+    act_reset: "Restablecer",
+    act_openConfig: "Abrir shell.json",
+    note_noEntry: "La isla no tiene entrada en shell.json: los cambios duran hasta reiniciar. Usa «Junto al reloj».",
+    note_version: "Probado con Omarchy 4.x; esta es %1.",
+    note_reset: "Restablecer solo quita las claves propias de la isla."
   }
 }
 
@@ -106,6 +294,7 @@ function monthGrid(year, month, firstDow, today) {
     var d = new Date(year, month, 1 - lead + i)
     cells.push({
       day: d.getDate(),
+      iso: d.getFullYear() + "-" + (d.getMonth() < 9 ? "0" : "") + (d.getMonth() + 1) + "-" + (d.getDate() < 10 ? "0" : "") + d.getDate(),
       inMonth: d.getMonth() === month,
       isToday: d.getFullYear() === today.getFullYear()
         && d.getMonth() === today.getMonth()
@@ -137,10 +326,82 @@ function parseWeather(raw, lang, imperial) {
       ? data.nearest_area[0].areaName[0].value : ""
     var temp = imperial ? now.temp_F : now.temp_C
     if (temp === undefined || temp === "") return null
-    return { temp: temp + "°", code: parseInt(now.weatherCode, 10), desc: desc.trim(), place: area }
+    // The next days from the same report (wttr.in gives three), for the
+    // world page. Midday's code stands for the day.
+    var days = []
+    var list = Array.isArray(data.weather) ? data.weather : []
+    for (var i = 0; i < list.length && days.length < 3; i++) {
+      var d = list[i]
+      var hourly = Array.isArray(d.hourly) ? d.hourly : []
+      var noon = hourly[Math.min(4, hourly.length - 1)] || {}
+      var dayDesc = noon["lang_" + lang] && noon["lang_" + lang][0] ? noon["lang_" + lang][0].value
+        : (noon.weatherDesc && noon.weatherDesc[0] ? noon.weatherDesc[0].value : "")
+      var hi = imperial ? d.maxtempF : d.maxtempC, lo = imperial ? d.mintempF : d.mintempC
+      if (!d.date || hi === undefined || lo === undefined) continue
+      days.push({ date: String(d.date), max: hi + "°", min: lo + "°",
+        code: parseInt(noon.weatherCode, 10), desc: String(dayDesc).trim() })
+    }
+    return { temp: temp + "°", code: parseInt(now.weatherCode, 10), desc: desc.trim(), place: area, days: days }
   } catch (e) {
     return null
   }
+}
+
+// ------------------------------------------------------------- world
+
+// One shell for every zone: `TZ=zone date` prints its abbreviation and UTC
+// offset, the same probe Omarchy's elsewhen uses. Times are then worked out
+// here from the offset, so the probe only runs now and then (for DST).
+function zoneProbeCommand(zones) {
+  return ["bash", "-c", 'for z in "$@"; do TZ="$z" date "+$z|%Z|%z"; done', "bash"].concat(zones)
+}
+
+// Probe output → { "Asia/Tokyo": { abbr: "JST", offset: 540 }, ... }
+function parseZoneProbe(text) {
+  var map = {}
+  var lines = String(text || "").split("\n")
+  for (var i = 0; i < lines.length; i++) {
+    var f = lines[i].split("|")
+    if (f.length < 3) continue
+    var m = /^([+-])(\d{2})(\d{2})$/.exec(f[2].trim())
+    if (!m || f[0].trim() === "") continue
+    var minutes = parseInt(m[2], 10) * 60 + parseInt(m[3], 10)
+    map[f[0].trim()] = { abbr: f[1].trim(), offset: m[1] === "-" ? -minutes : minutes }
+  }
+  return map
+}
+
+function pad2(n) { return (n < 10 ? "0" : "") + n }
+
+// A city's row at instant nowMs: wall-clock time, day relative to here,
+// whether it's night there, and the hours it is ahead or behind.
+function worldRow(city, probe, nowMs, hour24) {
+  var p = probe ? probe[city.zone] : null
+  if (!p) return null
+  var there = new Date(Number(nowMs) + p.offset * 60000)
+  var here = new Date(Number(nowMs))
+  var hour = there.getUTCHours(), minute = there.getUTCMinutes()
+  var delta = Math.round((Date.UTC(there.getUTCFullYear(), there.getUTCMonth(), there.getUTCDate())
+    - Date.UTC(here.getFullYear(), here.getMonth(), here.getDate())) / 86400000)
+  var diff = p.offset + here.getTimezoneOffset()
+  var h12 = hour % 12 === 0 ? 12 : hour % 12
+  return {
+    name: city.name,
+    zone: city.zone,
+    abbr: p.abbr,
+    time: hour24 ? pad2(hour) + ":" + pad2(minute) : h12 + ":" + pad2(minute),
+    meridiem: hour24 ? "" : (hour < 12 ? "am" : "pm"),
+    dayDelta: delta,
+    night: hour < 6 || hour >= 19,
+    diffMinutes: diff
+  }
+}
+
+// "+3 h", "-5:30 h", "" for the same time as here.
+function diffLabel(minutes) {
+  if (!minutes) return ""
+  var abs = Math.abs(minutes), h = Math.floor(abs / 60), m = abs % 60
+  return (minutes < 0 ? "-" : "+") + h + (m ? ":" + pad2(m) : "") + " h"
 }
 
 // Nerd Font icon for a wttr.in weather code, the same set Omarchy's weather

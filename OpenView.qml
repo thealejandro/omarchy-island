@@ -2,81 +2,113 @@ import QtQuick
 import qs.Commons
 import qs.Commons as Commons
 
-// The open island: now playing next to the month, focus timer underneath and
-// a dock of toggles, launchers and the weather along the bottom.
+// The open island: a slim header with the page's title and the page tabs,
+// then the page itself. Home is built in; the other pages load on demand,
+// so a page that fails to load leaves a line of text instead of breaking
+// the island. Pages taller than the room the island has scroll.
 Column {
   id: root
 
   required property var island
   property bool shown: false
+  // Room the island has for this view; taller pages scroll.
+  property real maxHeight: 10000
 
-  readonly property int calendarWidth: Style.space(196)
-  readonly property color lineColor: Util.alpha(Commons.Color.bar.text, 0.2)
-  readonly property int rise: Style.space(10)
+  readonly property color textColor: Commons.Color.bar.text
+  readonly property color dimColor: Util.alpha(Commons.Color.bar.text, 0.72)
+  readonly property var sources: ({
+    calendar: "CalendarPage.qml",
+    world: "WorldPage.qml",
+    settings: "SettingsView.qml"
+  })
+  readonly property string page: island.page
+  readonly property bool onHome: page === "home" || !sources[page]
 
-  // One clock for the whole entrance. Each section starts a little after the
-  // one above it, so the content cascades down as the body settles.
-  property real progress: shown ? 1 : 0
-  Behavior on progress { NumberAnimation { duration: root.shown ? 560 : 120 } }
+  spacing: Style.spacing.lg
 
-  function reveal(index) {
-    var t = Math.max(0, Math.min(1, (progress - index * 0.12) / 0.64))
-    return 1 - Math.pow(1 - t, 3)
-  }
-
-  spacing: Style.spacing.xl
-
-  Row {
-    id: top
+  Item {
+    id: header
     width: parent.width
-    spacing: Style.spacing.xxl
-    opacity: root.reveal(0)
-    transform: [
-      Scale {
-        origin.x: top.width / 2
-        xScale: 0.96 + 0.04 * root.reveal(0)
-        yScale: xScale
-      },
-      Translate { y: (1 - root.reveal(0)) * root.rise }
-    ]
+    height: tabs.height
+    opacity: root.shown ? 1 : 0
+    Behavior on opacity { NumberAnimation { duration: 260 } }
 
-    MediaCard {
-      island: root.island
-      width: parent.width - root.calendarWidth - 2 * parent.spacing - 1
+    Text {
+      anchors.left: parent.left
+      anchors.right: tabs.left
+      anchors.rightMargin: Style.spacing.lg
       anchors.verticalCenter: parent.verticalCenter
+      elide: Text.ElideRight
+      text: root.island.tabHint !== "" ? root.island.tabHint
+        : (root.onHome ? root.island.locale.toString(new Date(), "dddd d MMMM")
+          : root.island.tr("page_" + root.page))
+      color: root.dimColor
+      font.family: Style.font.family
+      font.pixelSize: Style.font.caption
+      font.bold: true
+      font.capitalization: Font.AllUppercase
+      font.letterSpacing: 0.6
     }
 
-    Rectangle {
-      width: 1
-      height: parent.height
-      color: root.lineColor
-    }
-
-    CalendarView {
+    PageTabs {
+      id: tabs
       island: root.island
-      width: root.calendarWidth
+      anchors.right: parent.right
     }
   }
 
-  Rectangle {
+  Flickable {
+    id: flick
     width: parent.width
-    height: 1
-    color: root.lineColor
-    opacity: root.reveal(1)
-    transform: Scale { origin.x: root.width / 2; xScale: root.reveal(1) }
+    height: Math.min(content.height, Math.max(0, root.maxHeight - header.height - root.spacing))
+    contentWidth: width
+    contentHeight: content.height
+    clip: contentHeight > height
+    interactive: contentHeight > height
+    boundsBehavior: Flickable.StopAtBounds
+
+    Item {
+      id: content
+      width: flick.width
+      height: root.onHome ? home.height : (loader.item ? loader.item.height : fallback.height)
+
+      HomePage {
+        id: home
+        island: root.island
+        width: parent.width
+        visible: root.onHome
+        shown: root.shown && root.onHome
+      }
+
+      Loader {
+        id: loader
+        width: parent.width
+        active: !root.onHome
+        visible: !root.onHome && status === Loader.Ready
+        opacity: 0
+        function load() {
+          if (!active || !root.sources[root.page]) return
+          var url = Qt.resolvedUrl(root.sources[root.page])
+          if (String(source) === String(url)) return
+          setSource(String(url), { "island": root.island })
+        }
+        onActiveChanged: load()
+        onLoaded: { item.width = Qt.binding(function() { return loader.width }); opacity = 0; fadeIn.restart() }
+        NumberAnimation on opacity { id: fadeIn; running: false; to: 1; duration: 220; easing.type: Easing.OutCubic }
+      }
+
+      Text {
+        id: fallback
+        width: parent.width
+        visible: !root.onHome && loader.status === Loader.Error
+        wrapMode: Text.WordWrap
+        text: root.island.tr("page_missing")
+        color: root.dimColor
+        font.family: Style.font.family
+        font.pixelSize: Style.font.bodySmall
+      }
+    }
   }
 
-  TimerRow {
-    island: root.island
-    width: parent.width
-    opacity: root.reveal(2)
-    transform: Translate { y: (1 - root.reveal(2)) * root.rise }
-  }
-
-  Dock {
-    island: root.island
-    width: parent.width
-    opacity: root.reveal(3)
-    transform: Translate { y: (1 - root.reveal(3)) * root.rise }
-  }
+  onPageChanged: { flick.contentY = 0; loader.load() }
 }

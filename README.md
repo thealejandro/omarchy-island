@@ -3,9 +3,12 @@
 [Español](README.es.md)
 
 A dynamic island for [Omarchy](https://omarchy.org) that grows out of the
-center of the Omarchy bar. It shows what's playing, gives you media controls,
-the month calendar, a focus timer, the weather, quick actions and Omarchy's
-quick toggles, and gets out of the way when you're done.
+Omarchy bar, right where the clock is, on whichever edge the bar sits. It
+shows what's playing, gives you media controls, a calendar with your own
+agenda, the time around the world, the weather with a 3-day forecast, a focus
+timer, quick actions and Omarchy's quick toggles, and gets out of the way when
+you're done. Everything is configurable from a settings page inside the
+island.
 
 It is a regular Omarchy shell plugin: it runs inside `omarchy-shell`, takes
 its colors, font and corner radius from your current theme, and doesn't
@@ -32,8 +35,22 @@ as it was.
   the island: cover art, source player,
   title, artist, a progress bar you can click or drag, previous / play /
   next.
-- **Calendar**: the current month with today highlighted. Arrows or the
-  scroll wheel change month; click the title to go back to today.
+- **Pages**: the open island has four, picked from the tabs in its top
+  corner: Home (all of the below), Calendar, World and Settings.
+- **Calendar and agenda**: the month with today highlighted and a dot on
+  days that have something. Arrows or the scroll wheel change month; click
+  the title to go back to today. The Calendar page lists the picked day:
+  your own events (add, edit, repeat weekly/monthly/yearly), Omarchy's
+  reminders and what's coming in the next week. The island reminds you
+  before an event (a peek and a notification), or hands the event to
+  `omarchy reminder` with one click. See [Agenda](#agenda).
+- **World and weather**: the cities from Omarchy's elsewhen widget as small
+  chips on Home and a full list on the World page (time, day, difference
+  from here), plus the weather with a 3-day forecast. See
+  [World clock and weather](#world-clock-and-weather).
+- **Settings page**: every setting below, with switches, choices and steppers.
+  Changes are saved to `shell.json` at once and anything set from the
+  command line shows up there live.
 - **Focus timer**: Pomodoro (25 / 5 by default) with a notification when each
   phase ends. Scroll over the timer to change the focus length (5–120 min).
 - **Dock**: one slim row along the bottom.
@@ -55,11 +72,17 @@ as it was.
   can tune it in its `shell.toml`: `[island]` `border`, `border-alpha`,
   `border-width`.
 - **Light**: no extra process. Media comes from MPRIS (Spotify, browsers,
-  mpv…); the only polling is the weather, every 20 minutes.
+  mpv…); the only polling is the weather, every 20 minutes, the world
+  clock's time zones while the island is open, and `agendaCommand` if you
+  set one.
 
 ## Requirements
 
-Omarchy 4 or newer (Quickshell-based `omarchy-shell`) with the bar at the top.
+Omarchy 4 or newer (Quickshell-based `omarchy-shell`; tested on
+4.0.0.alpha). The bar can be on any edge: top, bottom, left or right. On an
+Omarchy version the island wasn't tested with, its settings page says so;
+anything it can't find degrades to a simpler behavior instead of breaking
+(see [Compatibility](#compatibility)).
 
 ## Install
 
@@ -67,8 +90,9 @@ Omarchy 4 or newer (Quickshell-based `omarchy-shell`) with the bar at the top.
 omarchy plugin add https://github.com/thealejandro/omarchy-island.git --enable
 ```
 
-Then put it on the bar's center, next to the clock. It takes no room there;
-it's what lets it hide the indicators the island already carries:
+Then put it on the bar next to the clock. It takes no room there; it lets
+the island hide the indicators it already carries, and it's how the island
+finds the clock on the bar to hang from it exactly:
 
 ```bash
 omarchy bar put thealejandro.island --after omarchy.clock
@@ -82,11 +106,17 @@ omarchy plugin remove thealejandro.island
 
 ## Usage
 
-- Hover the bar's clock, or the thin strip right under it, to open the
-  island; move away and it closes.
-- Click the clock to pin the island open (its calendar replaces Omarchy's
-  popup); click again to close it. Right click still changes the clock
+- Hover the bar's clock, or the thin strip next to it, to open the island;
+  move away and it closes. It opens over the clock wherever the clock is
+  (center, left, right) and on whatever edge the bar is.
+- Click the clock to pin the island open; click again to close it. With
+  `clockClick` you can make that click open the Calendar page, or leave the
+  clock to Omarchy's own calendar. Right click still changes the clock
   format and middle click still opens the timezone menu.
+- With the island open, the bar's other widgets (elsewhen, weather…) stay
+  clickable and their panels open on top of it.
+- Pick a page from the tabs in the top corner. A click on a day of the
+  small calendar opens the Calendar page on that day.
 - Toggle it from a key, in `~/.config/hypr/bindings.lua`:
 
   ```lua
@@ -100,30 +130,57 @@ IPC (`omarchy-shell island <method>`):
 | `toggle` | Pin the island open / closed             |
 | `open`   | Pin it open                              |
 | `close`  | Close it                                 |
+| `page <name>` | Open it on `home`, `calendar`, `world` or `settings` |
 | `peek`   | Show the short glance                    |
 | `timer`  | Start / pause the focus timer            |
 | `focus <min>` | Set the focus length (idle timer, 5–120) |
+| `event <date> <time> <title>` | Add an event (`2026-11-20 09:30 "Dentist"`; time `""` for all day) |
+| `events <date>` | JSON with that day's events (`""` for today) |
+| `anchor <screen> <center> <length>` | Where to hang from, for bars that can't tell the island themselves |
+| `anchors` | JSON with the bar edge and the anchors in use |
 | `state`  | JSON with the current state              |
 
 ## Settings
 
-Optional, in the island's entry in `~/.config/omarchy/shell.json` (in the
-bar layout, or under `plugins` if you didn't put it on the bar):
+Everything is on the island's Settings page. The values live in the
+island's entry in `~/.config/omarchy/shell.json` (in the bar layout, or
+under `plugins` if you didn't put it on the bar); only what you change is
+written there:
 
 ```json
-{ "id": "thealejandro.island", "language": "es", "toggles": "island" }
+{ "id": "thealejandro.island", "language": "es", "defaultPage": "calendar" }
 ```
 
-Or from the command line: `omarchy bar set thealejandro.island toggles both`.
+Or from the command line: `omarchy bar set thealejandro.island toggles both`
+(lists and `null` with `--json`). **Reset** on the System section removes
+the island's own keys and nothing else.
 
-| Key        | Values                       | Default     |
-|------------|------------------------------|-------------|
-| `language` | `en`, `es`                   | from `LANG` |
-| `clock`    | `true`, `false`              | `true`      |
-| `toggles`  | `island`, `both`, `bar`      | `island`    |
-| `units`    | `metric`, `imperial`         | `metric`    |
-| `osd`      | `true`, `false`              | `false`     |
-| `battery`  | `true`, `false`              | `true`      |
+| Key | Values | Default | What it does |
+|-----|--------|---------|--------------|
+| `language` | `en`, `es` | from `LANG` | Island language |
+| `defaultPage` | `home`, `calendar`, `world` | `home` | Page the island opens on |
+| `calendarFirst` | `true`, `false` | `false` | Calendar on the left on Home |
+| `showMedia`, `showTimer`, `showDock`, `showWorld` | `true`, `false` | `true` | Parts of the Home page |
+| `openWidth` | 420–800 | `560` | Width of the open island |
+| `blur` | `true`, `false` | `true` | Blur behind the island with a glassy bar |
+| `clock` | `true`, `false` | `true` | Open by hovering the clock (`false`: only the edge strip) |
+| `clockClick` | `pin`, `calendar`, `omarchy` | `pin` | Clock click: pin the island, open it on the calendar, or Omarchy's calendar |
+| `anchor` | `clock`, `widget`, `center` | `clock` | Hang from Omarchy's clock, from the island's own spot on the bar, or the bar's center |
+| `clockWidth` | 60–400 | `120` | Hover zone when the clock can't be found |
+| `hoverOpen` | `true`, `false` | `true` | Open on hover at all |
+| `hoverDelay` | 0–600 ms | `120` | Wait before opening on hover |
+| `peekDuration` | 1000–10000 ms | `3500` | How long a peek stays |
+| `toggles` | `island`, `both`, `bar` | `island` | Where Omarchy's quick toggles live |
+| `widgetIcon` | `true`, `false` | `false` | A small button of its own on the bar |
+| `units` | `metric`, `imperial` | `metric` | Weather units |
+| `forecast` | `true`, `false` | `true` | 3-day forecast on the World page |
+| `hour24` | `true`, `false` | elsewhen's, else the locale | 24-hour world clock |
+| `cities` | `[{"name","zone"}]` | elsewhen's | The island's own city list |
+| `weekStart` | 1 (Mon) – 7 (Sun) | the locale's | First day of the week |
+| `reminderLead` | 0–120 min | `10` | Reminder before an event |
+| `agendaCommand` | shell command | `""` | Extra events from another calendar |
+| `osd` | `true`, `false` | `false` | Show Omarchy's OSD in the island |
+| `battery` | `true`, `false` | `true` | Charging and low-battery peeks |
 
 `toggles` decides where Omarchy's quick toggles live:
 
@@ -133,7 +190,8 @@ Or from the command line: `omarchy bar set thealejandro.island toggles both`.
 - `bar`: only on the bar; the island's dock keeps the actions and weather.
 
 `osd` makes the island show Omarchy's on-screen display. Only one plugin
-can own it, so turn Omarchy's card off first, then set it:
+can own it, so Omarchy's card has to step aside. The **Use as OSD**
+button on the System section does both steps; by hand:
 
 ```bash
 omarchy plugin disable omarchy.osd
@@ -141,13 +199,88 @@ omarchy bar set thealejandro.island osd true
 ```
 
 To go back: `omarchy bar set thealejandro.island osd false` and
-`omarchy plugin enable omarchy.osd`.
+`omarchy plugin enable omarchy.osd` (or the same button again).
 
 `battery: false` silences the charging and low-battery peeks. Desktops
 without a battery never show them.
 
-With `"clock": false` the island leaves the clock alone: hover only the top
-edge to open it, and a click on the clock opens Omarchy's calendar again.
+## Agenda
+
+Your events are kept in `~/.local/state/omarchy/island/events.json`, apart
+from `shell.json` (they're data, not settings). The island writes it
+atomically and picks up edits made by hand:
+
+```json
+{
+  "version": 1,
+  "events": [
+    { "id": "e1", "date": "2026-11-20", "time": "09:30", "title": "Dentist",
+      "repeat": "none", "remind": null }
+  ]
+}
+```
+
+`time` is `""` for an all-day event; `repeat` is `none`, `weekly`,
+`monthly` or `yearly`; `remind` is minutes before, or `null` for
+`reminderLead`. At that moment the island peeks and sends a notification.
+The bell on an event of today hands it to Omarchy's reminders instead
+(`omarchy reminder <minutes> "<title>"`), and Omarchy's active reminders are
+listed on today.
+
+**Other calendars.** `agendaCommand` runs a command when the island starts
+and every 15 minutes; each line it prints as
+`YYYY-MM-DD<TAB>HH:MM<TAB>title` (empty time for all day) is shown as a
+read-only event. For example with [khal](https://github.com/pimutils/khal)
+(check the format options of your khal version):
+
+```bash
+omarchy bar set thealejandro.island agendaCommand "khal list --format '{start-date}\t{start-time}\t{title}' --day-format '' today 14d"
+```
+
+## World clock and weather
+
+The World page and the chips on Home use the cities of Omarchy's elsewhen
+widget, read from its entry in `shell.json`, so you keep one list. Set
+`cities` to give the island its own (`Name|Area/City, …` on the Settings
+page). The island works the times out itself from each zone's offset
+(`TZ=zone date`), so it doesn't need elsewhen on the bar; when elsewhen is
+there, a click on a chip opens its panel. Without cities, there's no world
+row.
+
+The weather is the same wttr.in report the dock pill uses, for the place
+set in Omarchy's weather widget (or by IP), refreshed every 20 minutes.
+**Open forecast** opens Omarchy's weather panel (when the widget is on the
+bar) and **Change location** its place picker, or the file it reads.
+
+## Compatibility
+
+The island only uses what an Omarchy plugin is offered, and checks for it
+instead of assuming it:
+
+- The bar's edge and size come from the plugin bar API; without it, from
+  `shell.json` and the theme. A hidden bar is fine: the island opens at the
+  screen edge.
+- The clock is found by walking the bar's widgets for `omarchy.clock`. If a
+  future bar changes that, the island hangs from its own spot on the bar
+  (`anchor: widget` behavior) or the center.
+- Settings are saved with the plugin API's `updateEntryInline`, or with
+  `omarchy bar set` when that's missing.
+- It never writes Omarchy's files; only its own entry in `shell.json` (and
+  `disabledPlugins` through `omarchy plugin` when you ask it to take over
+  the OSD) and `~/.local/state/omarchy/island/`.
+
+### Troubleshooting
+
+- *The island opens in the middle of the bar, not over the clock*: put the
+  island on the bar (`omarchy bar put thealejandro.island --after
+  omarchy.clock`), or check `omarchy-shell island anchors`.
+- *`osd: true` but no OSD in the island*: Omarchy's `omarchy.osd` is still
+  enabled; use the button on the System section.
+- *No world row*: elsewhen has no cities (or is disabled) and `cities` is
+  empty.
+- *A third-party bar*: without Omarchy's bar API the island falls back to
+  `shell.json`; the bar can still report the clock with `omarchy-shell
+  island anchor <screen> <center> <length>`.
 
 ## Development
 
@@ -165,13 +298,21 @@ Quickshell caches compiled QML, so after editing the code run
 
 | File               | What it does                                         |
 |--------------------|------------------------------------------------------|
-| `Service.qml`      | State: MPRIS player, timer, toggles, weather, OSD, battery, settings, IPC |
-| `BarWidget.qml`    | Invisible bar entry that hides duplicate indicators  |
-| `IslandModel.js`   | Pure helpers: player choice, clock, strings, month grid, weather |
+| `Service.qml`      | State: MPRIS player, timer, toggles, weather, world, agenda, OSD, battery, settings, anchors, IPC |
+| `BarWidget.qml`    | Bar entry: hides duplicate indicators, finds the clock, optional button |
+| `IslandSettings.js` | The settings schema: defaults, normalizing, saving, manifest schema |
+| `IslandGeometry.js` | Bar edges, placement along the bar, finding the clock |
+| `IslandModel.js`   | Pure helpers: player choice, clock, strings, month grid, weather, world times |
+| `AgendaModel.js`   | Pure helpers for events: repeats, upcoming, reminders, external lines |
 | `IslandWindow.qml` | Per-screen layer surface, input mask, hover, motion  |
-| `IslandShape.qml`  | The silhouette with concave ears                     |
-| `PeekView.qml`     | The one-line glance: track, timer, OSD or battery    |
-| `OpenView.qml`     | Layout of the open island                            |
+| `IslandShape.qml`  | The silhouette with concave ears, turned to the bar's edge |
+| `PeekView.qml`     | The one-line glance: track, timer, OSD, battery or event |
+| `OpenView.qml`     | Header, page tabs and the current page               |
+| `HomePage.qml`     | The home page                                        |
+| `CalendarPage.qml`, `AgendaList.qml`, `EventEditor.qml` | Calendar page and agenda |
+| `WorldPage.qml`, `WorldRow.qml` | World page and the chips on Home        |
+| `SettingsView.qml`, `PageTabs.qml` | Settings page and the page tabs      |
+| `IslandToggle.qml`, `IslandSegment.qml`, `IslandStepper.qml`, `IslandField.qml` | Settings controls |
 | `MediaCard.qml`    | Cover, track, seek bar and transport                 |
 | `CalendarView.qml` | Month calendar                                       |
 | `TimerRow.qml`     | Focus timer                                          |
@@ -179,6 +320,8 @@ Quickshell caches compiled QML, so after editing the code run
 | `IslandButton.qml` | Round icon button                                    |
 | `Glyph.qml`        | Icon centered by its ink, not its font box           |
 | `Equalizer.qml`    | Small animated bars while music plays                |
+
+What changed between versions is in [CHANGELOG.md](CHANGELOG.md).
 
 Ideas and bugs go to the issues. Inspired by
 [Nusa](https://rama2555.github.io/nusa/) on Windows and the notch in

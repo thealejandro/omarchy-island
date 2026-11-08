@@ -1,12 +1,20 @@
 import QtQuick
 import QtQuick.Shapes
+import "IslandGeometry.js" as IslandGeometry
 
 // The island silhouette: a body hanging from the bar with concave "ears" on
 // both top corners, so it reads as the bar bulging downwards rather than as
 // a separate popup. With a theme cornerRadius of 0 both the ears and the
 // bottom corners collapse to square, matching Omarchy's sharp themes.
+//
+// It is always drawn hanging from a top bar (bodyWidth runs along the bar,
+// bodyHeight is the depth) and then turned for the bar's `edge` with one
+// matrix, so the four orientations share a single path. Place it at (0, 0)
+// of the body: the matrix already pushes the ears out past both ends.
 Shape {
   id: shape
+
+  property string edge: "top"
 
   property real bodyWidth: 0
   property real bodyHeight: 0
@@ -32,6 +40,14 @@ Shape {
   height: bodyHeight
   visible: bodyWidth > 0.5 && bodyHeight > 0.5
   preferredRendererType: Shape.CurveRenderer
+
+  transform: Matrix4x4 {
+    matrix: {
+      var m = IslandGeometry.shapeMatrix(shape.edge, shape.bodyHeight, shape.e)
+      return Qt.matrix4x4(m[0], m[1], m[2], m[3], m[4], m[5], m[6], m[7],
+        m[8], m[9], m[10], m[11], m[12], m[13], m[14], m[15])
+    }
+  }
 
   ShapePath {
     fillGradient: LinearGradient {
