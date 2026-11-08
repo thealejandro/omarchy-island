@@ -395,7 +395,8 @@ Item {
   Timer {
     interval: 1000
     repeat: true
-    running: root.playing
+    running: root.playing && root.isOpen
+    triggeredOnStart: true
     onTriggered: if (root.player) root.player.positionChanged()
   }
 

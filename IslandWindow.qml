@@ -53,9 +53,32 @@ PanelWindow {
   readonly property bool peeking: !expanded && island.peeking
   readonly property string mode: expanded ? "open" : (peeking ? "peek" : "closed")
   onModeChanged: {
+    if (mode === "open") { keepOpen = true; keepPeek = false }
+    else if (mode === "peek") keepPeek = true
+    if (mode !== "open") openRelease.restart()
+    if (mode !== "peek") peekRelease.restart()
     if (mode === "closed") island.islandClosed()
     else if (mode === "open") island.isOpen = true
   }
+
+  // The views are only built while they're on screen, and let go a moment
+  // after they're gone (once the closing motion is over), so a closed
+  // island holds no pages, cover art or icons. Reopening within that
+  // moment reuses them.
+  property bool keepOpen: false
+  property bool keepPeek: false
+  Timer {
+    id: openRelease
+    interval: 1500
+    onTriggered: {
+      win.keepOpen = win.mode === "open"
+      // Hand the pages' memory back now rather than at some later sweep.
+      if (!win.keepOpen) Qt.callLater(gc)
+    }
+  }
+  Timer { id: peekRelease; interval: 1000; onTriggered: win.keepPeek = win.mode === "peek" }
+  readonly property Item openView: openLoader.item
+  readonly property Item peekView: peekLoader.item
 
   readonly property Item activeView: mode === "open" ? openView : (mode === "peek" ? peekView : null)
   readonly property real targetWidth: !activeView ? 0
@@ -273,44 +296,56 @@ PanelWindow {
         x: win.edge === "right" ? body.width - width : 0
         y: win.edge === "bottom" ? body.height - height : 0
 
-        PeekView {
-          id: peekView
-          island: win.island
-          x: Style.spacing.xxl
-          y: win.edge === "bottom" ? inner.height - height - Style.spacing.lg : Style.spacing.lg
-          width: Math.max(0, body.width - 2 * Style.spacing.xxl)
-          // Drops in from the bar as the body grows; when the island opens
-          // further it shrinks back into the content instead of just vanishing.
-          readonly property bool shown: win.mode === "peek"
-          readonly property real drop: shown ? 0 : Style.space(6)
-          opacity: shown ? 1 : 0
-          visible: opacity > 0
-          transformOrigin: win.edge === "bottom" ? Item.Bottom : (win.edge === "left" ? Item.Left
-            : (win.edge === "right" ? Item.Right : Item.Top))
-          scale: shown ? 1 : (win.mode === "open" ? 0.9 : 0.96)
-          transform: Translate {
-            x: win.edge === "left" ? -peekView.drop : (win.edge === "right" ? peekView.drop : 0)
-            y: win.edge === "top" ? -peekView.drop : (win.edge === "bottom" ? peekView.drop : 0)
-            Behavior on x { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
-            Behavior on y { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
+        Loader {
+          id: peekLoader
+          active: win.keepPeek
+          sourceComponent: Component {
+            PeekView {
+              id: peekItem
+              island: win.island
+              x: Style.spacing.xxl
+              y: win.edge === "bottom" ? inner.height - height - Style.spacing.lg : Style.spacing.lg
+              width: Math.max(0, body.width - 2 * Style.spacing.xxl)
+              // Drops in from the bar as the body grows; when the island opens
+              // further it shrinks back into the content instead of just vanishing.
+              readonly property bool shown: win.mode === "peek"
+              readonly property real drop: shown ? 0 : Style.space(6)
+              opacity: shown ? 1 : 0
+              visible: opacity > 0
+              transformOrigin: win.edge === "bottom" ? Item.Bottom : (win.edge === "left" ? Item.Left
+                : (win.edge === "right" ? Item.Right : Item.Top))
+              scale: shown ? 1 : (win.mode === "open" ? 0.9 : 0.96)
+              transform: Translate {
+                x: win.edge === "left" ? -peekItem.drop : (win.edge === "right" ? peekItem.drop : 0)
+                y: win.edge === "top" ? -peekItem.drop : (win.edge === "bottom" ? peekItem.drop : 0)
+                Behavior on x { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
+                Behavior on y { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
+              }
+              Behavior on opacity { NumberAnimation { duration: peekItem.shown ? 220 : 140; easing.type: Easing.OutCubic } }
+              Behavior on scale { NumberAnimation { duration: 260; easing.type: Easing.OutBack; easing.overshoot: 1.2 } }
+            }
           }
-          Behavior on opacity { NumberAnimation { duration: peekView.shown ? 220 : 140; easing.type: Easing.OutCubic } }
-          Behavior on scale { NumberAnimation { duration: 260; easing.type: Easing.OutBack; easing.overshoot: 1.2 } }
         }
 
-        OpenView {
-          id: openView
-          island: win.island
-          x: win.pad
-          y: win.edge === "bottom" ? inner.height - win.targetHeight + win.pad : win.pad
-          width: win.openWidth - 2 * win.pad
-          maxHeight: (win.vertical ? win.height - Style.space(40) : win.maxDepth) - 2 * win.pad
-          // Sections come in one after another once the body is about half
-          // grown, and everything goes at once on the way out.
-          shown: win.mode === "open" && (win.vertical ? body.bodyWidth : body.bodyHeight) > win.targetAcross * 0.45
-          opacity: shown ? 1 : 0
-          visible: opacity > 0
-          Behavior on opacity { NumberAnimation { duration: openView.shown ? 80 : 140 } }
+        Loader {
+          id: openLoader
+          active: win.keepOpen
+          sourceComponent: Component {
+            OpenView {
+              id: openItem
+              island: win.island
+              x: win.pad
+              y: win.edge === "bottom" ? inner.height - win.targetHeight + win.pad : win.pad
+              width: win.openWidth - 2 * win.pad
+              maxHeight: (win.vertical ? win.height - Style.space(40) : win.maxDepth) - 2 * win.pad
+              // Sections come in one after another once the body is about half
+              // grown, and everything goes at once on the way out.
+              shown: win.mode === "open" && (win.vertical ? body.bodyWidth : body.bodyHeight) > win.targetAcross * 0.45
+              opacity: shown ? 1 : 0
+              visible: opacity > 0
+              Behavior on opacity { NumberAnimation { duration: openItem.shown ? 80 : 140 } }
+            }
+          }
         }
       }
     }

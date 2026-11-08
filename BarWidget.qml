@@ -132,8 +132,10 @@ BarWidget {
     interval: 250
     onTriggered: root.reportAnchor()
   }
+  // Often while the island is up; a slow check while it's closed, since
+  // hovering asks for a fresh report anyway.
   Timer {
-    interval: 2000
+    interval: root.service && (root.service.isOpen || root.service.peeking) ? 2000 : 10000
     repeat: true
     running: !!root.bar
     onTriggered: root.reportAnchor()
