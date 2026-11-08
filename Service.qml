@@ -7,6 +7,7 @@ import Quickshell.Services.UPower
 import "IslandModel.js" as IslandModel
 import "IslandGeometry.js" as IslandGeometry
 import "IslandSettings.js" as IslandSettings
+import "AgendaModel.js" as AgendaModel
 
 // Headless owner of the island state. One IslandWindow is mounted per screen;
 // they all read media and timer state from here, so two monitors never show
@@ -310,7 +311,10 @@ Item {
   // every time the island closes.
   readonly property var pages: ["home", "calendar", "world", "settings"]
   property string page: defaultPage
+  onDefaultPageChanged: if (!isOpen) page = defaultPage
   property string tabHint: ""
+  // The day picked on the calendar page; "" is today.
+  property string calendarDay: ""
   function showPage(name) {
     if (pages.indexOf(name) === -1) return false
     page = name
@@ -318,6 +322,7 @@ Item {
   }
   function islandClosed() {
     isOpen = false
+    calendarDay = ""
     tabHint = ""
     wantsKeyboard = false
     page = defaultPage
@@ -427,6 +432,7 @@ Item {
   property bool stayAwake: false
   property bool recording: false
   property int reminderCount: 0
+  property var omarchyReminders: []
 
   function toggleNightLight() { runToggle(["omarchy-shell", "nightlight", "toggle"]) }
   function toggleDoNotDisturb() { runToggle(["omarchy-shell", "notifications", "toggleDnd"]) }
@@ -466,6 +472,7 @@ Item {
         root.stayAwake = json(2).stayAwake === true
         root.recording = Number(lines[3]) > 0
         root.reminderCount = Number(json(4).count || 0)
+        root.omarchyReminders = AgendaModel.parseOmarchyReminders(json(4))
       }
     }
   }
@@ -619,6 +626,141 @@ Item {
     onTriggered: root.refreshWeather()
   }
 
+  // ------------------------------------------------------------- agenda
+
+  // The island's own events live in a small file of their own (data, not
+  // configuration), written atomically. Omarchy's reminders are listed
+  // alongside, and an optional command can add events from elsewhere
+  // (khal, gcalcli…), one "YYYY-MM-DD<TAB>HH:MM<TAB>title" per line.
+  readonly property string agendaDir: Quickshell.env("HOME") + "/.local/state/omarchy/island"
+  property var localEvents: []
+  property var externalEvents: []
+  readonly property var allEvents: localEvents.concat(externalEvents)
+  // What the agenda peek is about: { title, time, minutes }.
+  property var agendaNote: null
+
+  FileView {
+    id: eventsFile
+    path: root.agendaDir + "/events.json"
+    printErrors: false
+    atomicWrites: true
+    watchChanges: true
+    onFileChanged: reload()
+    onLoaded: {
+      try {
+        var data = JSON.parse(text())
+        root.localEvents = AgendaModel.cleanAll(Array.isArray(data) ? data : data.events)
+      } catch (e) {
+        console.warn("island: events.json is not valid JSON; leaving it as it is")
+      }
+    }
+    onLoadFailed: root.localEvents = []
+  }
+
+  Process {
+    id: agendaDirMaker
+    command: ["mkdir", "-p", root.agendaDir]
+    property var then: null
+    onExited: if (then) { var t = then; then = null; t() }
+  }
+
+  function saveEvents(list) {
+    var stored = list.map(function(e) {
+      return { id: e.id, date: e.date, time: e.time, title: e.title, repeat: e.repeat, remind: e.remind }
+    })
+    localEvents = AgendaModel.cleanAll(stored)
+    var body = JSON.stringify({ version: 1, events: stored }, null, 2) + "\n"
+    agendaDirMaker.then = function() { eventsFile.setText(body) }
+    agendaDirMaker.running = true
+  }
+
+  // fields: { date, time, title, repeat, remind }. Returns the event, or
+  // null when it isn't valid (no title, bad date or time).
+  function addEvent(fields) {
+    var time = AgendaModel.normalizeTime(fields.time)
+    if (time === null) return null
+    var ev = AgendaModel.clean({ id: AgendaModel.newId(Date.now()), date: fields.date, time: time,
+      title: fields.title, repeat: fields.repeat, remind: fields.remind })
+    if (!ev) return null
+    saveEvents(localEvents.concat([ev]))
+    return ev
+  }
+  function updateEvent(id, fields) {
+    var time = AgendaModel.normalizeTime(fields.time)
+    if (time === null) return null
+    var next = null
+    var list = localEvents.map(function(e) {
+      if (e.id !== id) return e
+      next = AgendaModel.clean({ id: id, date: fields.date, time: time, title: fields.title,
+        repeat: fields.repeat, remind: fields.remind })
+      return next || e
+    })
+    if (next) saveEvents(list)
+    return next
+  }
+  function removeEvent(id) {
+    saveEvents(localEvents.filter(function(e) { return e.id !== id }))
+  }
+  function eventsOn(iso) { return AgendaModel.eventsOn(allEvents, iso) }
+
+  // Hands an event of today to Omarchy's reminders, reminderLead minutes
+  // before it. False when that moment has already passed.
+  function remindViaOmarchy(ev, on) {
+    var mins = AgendaModel.minutesUntil(ev, on, new Date())
+    if (mins === null) return false
+    var lead = ev.remind === null || ev.remind === undefined ? cfg.reminderLead : ev.remind
+    var wait = mins - lead
+    if (wait < 1) return false
+    Quickshell.execDetached(["omarchy-reminder", String(wait), ev.title])
+    toggleSettle.restart()
+    return true
+  }
+
+  // The island's own reminder: a glance and a notification when an event
+  // is reminderLead minutes away. Each fires once per day.
+  property var _fired: ({})
+  Timer {
+    interval: 20 * 1000
+    repeat: true
+    running: root.allEvents.length > 0
+    triggeredOnStart: true
+    onTriggered: {
+      var due = AgendaModel.dueReminders(root.allEvents, new Date(), root.cfg.reminderLead)
+      for (var i = 0; i < due.length; i++) {
+        if (root._fired[due[i].key]) continue
+        root._fired[due[i].key] = true
+        var ev = due[i].event
+        root.agendaNote = { title: ev.title, time: ev.time, minutes: due[i].minutes }
+        Quickshell.execDetached(["notify-send", "-a", "Island", ev.title,
+          due[i].minutes > 0 ? root.tr("eventIn", due[i].minutes) + " · " + ev.time : root.tr("eventNow")])
+        root.peek("agenda", 8000)
+      }
+    }
+  }
+
+  function refreshExternal() {
+    if (cfg.agendaCommand.trim() === "") { externalEvents = []; return }
+    if (agendaRun.running) return
+    agendaRun.command = ["bash", "-c", cfg.agendaCommand]
+    agendaRun.running = true
+  }
+  Connections {
+    target: root
+    function onCfgChanged() { if (agendaRun.lastCommand !== root.cfg.agendaCommand) root.refreshExternal() }
+  }
+  Process {
+    id: agendaRun
+    property string lastCommand: ""
+    onStarted: lastCommand = root.cfg.agendaCommand
+    stdout: StdioCollector { onStreamFinished: root.externalEvents = AgendaModel.parseExternal(text) }
+  }
+  Timer {
+    interval: 15 * 60 * 1000
+    repeat: true
+    running: root.cfg.agendaCommand !== ""
+    onTriggered: root.refreshExternal()
+  }
+
   // ------------------------------------------------------------- osd
 
   // The last OSD Omarchy asked for, shown as a peek instead of its own card.
@@ -722,6 +864,15 @@ Item {
     function anchor(screen: string, center: int, length: int): string {
       if (length <= 0) { root.clearAnchor(screen); return "ok" }
       return root.setAnchor(screen, center, length, "ipc") ? "ok" : "invalid"
+    }
+    // Adds an event to the island's agenda: date YYYY-MM-DD, time HH:MM or
+    // "" for all day.
+    function event(date: string, time: string, title: string): string {
+      var ev = root.addEvent({ date: date, time: time, title: title, repeat: "none", remind: null })
+      return ev ? ev.id : "invalid"
+    }
+    function events(date: string): string {
+      return JSON.stringify(root.eventsOn(date || AgendaModel.isoDate(new Date())))
     }
     function anchors(): string { return JSON.stringify({ position: root.barPosition, anchors: root.anchorMap }) }
   }

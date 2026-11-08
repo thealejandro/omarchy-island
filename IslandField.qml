@@ -12,6 +12,8 @@ Rectangle {
   property string text: ""
   property string placeholder: ""
   property bool editing: input.activeFocus
+  // What's typed so far, committed or not (for forms with a save button).
+  readonly property string current: input.text
   signal accepted(string text)
 
   implicitWidth: Style.space(220)
@@ -30,10 +32,12 @@ Rectangle {
     Qt.callLater(function() { input.forceActiveFocus(); input.selectAll() })
   }
   function finish(commit) {
-    if (commit) root.accepted(input.text)
-    else input.text = root.text
+    var typed = input.text
+    if (!commit) input.text = root.text
     input.focus = false
     island.wantsKeyboard = false
+    // Last, so a handler can hand the keyboard to the next field.
+    if (commit) root.accepted(typed)
   }
 
   // Someone else (closing the island) took the keyboard back.
