@@ -43,6 +43,7 @@
       "agendaCommand": "",
       "osd": false,
       "battery": true,
+      "animations": true,
       "notifications": "off",
       "notifyBody": true,
       "notifyPeekDuration": 6000,
@@ -176,6 +177,12 @@
         "max": 10000,
         "step": 500,
         "defaultValue": 3500
+      },
+      {
+        "key": "animations",
+        "type": "boolean",
+        "label": "Animations",
+        "defaultValue": true
       },
       {
         "key": "toggles",

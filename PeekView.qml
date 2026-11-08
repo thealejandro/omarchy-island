@@ -40,7 +40,7 @@ Row {
 
   // A new notification slides in from just above, short and light.
   property real enter: 1
-  onNoteChanged: if (note) { enter = 0; enterAnim.restart() }
+  onNoteChanged: if (note && island.animate) { enter = 0; enterAnim.restart() }
   NumberAnimation { id: enterAnim; target: root; property: "enter"; to: 1; duration: 220; easing.type: Easing.OutCubic }
   opacity: kind === "notification" ? enter : 1
   transform: Translate { y: root.kind === "notification" ? (1 - root.enter) * -Style.space(6) : 0 }

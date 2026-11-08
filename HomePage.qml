@@ -19,7 +19,7 @@ Column {
   // One clock for the whole entrance. Each section starts a little after the
   // one above it, so the content cascades down as the body settles.
   property real progress: shown ? 1 : 0
-  Behavior on progress { NumberAnimation { duration: root.shown ? 560 : 120 } }
+  Behavior on progress { enabled: root.island.animate; NumberAnimation { duration: root.shown ? 560 : 120 } }
 
   function reveal(index) {
     var t = Math.max(0, Math.min(1, (progress - index * 0.12) / 0.64))

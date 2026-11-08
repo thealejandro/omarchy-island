@@ -72,6 +72,8 @@ Item {
   readonly property int hoverDelay: cfg.hoverDelay
   readonly property int peekDuration: cfg.peekDuration
   readonly property string defaultPage: cfg.defaultPage
+  // Motion everywhere in the island; off gives instant changes.
+  readonly property bool animate: cfg.animations
   // A text field in the island is being edited: the island takes the
   // keyboard and stays open until it's done.
   property bool wantsKeyboard: false

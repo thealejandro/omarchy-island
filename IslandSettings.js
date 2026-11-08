@@ -21,6 +21,7 @@ var SCHEMA = [
 
   { key: "openWidth", type: "int", min: 420, max: 800, step: 20, def: 560, section: "look" },
   { key: "blur", type: "bool", def: true, section: "look" },
+  { key: "animations", type: "bool", def: true, section: "look" },
 
   { key: "clock", type: "bool", def: true, section: "open" },
   { key: "clockClick", type: "enum", options: ["pin", "calendar", "omarchy"], def: "pin", section: "open" },

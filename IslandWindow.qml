@@ -94,7 +94,10 @@ PanelWindow {
   readonly property real wantedCenter: IslandGeometry.clampCenter(clockCenter,
     Math.max(targetAlong, vertical ? 0 : openWidth) + 2 * ear, screenLength, Style.space(8))
   property real bodyCenter: wantedCenter
-  Behavior on bodyCenter { NumberAnimation { duration: 220; easing.type: Easing.OutCubic } }
+  Behavior on bodyCenter {
+    enabled: win.island.animate
+    NumberAnimation { duration: 220; easing.type: Easing.OutCubic }
+  }
 
   function place(alongStart, alongLen, acrossFrom, acrossLen) {
     return IslandGeometry.rect(edge, width, height, alongStart, alongLen, acrossFrom, acrossLen)
@@ -245,17 +248,19 @@ PanelWindow {
     // touch softer than height so the body stretches before it widens.
     readonly property bool closing: win.mode === "closed"
     Behavior on bodyWidth {
+      enabled: win.island.animate
       SpringAnimation {
-        spring: body.closing ? 6 : 3.6
-        damping: body.closing ? 0.55 : 0.32
+        spring: body.closing ? 6.5 : 3.8
+        damping: body.closing ? 0.6 : 0.36
         mass: 1
         epsilon: 0.25
       }
     }
     Behavior on bodyHeight {
+      enabled: win.island.animate
       SpringAnimation {
-        spring: body.closing ? 7 : 4.2
-        damping: body.closing ? 0.6 : 0.34
+        spring: body.closing ? 7.5 : 4.4
+        damping: body.closing ? 0.65 : 0.38
         mass: 1
         epsilon: 0.25
       }
@@ -318,11 +323,11 @@ PanelWindow {
               transform: Translate {
                 x: win.edge === "left" ? -peekItem.drop : (win.edge === "right" ? peekItem.drop : 0)
                 y: win.edge === "top" ? -peekItem.drop : (win.edge === "bottom" ? peekItem.drop : 0)
-                Behavior on x { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
-                Behavior on y { NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
+                Behavior on x { enabled: win.island.animate; NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
+                Behavior on y { enabled: win.island.animate; NumberAnimation { duration: 260; easing.type: Easing.OutCubic } }
               }
-              Behavior on opacity { NumberAnimation { duration: peekItem.shown ? 220 : 140; easing.type: Easing.OutCubic } }
-              Behavior on scale { NumberAnimation { duration: 260; easing.type: Easing.OutBack; easing.overshoot: 1.2 } }
+              Behavior on opacity { enabled: win.island.animate; NumberAnimation { duration: peekItem.shown ? 220 : 140; easing.type: Easing.OutCubic } }
+              Behavior on scale { enabled: win.island.animate; NumberAnimation { duration: 260; easing.type: Easing.OutBack; easing.overshoot: 1.2 } }
             }
           }
         }
@@ -343,7 +348,7 @@ PanelWindow {
               shown: win.mode === "open" && (win.vertical ? body.bodyWidth : body.bodyHeight) > win.targetAcross * 0.45
               opacity: shown ? 1 : 0
               visible: opacity > 0
-              Behavior on opacity { NumberAnimation { duration: openItem.shown ? 80 : 140 } }
+              Behavior on opacity { enabled: win.island.animate; NumberAnimation { duration: openItem.shown ? 80 : 140 } }
             }
           }
         }
