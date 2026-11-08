@@ -53,7 +53,9 @@ nada de Omarchy. Si lo quitas, tu escritorio queda exactamente como estaba.
 - **Español e inglés**: sigue `LANG`, o elígelo en `shell.json`.
 - **Sigue tu tema**: cambia en vivo con `omarchy theme set` (colores, fuente
   y acento). La isla tiene esquinas redondeadas con "orejas" cóncavas que se
-  funden con la barra.
+  funden con la barra, y un contorno muy sutil (algo más marcado en temas
+  claros). Un tema puede ajustarlo en su `shell.toml`: `[island]` `border`,
+  `border-alpha`, `border-width`.
 - **Ligera**: sin procesos extra. La música llega por MPRIS (Spotify,
   navegadores, mpv…); lo único que se consulta solo es el clima, cada 20
   minutos.

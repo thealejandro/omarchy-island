@@ -175,7 +175,18 @@ PanelWindow {
       bodyHeight: Math.max(0, body.bodyHeight)
       radius: win.radius
       ear: win.ear
-      fillColor: Commons.Color.bar.background
+      // Same tint as the bar where they meet: Omarchy's glassy bar draws its
+      // background at 35% at most and lets Hyprland blur the rest.
+      readonly property color bg: Commons.Color.bar.background
+      fillColor: win.island.glassy ? Qt.rgba(bg.r, bg.g, bg.b, Math.min(bg.a, 0.35)) : bg
+      fillColorEnd: win.island.glassy ? Qt.rgba(bg.r, bg.g, bg.b, Math.min(bg.a, 0.88)) : bg
+      fadeLength: win.barSize
+      // Very subtle, and a bit stronger on light bars, where the island would
+      // otherwise vanish into the wallpaper. Themes can set it in shell.toml:
+      // [island] border = "<color>", border-alpha = 0..1, border-width = px.
+      strokeColor: Commons.Color.composed("island.border", "island.border-alpha",
+        Commons.Color.bar.text, Commons.Color.bar.background.hslLightness > 0.5 ? 0.16 : 0.08)
+      strokeWidth: Number(Commons.Color.pick("island.border-width", "1"))
     }
 
     Item {

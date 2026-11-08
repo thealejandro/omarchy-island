@@ -1,6 +1,7 @@
 import QtQuick
 import Quickshell
 import Quickshell.Io
+import Quickshell.Hyprland
 import Quickshell.Services.Mpris
 import Quickshell.Services.UPower
 import "IslandModel.js" as IslandModel
@@ -46,6 +47,27 @@ Item {
   readonly property bool osdEnabled: String(settings.osd) === "true"
   readonly property bool batteryEnabled: String(settings.battery) !== "false"
 
+  // The bar's look in shell.json: "opaque", "glassy" or "none". A glassy bar
+  // is see-through with Hyprland blurring what is behind it, so the island
+  // copies that (same tint, and its own blur rule) to look like the same
+  // surface instead of an opaque patch hanging from a frosted bar.
+  property string barLook: "opaque"
+  readonly property bool glassy: barLook === "glassy"
+
+  function syncBlur() {
+    if (!glassy) return
+    Quickshell.execDetached(["hyprctl", "eval",
+      'hl.layer_rule({ match = { namespace = "^omarchy-island$" }, blur = true, ignore_alpha = 0.3 })'])
+  }
+
+  onGlassyChanged: syncBlur()
+
+  // A Hyprland reload (theme change, config edit) drops rules added at runtime.
+  Connections {
+    target: Hyprland
+    function onRawEvent(event) { if (event.name === "configreloaded") root.syncBlur() }
+  }
+
   function tr(key, arg) { return IslandModel.t(lang, key, arg) }
 
   FileView {
@@ -61,6 +83,8 @@ Item {
         for (var i = 0; i < entries.length; i++)
           if (entries[i] && entries[i].id === "thealejandro.island") mine = entries[i]
         root.settings = mine
+        var bar = config.bar || {}
+        root.barLook = bar.background || (bar.transparent === true ? "none" : "opaque")
       } catch (e) {
         console.warn("island: could not read shell.json:", e)
       }

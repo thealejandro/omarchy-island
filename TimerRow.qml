@@ -10,7 +10,7 @@ Item {
 
   required property var island
 
-  readonly property color dimColor: Util.alpha(Commons.Color.bar.text, 0.6)
+  readonly property color dimColor: Util.alpha(Commons.Color.bar.text, 0.72)
   readonly property real progress: island.timerTotal > 0
     ? 1 - island.timerRemaining / island.timerTotal : 0
 
@@ -91,7 +91,7 @@ Item {
     anchors.bottom: parent.bottom
     height: Style.space(3)
     radius: height / 2
-    color: Util.alpha(Commons.Color.bar.text, 0.1)
+    color: Util.alpha(Commons.Color.bar.text, 0.2)
     Rectangle {
       height: parent.height
       radius: height / 2

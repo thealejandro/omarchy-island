@@ -12,7 +12,7 @@ Column {
 
   readonly property var locale: island.locale
   readonly property color textColor: Commons.Color.bar.text
-  readonly property color dimColor: Util.alpha(Commons.Color.bar.text, 0.5)
+  readonly property color dimColor: Util.alpha(Commons.Color.bar.text, 0.72)
   readonly property int cell: Math.floor(width / 7)
 
   property date today: new Date()
@@ -128,7 +128,7 @@ Column {
           anchors.centerIn: parent
           text: modelData.day
           color: modelData.isToday ? Commons.Color.bar.background
-            : (!modelData.inMonth ? Util.alpha(Commons.Color.bar.text, 0.25)
+            : (!modelData.inMonth ? Util.alpha(Commons.Color.bar.text, 0.45)
               : (modelData.weekend ? root.dimColor : root.textColor))
           font.family: Style.font.family
           font.pixelSize: Style.font.bodySmall
