@@ -164,11 +164,16 @@ function toManifestSchema(label) {
   var defaults = {}, schema = []
   for (var i = 0; i < SCHEMA.length; i++) {
     var s = SCHEMA[i]
+    // Unset (null, [], or "" for the language) means "decide on the fly",
+    // which has no value to show.
     var hasDefault = s.def !== null && !(Array.isArray(s.def) && s.def.length === 0)
+      && !(s.type === "enum" && s.def === "")
     if (hasDefault) defaults[s.key] = s.def
     var type = s.type === "bool" || s.type === "tristate" ? "boolean"
       : (s.type === "int" || s.type === "weekday" ? "integer"
-        : (s.type === "enum" ? "enum" : (s.type === "cities" ? "array" : "string")))
+        : (s.type === "enum" ? "enum" : "string"))
+    // cities is a list in shell.json, but "Name|Zone, …" text is read too,
+    // and that's what a generic editor can offer.
     var item = { key: s.key, type: type, label: label ? label(s.key) : s.key }
     if (s.options) item.options = s.options.filter(function(o) { return o !== "" })
     if (s.type === "int") { item.min = s.min; item.max = s.max; item.step = s.step }
