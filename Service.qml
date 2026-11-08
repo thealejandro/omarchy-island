@@ -94,7 +94,12 @@ Item {
     var stored = entry[key] === undefined ? IslandSettings.spec(key).def : entry[key]
     Quickshell.execDetached(["omarchy", "bar", "set", pluginId, key, JSON.stringify(stored), "--json"])
   }
-  function resetSettings() { writeEntry(IslandSettings.withoutOwnKeys(settings, pluginId)) }
+  // Back to defaults; the OSD default is Omarchy's own, so give it back too.
+  function resetSettings() {
+    var hadOsd = osdEnabled
+    writeEntry(IslandSettings.withoutOwnKeys(settings, pluginId))
+    if (hadOsd) settleThen(function() { root.runThen(["omarchy", "plugin", "enable", "omarchy.osd"]) })
+  }
   function writeEntry(entry) {
     settings = entry
     if (!caps.persist) return false
