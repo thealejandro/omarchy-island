@@ -172,11 +172,17 @@ omarchy plugin enable omarchy.notifications; omarchy plugin enable omarchy.osd
   section or choice and step numbers, and Esc closes it. Hovering it open
   never takes the keyboard from your window. Every icon button has a name
   for screen readers. Off with `keyboard: false`.
-- Toggle it from a key, in `~/.config/hypr/bindings.lua`:
+- Open it from a key, in `~/.config/hypr/bindings.lua`. `SUPER + D` is free
+  in Omarchy (`SUPER + I` switches the input language); `keyboard` opens the
+  island ready for Tab, and the same key or Esc closes it:
 
   ```lua
-  o.bind("SUPER + I", "Island", "omarchy-shell island toggle")
+  o.bind("SUPER + D", "Island", "omarchy-shell island keyboard")
   ```
+
+  With `keyboard: false`, use `omarchy-shell island toggle` instead, which
+  only pins it open or closed. The plugin never edits your Hyprland config
+  itself.
 
 IPC (`omarchy-shell island <method>`):
 
