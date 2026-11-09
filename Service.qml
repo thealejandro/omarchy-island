@@ -12,6 +12,7 @@ import "IcsModel.js" as IcsModel
 import "NotificationModel.js" as NM
 import "PrivacyModel.js" as PrivacyModel
 import "AgentModel.js" as AgentModel
+import "IslandIdle.js" as IslandIdle
 
 // Headless owner of the island state. One IslandWindow is mounted per screen;
 // they all read media and timer state from here, so two monitors never show
@@ -967,7 +968,10 @@ Item {
   // Any setting rebuilds the list; only a real change reloads.
   readonly property string icsKey: icsSourceList.join("\n")
   onIcsKeyChanged: refreshIcs()
-  Component.onCompleted: refreshIcs()
+  Component.onCompleted: {
+    refreshIcs()
+    if (hourTicking) hourTick.arm()
+  }
   Process {
     id: icsRun
     property bool again: false
@@ -1306,6 +1310,39 @@ Item {
 
   // ------------------------------------------------------------- visibility
 
+  // Closed island: "off", "notch" or "hour" (see IslandIdle.js).
+  readonly property string idleNotch: cfg.idleNotch
+  // Something already occupies the spot under the clock (or should): the
+  // hour thread gives way to it. Music doesn't count, it isn't shown there.
+  readonly property bool idleBusy: IslandIdle.busy({
+    unread: notificationsLive && cfg.notifyBadge && unread > 0,
+    mic: micInUse, camera: cameraInUse,
+    agent: cfg.agentDot && agentsWaiting,
+    timer: timerActive })
+  // One tick per minute, only while the thread can be seen on some screen.
+  readonly property bool hourTicking: idleNotch === "hour" && !isOpen && !peeking && !idleBusy && !barHidden
+  // The local minute the thread was last drawn for; -1 while it isn't ticking.
+  property int hourMinute: -1
+  Timer {
+    id: hourTick
+    repeat: false
+    // The next tick is computed in epoch ms, like Omarchy's WallClock, so a
+    // DST change can't make it loop; the minute itself is read in local time.
+    function arm() {
+      root.hourMinute = new Date().getMinutes()
+      interval = IslandIdle.msUntilNextMinute(Date.now()) + 20
+      restart()
+    }
+    onTriggered: arm()
+  }
+  onHourTickingChanged: {
+    if (hourTicking) hourTick.arm()
+    else {
+      hourTick.stop()
+      hourMinute = -1
+    }
+  }
+
   // ms overrides how long the peek stays; 0 keeps it until closed.
   function peek(reason, ms) {
     if (!peeking) refreshAnchors()
@@ -1340,6 +1377,7 @@ Item {
     }
     function state(): string {
       return JSON.stringify({ pinned: root.pinned, peeking: root.peeking, playing: root.playing,
+        idleNotch: root.idleNotch, hourMinute: root.hourMinute,
         title: root.title, position: Math.round(root.position), length: Math.round(root.length),
         timerRunning: root.timerRunning, timerRemaining: root.timerRemaining,
         focusMinutes: root.focusMinutes, lang: root.lang, page: root.page, osd: root.osdEnabled,
