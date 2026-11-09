@@ -279,9 +279,16 @@ servidor de notificaciones:
   `notifyPeekDuration` o el tiempo que pida quien la envía. Las críticas se
   quedan hasta que las atiendes. Al ir con el ratón al vistazo se abre la
   página Notificaciones.
-- La página Notificaciones las agrupa por app, la más nueva primero, con
+- La página Notificaciones las agrupa por app, la más nueva primero (las
+  del navegador, por sitio, así WhatsApp Web y GitHub no comparten un
+  grupo de Chromium, y los avisos de Omarchy, cada uno por su lado), con
   sus botones, respuesta en línea cuando la app la ofrece, un enlace
-  seguro para abrir y un botón de cerrar por notificación o por app.
+  seguro para abrir y un botón de cerrar por notificación o por grupo.
+- Cuando una notificación trae un código de un solo uso («Tu código de
+  verificación es 482913»), su tarjeta tiene un botón **Copiar**. El
+  código va al portapapeles marcado como sensible, así los gestores de
+  portapapeles no lo guardan en su historial, y se borra al minuto si
+  sigue ahí. Los códigos nunca se guardan con el historial.
   **Silencio** es el mismo «no molestar» de Omarchy (se guarda en el
   propio `~/.local/state/omarchy/notifications/quiet.json` de Omarchy), así
   que el indicador de la barra y el toggle del dock coinciden.
@@ -447,6 +454,13 @@ omarchy plugin enable thealejandro.island
 
 Quickshell guarda en caché el QML compilado: después de editar el código,
 ejecuta `omarchy restart shell` para ver los cambios.
+
+La lógica pura (los archivos `.js`) tiene pruebas que corren en Node 22 o
+posterior, sin instalar nada; la CI las pasa en cada pull request:
+
+```bash
+node --test 'test/*.test.mjs'
+```
 
 | Archivo            | Qué hace                                               |
 |--------------------|--------------------------------------------------------|
