@@ -933,6 +933,30 @@ Item {
       ? ["sh", "-c", 'mkdir -p "$1" && : > "$1/notifications.takeover"', "sh", agendaDir]
       : ["rm", "-f", agendaDir + "/notifications.takeover"])
   }
+  // Disabling or removing the island (omarchy plugin disable/remove, bar
+  // reset) drops its entry from shell.json, and with it the settings that
+  // hand the OSD and the notifications to it: Omarchy would be left with
+  // neither, and the island isn't loaded any more to notice. Omarchy has no
+  // uninstall hook, and from inside, being torn down for that looks the same
+  // as a shell restart; so a detached check looks a moment later, when the
+  // plugin folder may already be gone: entry still there, nothing to do;
+  // entry gone, Omarchy gets back what the island had.
+  readonly property string giveBackScript: '
+    sleep 3
+    cfg="$HOME/.config/omarchy/shell.json"; id=$1; state=$2; shift 2
+    kept=$(jq --arg id "$id" \'[.plugins[]?, (.bar.layout // {} | .[]? | arrays | .[])]
+      | any(if type == "object" then .id == $id else . == $id end)\' "$cfg" 2>/dev/null) || exit 0
+    [ "$kept" = false ] || exit 0
+    for p; do omarchy plugin enable "$p" >/dev/null 2>&1; done
+    rm -f "$state/notifications.takeover"
+  '
+  Component.onDestruction: {
+    var giveBack = []
+    if (osdEnabled) giveBack.push("omarchy.osd")
+    if (notificationsEnabled) giveBack.push("omarchy.notifications")
+    if (giveBack.length > 0)
+      Quickshell.execDetached(["sh", "-c", giveBackScript, "sh", pluginId, agendaDir].concat(giveBack))
+  }
   Process {
     id: orphanCheck
     command: ["test", "-e", root.agendaDir + "/notifications.takeover"]
