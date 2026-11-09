@@ -4,6 +4,18 @@ All notable changes to this project are documented here. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the
 project follows [Semantic Versioning](https://semver.org/).
 
+## [0.6.1] - 2026-11-08
+
+### Fixed
+
+- Disabling or removing the island (`omarchy plugin disable/remove`, a bar
+  reset) gives Omarchy back its notifications and OSD if the island had
+  them, instead of leaving the desktop without either. Omarchy has no
+  uninstall hook, so the island checks a moment after it's unloaded: if its
+  entry left `shell.json` it re-enables `omarchy.notifications` and
+  `omarchy.osd`; on a shell restart the entry is still there and nothing
+  changes (#30).
+
 ## [0.6.0] - 2026-11-08
 
 ### Added

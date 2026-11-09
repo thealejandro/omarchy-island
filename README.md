@@ -120,12 +120,19 @@ finds the clock on the bar to hang from it exactly:
 omarchy bar put thealejandro.island --after omarchy.clock
 ```
 
-Remove it any time. If the island has your notifications, give them back
-to Omarchy first (or Omarchy's own notifications stay off):
+Remove it any time. If the island had Omarchy's notifications or OSD,
+Omarchy gets them back on its own a few seconds later (also when you just
+disable it):
 
 ```bash
-omarchy-shell island notifications off
 omarchy plugin remove thealejandro.island
+```
+
+If the island folder was deleted by hand while the shell wasn't running,
+give them back yourself:
+
+```bash
+omarchy plugin enable omarchy.notifications; omarchy plugin enable omarchy.osd
 ```
 
 ## Usage

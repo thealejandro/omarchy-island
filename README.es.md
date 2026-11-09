@@ -133,12 +133,19 @@ reloj en la barra para colgar exactamente de él:
 omarchy bar put thealejandro.island --after omarchy.clock
 ```
 
-Para quitarla cuando quieras. Si la isla tiene tus notificaciones,
-devuélveselas antes a Omarchy (si no, las de Omarchy siguen apagadas):
+Para quitarla cuando quieras. Si la isla tenía las notificaciones o el
+OSD de Omarchy, Omarchy los recupera solo a los pocos segundos (también si
+solo la deshabilitas):
 
 ```bash
-omarchy-shell island notifications off
 omarchy plugin remove thealejandro.island
+```
+
+Si borraste la carpeta de la isla a mano con el shell parado, devuélveselos
+tú:
+
+```bash
+omarchy plugin enable omarchy.notifications; omarchy plugin enable omarchy.osd
 ```
 
 ## Uso
