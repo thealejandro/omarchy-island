@@ -6,6 +6,12 @@ project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- The README suggested `SUPER + I` to open the island, which Omarchy
+  already uses to switch the input language; it now suggests `SUPER + D`
+  with `omarchy-shell island keyboard`. (#49)
+
 ## [0.9.0] - 2026-11-09
 
 ### Added

@@ -186,11 +186,18 @@ omarchy plugin enable omarchy.notifications; omarchy plugin enable omarchy.osd
   cierra. Abrirla al pasar el puntero nunca le quita el teclado a tu
   ventana. Todos los botones de icono tienen nombre para lectores de
   pantalla. Se desactiva con `keyboard: false`.
-- Para abrirla con una tecla, en `~/.config/hypr/bindings.lua`:
+- Para abrirla con una tecla, en `~/.config/hypr/bindings.lua`. `SUPER + D`
+  está libre en Omarchy (`SUPER + I` cambia el idioma del teclado);
+  `keyboard` abre la isla lista para moverse con Tab, y la misma tecla o Esc
+  la cierra:
 
   ```lua
-  o.bind("SUPER + I", "Island", "omarchy-shell island toggle")
+  o.bind("SUPER + D", "Isla", "omarchy-shell island keyboard")
   ```
+
+  Con `keyboard: false`, usa `omarchy-shell island toggle`, que solo la fija
+  abierta o cerrada. El plugin nunca edita tu configuración de Hyprland por
+  su cuenta.
 
 IPC (`omarchy-shell island <método>`):
 
