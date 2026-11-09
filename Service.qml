@@ -12,6 +12,7 @@ import "IcsModel.js" as IcsModel
 import "NotificationModel.js" as NM
 import "PrivacyModel.js" as PrivacyModel
 import "AgentModel.js" as AgentModel
+import "IslandIdle.js" as IslandIdle
 
 // Headless owner of the island state. One IslandWindow is mounted per screen;
 // they all read media and timer state from here, so two monitors never show
@@ -967,7 +968,10 @@ Item {
   // Any setting rebuilds the list; only a real change reloads.
   readonly property string icsKey: icsSourceList.join("\n")
   onIcsKeyChanged: refreshIcs()
-  Component.onCompleted: refreshIcs()
+  Component.onCompleted: {
+    refreshIcs()
+    if (idleTicking) idleTick.arm()
+  }
   Process {
     id: icsRun
     property bool again: false
@@ -1306,6 +1310,56 @@ Item {
 
   // ------------------------------------------------------------- visibility
 
+  // Closed island: "off", "notch", "hour", "day" or "battery" (see IslandIdle.js).
+  readonly property string idleNotch: cfg.idleNotch
+  // Something already occupies the spot under the clock (or should): the
+  // hour thread gives way to it. Music doesn't count, it isn't shown there.
+  readonly property bool idleBusy: IslandIdle.busy({
+    unread: notificationsLive && cfg.notifyBadge && unread > 0,
+    mic: micInUse, camera: cameraInUse,
+    agent: cfg.agentDot && agentsWaiting,
+    timer: timerActive })
+  // One single-shot timer, only while a clock thread can be seen on some
+  // screen: per minute for "hour", per quarter hour for "day". "notch", "off"
+  // and "battery" run nothing (the battery thread follows batteryLevel).
+  readonly property bool idleTicking: (idleNotch === "hour" || idleNotch === "day")
+    && !isOpen && !peeking && !idleBusy && !barHidden
+  // The local clock the thread was last drawn for; -1 while it isn't ticking.
+  property int hourMinute: -1
+  property int dayMinute: -1
+  Timer {
+    id: idleTick
+    repeat: false
+    // The next tick is computed in epoch ms ("hour", like Omarchy's WallClock)
+    // or from the local clock ("day", so it lands on :00 :15 :30 :45), plus
+    // 20 ms; either way it is always ahead, so it can't loop.
+    function arm() {
+      var d = new Date()
+      root.hourMinute = d.getMinutes()
+      root.dayMinute = d.getHours() * 60 + d.getMinutes()
+      interval = (root.idleNotch === "day"
+        ? IslandIdle.msUntilNextQuarter(d.getMinutes(), d.getSeconds(), d.getMilliseconds())
+        : IslandIdle.msUntilNextMinute(d.getTime())) + 20
+      restart()
+    }
+    onTriggered: arm()
+  }
+  onIdleTickingChanged: {
+    if (idleTicking) idleTick.arm()
+    else {
+      idleTick.stop()
+      hourMinute = -1
+      dayMinute = -1
+    }
+  }
+  // Switching between "hour" and "day" keeps ticking: re-arm for the new step.
+  onIdleNotchChanged: if (idleTicking) idleTick.arm()
+  // 0..1 the closed-island thread is drawn at (see IslandIdle.look for when).
+  readonly property real idleFraction: idleNotch === "hour" ? IslandIdle.fractionOfMinute(hourMinute)
+    : idleNotch === "day" ? IslandIdle.fractionOfDay(dayMinute)
+    : idleNotch === "battery" ? IslandIdle.fractionOfBattery(batteryLevel) : 0
+  readonly property bool idleLow: idleNotch === "battery" && IslandIdle.batteryLow(batteryLevel, charging)
+
   // ms overrides how long the peek stays; 0 keeps it until closed.
   function peek(reason, ms) {
     if (!peeking) refreshAnchors()
@@ -1340,6 +1394,8 @@ Item {
     }
     function state(): string {
       return JSON.stringify({ pinned: root.pinned, peeking: root.peeking, playing: root.playing,
+        idleNotch: root.idleNotch, hourMinute: root.hourMinute, dayMinute: root.dayMinute,
+        idleFraction: Math.round(root.idleFraction * 1000) / 1000,
         title: root.title, position: Math.round(root.position), length: Math.round(root.length),
         timerRunning: root.timerRunning, timerRemaining: root.timerRemaining,
         focusMinutes: root.focusMinutes, lang: root.lang, page: root.page, osd: root.osdEnabled,

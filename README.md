@@ -164,6 +164,12 @@ omarchy plugin enable omarchy.notifications; omarchy plugin enable omarchy.osd
   doesn't open the island.
 - With the island open, the bar's other widgets stay clickable and their
   panels open on top of it.
+- Closed, the island shows a small notch under the clock, the island's
+  own silhouette in the bar's colour, so you can tell it is there
+  (`idleNotch`: `off` removes it; `hour`, `day` and `battery` add a thin
+  line that grows with the hour, the day or the battery level). It gives way to the dots, glances and the
+  timer, takes no clicks, and with `hoverOpen` resting the pointer on it
+  opens the island.
 - Pick a page from the tabs in the top corner. A click on a day of the
   small calendar opens the Calendar page on that day.
 - With the island pinned, the keyboard works too: click it (or run
@@ -228,6 +234,7 @@ the island's own keys and nothing else.
 | `lyrics` | `true`, `false` | `false` | Synced lyrics on the now-playing card, from lrclib.net (needs `showMedia`); see [Lyrics](#lyrics) |
 | `lyricsPeek` | `true`, `false` | `false` | The current line stays under the clock, as a glance, while the island is closed and a song plays (needs `lyrics`) |
 | `animations` | `true`, `false` | `true` | Spring, page and glance motion |
+| `idleNotch` | `off`, `notch`, `hour`, `day`, `battery` | `notch` | With the island closed: nothing, a sliver of the bar under the clock, or that plus a thin line that fills with the hour, the day (15-minute steps) or the battery level (red at 20% or less, not charging; plain notch without a battery) |
 | `openWidth` | 420–800 | `560` | Width of the open island |
 | `blur` | `true`, `false` | `true` | Blur behind the island with a glassy bar |
 | `clock` | `true`, `false` | `true` | Open by hovering the clock (`false`: only the edge strip) |
@@ -623,6 +630,10 @@ unloaded.
   first visible frame comes about 24 ms after the island starts opening
   (0.5.0: 25 ms), with no frame over 25 ms while it opens or closes.
 - The track position only ticks while music plays and the island is open.
+- The closed-island notch is one static item. The hour thread (`idleNotch:
+  hour`) wakes once a minute and the day thread (`day`) once a quarter
+  hour, only while the island is closed and nothing else is shown under the
+  clock. The battery thread has no timer: it follows the battery level.
 - Lyrics, when on, use one timer that waits for the next line (not a poll)
   and reads the player's position each time it fires. With the island
   closed it does nothing, unless `lyricsPeek` is on.
@@ -699,6 +710,7 @@ node --test 'test/*.test.mjs'
 | `NotificationModel.js`, `NotificationSecurity.js` | Pure helpers: notification rows, grouping, history; checks on links, commands and pictures |
 | `IslandSettings.js` | The settings schema: defaults, normalizing, saving, manifest schema |
 | `IslandGeometry.js` | Bar edges, placement along the bar, finding the clock |
+| `IslandIdle.js`    | Closed-island notch and hour thread: what to draw, thread length, next minute |
 | `IslandModel.js`   | Pure helpers: player choice, clock, strings, month grid, weather, world times |
 | `AgendaModel.js`   | Pure helpers for events: repeats, upcoming, reminders, external lines |
 | `IcsModel.js`, `scripts/ics-fetch.sh` | iCalendar calendars: parsing, repeats, time zones; fetching folders, files and links |

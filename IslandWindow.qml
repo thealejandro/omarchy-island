@@ -4,6 +4,7 @@ import Quickshell.Wayland
 import qs.Commons
 import qs.Commons as Commons
 import "IslandGeometry.js" as IslandGeometry
+import "IslandIdle.js" as IslandIdle
 
 // One strip per screen along the bar's edge, just deep enough for the open
 // island. The surface itself is transparent and its input region is only a
@@ -28,6 +29,19 @@ PanelWindow {
   // their square bar, the island just rounds off below it.
   readonly property int radius: Math.max(Style.cornerRadius, Style.space(18))
   readonly property int ear: Style.space(10)
+
+  // The island's look, shared by the open body and the closed notch. Same
+  // tint as the bar where they meet: Omarchy's glassy bar draws its background
+  // at 35% at most and lets Hyprland blur the rest.
+  readonly property color shellBg: Commons.Color.bar.background
+  readonly property color shellFill: island.glassy ? Qt.rgba(shellBg.r, shellBg.g, shellBg.b, Math.min(shellBg.a, 0.35)) : shellBg
+  readonly property color shellFillEnd: island.glassy ? Qt.rgba(shellBg.r, shellBg.g, shellBg.b, Math.min(shellBg.a, 0.88)) : shellBg
+  // Very subtle, and a bit stronger on light bars, where the island would
+  // otherwise vanish into the wallpaper. Themes can set it in shell.toml:
+  // [island] border = "<color>", border-alpha = 0..1, border-width = px.
+  readonly property color shellStroke: Commons.Color.composed("island.border", "island.border-alpha",
+    Commons.Color.bar.text, Commons.Color.bar.background.hslLightness > 0.5 ? 0.16 : 0.08)
+  readonly property real shellStrokeWidth: Number(Commons.Color.pick("island.border-width", "1"))
   readonly property int openWidth: Style.space(island.openWidth)
   // How far into the screen the window reaches; the open island is capped
   // to it.
@@ -55,6 +69,17 @@ PanelWindow {
   readonly property bool expanded: hovered || island.pinned
   readonly property bool peeking: !expanded && island.peeking
   readonly property string mode: expanded ? "open" : (peeking ? "peek" : "closed")
+
+  // Closed island: a sliver of the bar under the clock (the notch), and with
+  // idleNotch "hour", "day" or "battery" a thin thread that fills with it.
+  readonly property string idleLook: IslandIdle.look(island.idleNotch, mode, island.barHidden, island.idleBusy, island.hasBattery)
+  readonly property bool notchShown: idleLook !== "none"
+  readonly property int notchDepth: Style.space(4)
+  readonly property int notchEar: Style.space(2)
+  readonly property int notchLength: Math.max(Style.space(28),
+    Math.min(Style.space(64), Math.round(clockLength) - 2 * notchEar))
+  // The dots hang from the notch when it is there.
+  readonly property int dotsFrom: barSize + Style.space(3) + (notchShown ? notchDepth : 0)
   property string previousMode: "closed"
   onModeChanged: {
     var was = previousMode
@@ -331,13 +356,56 @@ PanelWindow {
     }
   }
 
+  // Closed island: the island's silhouette in miniature just past the bar,
+  // under the clock, so it is clear the island is there. Not part of the
+  // input region: it takes no clicks (with hoverOpen the hot strip under the
+  // clock covers it).
+  Item {
+    id: notch
+    readonly property var r: win.place(win.clockCenter - win.notchLength / 2, win.notchLength,
+      win.barSize, win.notchDepth)
+    x: r.x; y: r.y; width: r.width; height: r.height
+    opacity: win.notchShown ? 1 : 0
+    visible: opacity > 0
+    Behavior on opacity { enabled: win.island.animate; NumberAnimation { duration: 180 } }
+
+    IslandShape {
+      edge: win.edge
+      bodyWidth: win.notchLength
+      bodyHeight: win.notchDepth
+      radius: win.notchEar
+      ear: win.notchEar
+      fillColor: win.shellFill
+      fillColorEnd: win.shellFillEnd
+      fadeLength: win.notchDepth
+      strokeColor: win.shellStroke
+      strokeWidth: win.shellStrokeWidth
+    }
+
+    // Thread (hour, day or battery): 1 px that grows along the notch. The
+    // clock ones move a pixel or two per tick, the battery one when the level
+    // changes; no animation. Low battery uses the urgent colour.
+    Rectangle {
+      readonly property int inset: Style.space(3)
+      readonly property real fraction: win.island.idleFraction
+      readonly property int len: IslandIdle.threadLength(fraction, win.notchLength - 2 * inset, Style.space(2))
+      readonly property var r: IslandGeometry.rect(win.edge, notch.width, notch.height, inset, len,
+        Math.floor(win.notchDepth / 2), Style.spacing.hairline)
+      visible: win.idleLook !== "none" && win.idleLook !== "notch"
+      x: r.x; y: r.y; width: r.width; height: r.height
+      radius: Math.min(width, height) / 2
+      color: win.island.idleLow ? Commons.Color.urgent : Commons.Color.accent
+      opacity: 0.85
+    }
+  }
+
   // Unread notifications while the island is closed: a small dot just
   // past the bar, under the clock. Not part of the input region.
   Rectangle {
     readonly property bool lit: win.mode === "closed" && win.island.cfg.notifyBadge
       && win.island.notificationsLive && win.island.unread > 0 && !win.island.barHidden
     readonly property int d: Style.space(6)
-    readonly property var r: win.place(win.clockCenter - d / 2, d, win.barSize + Style.space(3), d)
+    readonly property var r: win.place(win.clockCenter - d / 2, d, win.dotsFrom, d)
     x: r.x; y: r.y; width: d; height: d
     radius: d / 2
     color: Commons.Color.accent
@@ -360,7 +428,7 @@ PanelWindow {
       readonly property bool lit: win.mode === "closed" && modelData.on && !win.island.barHidden
       readonly property int d: Style.space(6)
       readonly property var r: win.place(win.clockCenter + Style.space(8) + index * (d + Style.space(3)), d,
-        win.barSize + Style.space(3), d)
+        win.dotsFrom, d)
       x: r.x; y: r.y; width: d; height: d
       radius: d / 2
       color: modelData.color
@@ -376,7 +444,7 @@ PanelWindow {
     readonly property bool lit: win.mode === "closed" && win.island.cfg.agentDot
       && win.island.agentsWaiting && !win.island.barHidden
     readonly property int d: Style.space(6)
-    readonly property var r: win.place(win.clockCenter - Style.space(8) - d, d, win.barSize + Style.space(3), d)
+    readonly property var r: win.place(win.clockCenter - Style.space(8) - d, d, win.dotsFrom, d)
     x: r.x; y: r.y; width: d; height: d
     radius: d / 2
     color: Commons.Color.urgent
@@ -446,18 +514,11 @@ PanelWindow {
       bodyHeight: body.across
       radius: win.radius
       ear: win.ear
-      // Same tint as the bar where they meet: Omarchy's glassy bar draws its
-      // background at 35% at most and lets Hyprland blur the rest.
-      readonly property color bg: Commons.Color.bar.background
-      fillColor: win.island.glassy ? Qt.rgba(bg.r, bg.g, bg.b, Math.min(bg.a, 0.35)) : bg
-      fillColorEnd: win.island.glassy ? Qt.rgba(bg.r, bg.g, bg.b, Math.min(bg.a, 0.88)) : bg
+      fillColor: win.shellFill
+      fillColorEnd: win.shellFillEnd
       fadeLength: Math.max(win.barSize, Style.space(26))
-      // Very subtle, and a bit stronger on light bars, where the island would
-      // otherwise vanish into the wallpaper. Themes can set it in shell.toml:
-      // [island] border = "<color>", border-alpha = 0..1, border-width = px.
-      strokeColor: Commons.Color.composed("island.border", "island.border-alpha",
-        Commons.Color.bar.text, Commons.Color.bar.background.hslLightness > 0.5 ? 0.16 : 0.08)
-      strokeWidth: Number(Commons.Color.pick("island.border-width", "1"))
+      strokeColor: win.shellStroke
+      strokeWidth: win.shellStrokeWidth
     }
 
     Item {

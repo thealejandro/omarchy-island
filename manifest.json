@@ -56,6 +56,7 @@
       "agentDot": true,
       "agentStale": 120,
       "animations": true,
+      "idleNotch": "notch",
       "notifications": "off",
       "notifyBody": true,
       "notifyPeekDuration": 6000,
@@ -208,6 +209,13 @@
         "type": "boolean",
         "label": "Animations",
         "defaultValue": true
+      },
+      {
+        "key": "idleNotch",
+        "type": "enum",
+        "label": "Closed island",
+        "options": ["off", "notch", "hour", "day", "battery"],
+        "defaultValue": "notch"
       },
       {
         "key": "toggles",

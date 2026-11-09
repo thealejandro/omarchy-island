@@ -6,6 +6,17 @@ project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Closed island: a small notch under the clock, the island's silhouette in
+  the bar's colour, so you can tell it is there (`idleNotch: notch`, the
+  default). `idleNotch: hour` adds the hour thread, a thin accent line
+  that grows as the hour goes by, updated once a minute and only while
+  nothing else is shown under the clock. `day` does the same with the day
+  (15-minute steps) and `battery` with the battery level (red at 20% or
+  less, not charging; a plain notch without a battery, no timer). The dots now hang from the
+  notch. To get the old look back, set `idleNotch: off`. (#50)
+
 ### Fixed
 
 - The README suggested `SUPER + I` to open the island, which Omarchy
