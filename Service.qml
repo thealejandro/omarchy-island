@@ -8,6 +8,7 @@ import "IslandModel.js" as IslandModel
 import "IslandGeometry.js" as IslandGeometry
 import "IslandSettings.js" as IslandSettings
 import "AgendaModel.js" as AgendaModel
+import "IcsModel.js" as IcsModel
 import "NotificationModel.js" as NM
 
 // Headless owner of the island state. One IslandWindow is mounted per screen;
@@ -805,7 +806,10 @@ Item {
   readonly property string agendaDir: Quickshell.env("HOME") + "/.local/state/omarchy/island"
   property var localEvents: []
   property var externalEvents: []
-  readonly property var allEvents: localEvents.concat(externalEvents)
+  // From .ics calendars (icsSources): vdirsyncer folders, files, private
+  // iCal links. Read only, like the external ones.
+  property var icsEvents: []
+  readonly property var allEvents: localEvents.concat(externalEvents, icsEvents)
   // What the agenda peek is about: { title, time, minutes }.
   property var agendaNote: null
 
@@ -929,6 +933,38 @@ Item {
     repeat: true
     running: root.cfg.agendaCommand !== ""
     onTriggered: root.refreshExternal()
+  }
+
+  // Calendars: the sources go to the loader as arguments (never through a
+  // shell), and its output, calendars plus zone offsets, to IcsModel.
+  readonly property var icsSourceList: String(cfg.icsSources || "").split(",")
+    .map(function(s) { return s.trim() }).filter(function(s) { return s !== "" })
+  function refreshIcs() {
+    if (icsSourceList.length === 0) { icsEvents = []; return }
+    if (icsRun.running) { icsRun.again = true; return }
+    icsRun.command = ["bash", decodeURIComponent(String(Qt.resolvedUrl("scripts/ics-fetch.sh")).replace(/^file:\/\//, ""))]
+      .concat(icsSourceList)
+    icsRun.running = true
+  }
+  // Any setting rebuilds the list; only a real change reloads.
+  readonly property string icsKey: icsSourceList.join("\n")
+  onIcsKeyChanged: refreshIcs()
+  Component.onCompleted: refreshIcs()
+  Process {
+    id: icsRun
+    property bool again: false
+    stdout: StdioCollector {
+      onStreamFinished: {
+        root.icsEvents = IcsModel.parse(text, { now: new Date() })
+        if (icsRun.again) { icsRun.again = false; Qt.callLater(root.refreshIcs) }
+      }
+    }
+  }
+  Timer {
+    interval: Math.max(5, root.cfg.icsRefresh) * 60 * 1000
+    repeat: true
+    running: root.icsSourceList.length > 0
+    onTriggered: root.refreshIcs()
   }
 
   // ------------------------------------------------------------- osd

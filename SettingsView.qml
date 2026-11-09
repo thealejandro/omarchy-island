@@ -36,7 +36,7 @@ Column {
   function suffixFor(key) {
     if (key === "hoverDelay" || key === "peekDuration" || key === "notifyPeekDuration" || key === "notifyKeyboardIdle") return " ms"
     if (key === "notifyHistoryLimit") return ""
-    if (key === "reminderLead") return " min"
+    if (key === "reminderLead" || key === "icsRefresh") return " min"
     return " px"
   }
 

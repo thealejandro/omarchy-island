@@ -41,6 +41,8 @@
       "units": "metric",
       "forecast": true,
       "reminderLead": 10,
+      "icsSources": "",
+      "icsRefresh": 15,
       "agendaCommand": "",
       "osd": false,
       "battery": true,
@@ -250,6 +252,21 @@
         "max": 120,
         "step": 5,
         "defaultValue": 10
+      },
+      {
+        "key": "icsSources",
+        "type": "string",
+        "label": "Calendars (.ics folders, files or links)",
+        "defaultValue": ""
+      },
+      {
+        "key": "icsRefresh",
+        "type": "integer",
+        "label": "Refresh calendars every",
+        "min": 5,
+        "max": 240,
+        "step": 5,
+        "defaultValue": 15
       },
       {
         "key": "agendaCommand",
