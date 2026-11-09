@@ -179,8 +179,8 @@ omarchy plugin enable omarchy.notifications; omarchy plugin enable omarchy.osd
   clicables y sus paneles se abren encima.
 - Cerrada, la isla muestra una pequeña muesca bajo el reloj, su propia
   silueta en el color de la barra, para saber que está ahí (`idleNotch`:
-  `off` la quita; `hour` añade una línea fina de acento que crece con los
-  minutos de la hora). Cede ante los puntos, los vistazos y el
+  `off` la quita; `hour`, `day` y `battery` añaden una línea fina que crece
+  con la hora, el día o el nivel de batería). Cede ante los puntos, los vistazos y el
   temporizador, no recibe clics, y con `hoverOpen` posar el puntero en
   ella abre la isla.
 - Elige página en las pestañas de la esquina. Un clic en un día del
@@ -248,7 +248,7 @@ quita solo las claves propias de la isla.
 | `lyrics` | `true`, `false` | `false` | Letra sincronizada en la tarjeta de reproducción, de lrclib.net (necesita `showMedia`); ver [Letra](#letra) |
 | `lyricsPeek` | `true`, `false` | `false` | La línea actual se queda bajo el reloj, como vistazo, con la isla cerrada mientras suena una canción (necesita `lyrics`) |
 | `animations` | `true`, `false` | `true` | Muelle y movimiento de páginas y vistazos |
-| `idleNotch` | `off`, `notch`, `hour` | `notch` | Con la isla cerrada: nada, una ceja de la barra bajo el reloj, o eso y una línea fina de acento que se llena con la hora |
+| `idleNotch` | `off`, `notch`, `hour`, `day`, `battery` | `notch` | Con la isla cerrada: nada, una ceja de la barra bajo el reloj, o eso y una línea fina que se llena con la hora, el día (de 15 en 15 minutos) o el nivel de batería (roja con 20% o menos sin cargar; ceja normal sin batería) |
 | `openWidth` | 420–800 | `560` | Ancho de la isla abierta |
 | `blur` | `true`, `false` | `true` | Desenfoque detrás de la isla con la barra de cristal |
 | `clock` | `true`, `false` | `true` | Abrir al pasar sobre el reloj (`false`: solo la franja del borde) |
@@ -659,8 +659,9 @@ planos). Con `notifications: island` el shell pesa unos MB menos (cerrada
 - La posición de la canción solo avanza mientras suena música y la isla
   está abierta.
 - La muesca de la isla cerrada es un elemento estático. El hilo de la hora
-  (`idleNotch: hour`) despierta una vez por minuto, solo con la isla
-  cerrada y sin nada más bajo el reloj.
+  (`idleNotch: hour`) despierta una vez por minuto y el del día (`day`)
+  cada cuarto de hora, solo con la isla cerrada y sin nada más bajo el
+  reloj. El de la batería no usa temporizador: sigue el nivel de batería.
 - La letra, si está activada, usa un solo temporizador que espera a la
   siguiente línea (no sondea) y lee la posición del reproductor cada vez
   que salta. Con la isla cerrada no hace nada, salvo con `lyricsPeek`.
