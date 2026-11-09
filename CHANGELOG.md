@@ -6,6 +6,8 @@ project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+## [0.8.0] - 2026-11-09
+
 ### Added
 
 - Your calendars in the agenda: `icsSources` takes vdirsyncer folders,
@@ -197,6 +199,7 @@ project follows [Semantic Versioning](https://semver.org/).
 - Omarchy's OSD (volume, brightness…) in the island, battery peeks, theme
   border options for light themes.
 
+[0.8.0]: https://github.com/thealejandro/omarchy-island/compare/v0.7.0...v0.8.0
 [0.7.0]: https://github.com/thealejandro/omarchy-island/compare/v0.6.2...v0.7.0
 [0.6.2]: https://github.com/thealejandro/omarchy-island/compare/v0.6.1...v0.6.2
 [0.6.1]: https://github.com/thealejandro/omarchy-island/compare/v0.6.0...v0.6.1
