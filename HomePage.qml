@@ -140,7 +140,7 @@ Column {
   // pid or address is known.
   Column {
     id: agents
-    readonly property var rows: root.cfg.agents ? root.island.agentSessions : []
+    readonly property var rows: root.cfg.agents ? AgentModel.ordered(root.island.agentSessions) : []
     visible: rows.length > 0
     width: parent.width
     spacing: Style.spacing.xs

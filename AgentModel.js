@@ -261,7 +261,15 @@ function peekNote(s) {
   if (!s) return null
   var key = s.state === "waiting" ? "agentWaiting" : s.state === "done" ? "agentDone"
     : s.state === "error" ? "agentError" : ""
-  return key ? { key: key, arg: sessionLabel(s), state: s.state } : null
+  // The project goes after the sentence: "Claude Code needs your permission · proj".
+  return key ? { key: key, arg: displayName(s.agent), label: s.label || "", state: s.state } : null
+}
+
+// For the rows: whoever is waiting for you first, then the most recent.
+function ordered(list) {
+  var all = (list || []).slice()
+  return all.filter(function(s) { return s.state === "waiting" })
+    .concat(all.filter(function(s) { return s.state !== "waiting" }))
 }
 
 function summary(list) {

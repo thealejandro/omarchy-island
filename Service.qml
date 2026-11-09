@@ -1041,7 +1041,8 @@ Item {
   property var agentNote: null
   readonly property var agentSummary: AgentModel.summary(agentSessions)
   readonly property bool agentsWaiting: cfg.agents && agentSummary.waiting > 0
-  readonly property string agentLabel: agentNote ? tr(agentNote.key, agentNote.arg) : ""
+  readonly property string agentLabel: agentNote
+    ? tr(agentNote.key, agentNote.arg) + (agentNote.label ? " · " + agentNote.label : "") : ""
   readonly property bool agentsOn: cfg.agents
   readonly property int agentStaleMs: cfg.agentStale * 60000
   onAgentsOnChanged: if (!agentsOn) { agentSessions = []; agentNote = null; agentSchedule() }

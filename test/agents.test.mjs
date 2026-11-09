@@ -211,8 +211,11 @@ test("shouldPeek: waiting, done and error once; working and idle never", () => {
 
 test("peekNote, summary, listing", () => {
   const s = { agent: "claude", label: "proj", state: "waiting" }
-  assert.deepEqual(plain(AM.peekNote(s)), { key: "agentWaiting", arg: "Claude Code · proj", state: "waiting" })
-  assert.deepEqual(plain(AM.peekNote({ agent: "codex", label: "", state: "done" })), { key: "agentDone", arg: "Codex", state: "done" })
+  assert.deepEqual(plain(AM.peekNote(s)), { key: "agentWaiting", arg: "Claude Code", label: "proj", state: "waiting" })
+  assert.deepEqual(plain(AM.peekNote({ agent: "codex", label: "", state: "done" })), { key: "agentDone", arg: "Codex", label: "", state: "done" })
+  const rows = [{ key: "a", state: "working" }, { key: "b", state: "waiting" }, { key: "c", state: "done" }, { key: "d", state: "waiting" }]
+  assert.deepEqual(AM.ordered(rows).map((r) => r.key), ["b", "d", "a", "c"])
+  assert.deepEqual(plain(AM.ordered(null)), [])
   assert.equal(AM.peekNote({ agent: "codex", label: "", state: "error" }).key, "agentError")
   assert.equal(AM.peekNote({ agent: "codex", label: "", state: "working" }), null)
   assert.equal(AM.peekNote(null), null)
