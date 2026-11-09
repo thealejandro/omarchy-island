@@ -55,7 +55,9 @@ var SCHEMA = [
 
   { key: "notifications", type: "enum", options: ["off", "island"], def: "off", section: "system" },
   { key: "osd", type: "bool", def: false, section: "system" },
-  { key: "battery", type: "bool", def: true, section: "system" }
+  { key: "battery", type: "bool", def: true, section: "system" },
+  { key: "privacyDots", type: "bool", def: true, section: "system" },
+  { key: "privacyPeek", type: "bool", def: true, section: "system" }
 ]
 
 var ZONE_ID = /^[A-Za-z_]+(\/[A-Za-z0-9_+\-]+)*$/

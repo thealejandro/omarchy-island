@@ -216,6 +216,25 @@ BarWidget {
     color: Commons.Color.accent
   }
 
+  // Microphone and camera in use, top left (the unread dot is top right).
+  Row {
+    visible: root.showIcon && !!root.service && (root.service.micInUse || root.service.cameraInUse)
+    anchors.left: parent.left
+    anchors.top: parent.top
+    anchors.margins: Style.space(4)
+    spacing: Style.space(2)
+    Rectangle {
+      visible: !!root.service && root.service.micInUse
+      width: Style.space(6); height: width; radius: width / 2
+      color: Commons.Color.composed("island.mic", "island.mic-alpha", "#ff9f0a", 1)
+    }
+    Rectangle {
+      visible: !!root.service && root.service.cameraInUse
+      width: Style.space(6); height: width; radius: width / 2
+      color: Commons.Color.composed("island.camera", "island.camera-alpha", "#30d158", 1)
+    }
+  }
+
   MouseArea {
     anchors.fill: parent
     enabled: root.showIcon
