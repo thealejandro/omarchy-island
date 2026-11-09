@@ -17,6 +17,9 @@ cargo test --workspace
 cargo build --release -p island-windows   # target/release/island.exe
 ```
 
+For now `island.exe --placement top|floating|top-left|top-right` picks where
+it sits, and a right click on the island closes it (a tray icon comes later).
+
 CI builds with the MSVC toolchain. Without the Visual Studio Build Tools,
 the `stable-x86_64-pc-windows-gnullvm` toolchain works too:
 `cargo +stable-x86_64-pc-windows-gnullvm build`.
