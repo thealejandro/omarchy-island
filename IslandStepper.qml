@@ -2,7 +2,7 @@ import QtQuick
 import qs.Commons
 import qs.Commons as Commons
 
-// − value + for whole numbers; the scroll wheel steps too. Tab reaches it
+// − value + for whole numbers (or, with `text`, any label between two arrows); the scroll wheel steps too. Tab reaches it
 // as one stop, ← and → step it.
 Item {
   id: root
@@ -13,6 +13,13 @@ Item {
   property int step: 1
   property string suffix: ""
   property string label: ""
+  // Replaces the middle label; the owner then handles stepped(), which
+  // carries the clamped value the arrows would have set.
+  property string text: ""
+  property string leftGlyph: "󰍴"
+  property string rightGlyph: "󰐕"
+  property string leftLabel: "−"
+  property string rightLabel: "+"
   signal stepped(int value)
 
   implicitWidth: row.implicitWidth
@@ -22,7 +29,7 @@ Item {
   Keys.onRightPressed: bump(1)
   Accessible.role: Accessible.SpinBox
   Accessible.name: label
-  Accessible.description: value + suffix
+  Accessible.description: text !== "" ? text : value + suffix
   Accessible.focusable: true
 
   function bump(delta) {
@@ -36,8 +43,8 @@ Item {
 
     IslandButton {
       anchors.verticalCenter: parent.verticalCenter
-      glyph: "󰍴"
-      label: "−"
+      glyph: root.leftGlyph
+      label: root.leftLabel
       tabbable: false
       size: Style.space(22)
       glyphSize: Style.font.bodySmall
@@ -48,7 +55,7 @@ Item {
       anchors.verticalCenter: parent.verticalCenter
       width: Math.max(implicitWidth, Style.space(58))
       horizontalAlignment: Text.AlignHCenter
-      text: root.value + root.suffix
+      text: root.text !== "" ? root.text : root.value + root.suffix
       color: Commons.Color.bar.text
       font.family: Style.font.family
       font.pixelSize: Style.font.bodySmall
@@ -57,8 +64,8 @@ Item {
     }
     IslandButton {
       anchors.verticalCenter: parent.verticalCenter
-      glyph: "󰐕"
-      label: "+"
+      glyph: root.rightGlyph
+      label: root.rightLabel
       tabbable: false
       size: Style.space(22)
       glyphSize: Style.font.bodySmall

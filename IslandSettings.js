@@ -23,7 +23,10 @@ var SCHEMA = [
   { key: "openWidth", type: "int", min: 420, max: 800, step: 20, def: 560, section: "look" },
   { key: "blur", type: "bool", def: true, section: "look" },
   { key: "animations", type: "bool", def: true, section: "look" },
-  { key: "idleNotch", type: "enum", options: ["off", "notch", "hour", "day", "battery"], def: "notch", section: "look" },
+  { key: "idleNotch", type: "enum", options: ["off", "notch", "icon", "hour", "day", "battery"], def: "notch", section: "look" },
+  { key: "idleIcon", type: "string", def: "glasses", section: "look" },
+  { key: "idleIconTint", type: "enum", options: ["auto", "on", "off"], def: "auto", section: "look" },
+  { key: "idleMotion", type: "bool", def: true, section: "look" },
 
   { key: "clock", type: "bool", def: true, section: "open" },
   { key: "clockClick", type: "enum", options: ["pin", "calendar", "omarchy"], def: "calendar", section: "open" },

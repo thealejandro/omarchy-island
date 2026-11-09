@@ -3,6 +3,7 @@ import qs.Commons
 import qs.Commons as Commons
 import "IslandSettings.js" as IslandSettings
 import "IslandModel.js" as IslandModel
+import "IslandIcons.js" as IslandIcons
 
 // The settings page, drawn from IslandSettings' schema, one section at a
 // time. Every change is written to the island's entry in shell.json right
@@ -185,6 +186,7 @@ Column {
           anchors.right: parent.right
           anchors.verticalCenter: parent.verticalCenter
           sourceComponent: {
+            if (row.key === "idleIcon") return iconPickerComp
             switch (row.modelData.type) {
               case "bool": return toggleComp
               case "int": return stepperComp
@@ -212,6 +214,48 @@ Column {
             step: row.modelData.step
             suffix: root.suffixFor(row.key)
             onStepped: (v) => root.save(row.key, v)
+          }
+        }
+        // The icon in the notch: ‹ name › through the built-ins and the user's
+        // files, with a live preview of what the notch will show.
+        Component {
+          id: iconPickerComp
+          Row {
+            id: picker
+            readonly property var names: IslandIcons.pickerList(root.island.iconFiles, String(row.value || ""))
+            readonly property int index: Math.max(0, names.indexOf(String(row.value || "")))
+            readonly property string shown: names[index] || ""
+            spacing: Style.spacing.md
+            Rectangle {
+              anchors.verticalCenter: parent.verticalCenter
+              width: Style.space(48)
+              height: Style.space(22)
+              radius: Style.space(7)
+              color: Util.alpha(root.textColor, 0.07)
+              IdleIcon {
+                anchors.centerIn: parent
+                builtin: root.island.iconBuiltin
+                source: root.island.iconUrl
+                tinted: root.island.iconTinted
+                tint: Commons.Color.accent
+                detailTint: Commons.Color.accent
+                along: Style.space(36)
+                across: Style.space(12)
+              }
+            }
+            IslandStepper {
+              anchors.verticalCenter: parent.verticalCenter
+              label: root.tr("set_idleIcon")
+              text: picker.shown.length > 22 ? picker.shown.slice(0, 21) + "…" : picker.shown
+              value: picker.index
+              from: 0
+              to: Math.max(0, picker.names.length - 1)
+              leftGlyph: "‹"
+              rightGlyph: "›"
+              leftLabel: "‹"
+              rightLabel: "›"
+              onStepped: (v) => root.save(row.key, picker.names[v])
+            }
           }
         }
         Component {
