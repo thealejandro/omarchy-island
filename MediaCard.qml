@@ -206,14 +206,15 @@ Column {
     anchors.horizontalCenter: parent.horizontalCenter
     spacing: Style.spacing.xl
     visible: root.island.hasMedia
-    IslandButton { anchors.verticalCenter: parent.verticalCenter; glyph: "󰒮"; onClicked: root.island.previous() }
+    IslandButton { anchors.verticalCenter: parent.verticalCenter; glyph: "󰒮"; label: root.island.tr("a11y_prev"); onClicked: root.island.previous() }
     IslandButton {
       anchors.verticalCenter: parent.verticalCenter
       glyph: root.island.playing ? "󰏤" : "󰐊"
+      label: root.island.tr(root.island.playing ? "a11y_pause" : "a11y_play")
       filled: true
       size: Style.space(34)
       onClicked: root.island.togglePlaying()
     }
-    IslandButton { anchors.verticalCenter: parent.verticalCenter; glyph: "󰒭"; onClicked: root.island.next() }
+    IslandButton { anchors.verticalCenter: parent.verticalCenter; glyph: "󰒭"; label: root.island.tr("a11y_next"); onClicked: root.island.next() }
   }
 }

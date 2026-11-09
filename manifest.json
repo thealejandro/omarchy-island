@@ -32,6 +32,7 @@
       "anchor": "clock",
       "clockWidth": 120,
       "hoverOpen": true,
+      "keyboard": true,
       "hoverDelay": 120,
       "peekDuration": 3500,
       "toggles": "island",
@@ -153,6 +154,12 @@
         "key": "hoverOpen",
         "type": "boolean",
         "label": "Open on hover",
+        "defaultValue": true
+      },
+      {
+        "key": "keyboard",
+        "type": "boolean",
+        "label": "Keyboard navigation",
         "defaultValue": true
       },
       {

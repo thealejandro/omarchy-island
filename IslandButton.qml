@@ -3,11 +3,15 @@ import qs.Commons
 import qs.Commons as Commons
 
 // Round icon button. "filled" is the primary action (play), drawn as an
-// accent disc; the rest are bare glyphs with a soft hover halo.
+// accent disc; the rest are bare glyphs with a soft hover halo. "label"
+// names it for screen readers; Tab reaches it, Space or Enter presses it.
 Item {
   id: root
 
   property string glyph: ""
+  property string label: ""
+  // Off for buttons a parent control steps with its own keys.
+  property bool tabbable: true
   property bool filled: false
   property bool accent: false
   property int size: Style.space(30)
@@ -16,6 +20,13 @@ Item {
 
   implicitWidth: size
   implicitHeight: size
+  activeFocusOnTab: tabbable && visible && enabled
+  Keys.onSpacePressed: root.clicked()
+  Keys.onReturnPressed: root.clicked()
+  Keys.onEnterPressed: root.clicked()
+  Accessible.role: Accessible.Button
+  Accessible.name: label
+  Accessible.onPressAction: root.clicked()
 
   Rectangle {
     anchors.fill: parent
@@ -35,7 +46,7 @@ Item {
     text: root.glyph
     color: root.filled ? Commons.Color.bar.background
       : (root.accent ? Commons.Color.accent : Commons.Color.bar.text)
-    opacity: root.filled || mouse.containsMouse ? 1 : 0.75
+    opacity: root.filled || mouse.containsMouse || root.activeFocus ? 1 : 0.75
     font.family: Style.font.family
     font.pixelSize: root.glyphSize
   }
@@ -52,6 +63,8 @@ Item {
     easing.type: Easing.OutBack
     easing.overshoot: 2.2
   }
+
+  IslandFocusRing { radius: width / 2 }
 
   MouseArea {
     id: mouse

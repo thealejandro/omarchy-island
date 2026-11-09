@@ -2,6 +2,7 @@ import QtQuick
 import qs.Commons
 import qs.Commons as Commons
 import "IslandSettings.js" as IslandSettings
+import "IslandModel.js" as IslandModel
 
 // The settings page, drawn from IslandSettings' schema, one section at a
 // time. Every change is written to the island's entry in shell.json right
@@ -49,6 +50,14 @@ Column {
     id: pill
     property string label: ""
     signal clicked()
+    activeFocusOnTab: visible
+    Keys.onSpacePressed: pill.clicked()
+    Keys.onReturnPressed: pill.clicked()
+    Keys.onEnterPressed: pill.clicked()
+    Accessible.role: Accessible.Button
+    Accessible.name: label
+    Accessible.onPressAction: pill.clicked()
+    IslandFocusRing { radius: pill.radius + Style.space(2) }
     width: pillText.implicitWidth + 2 * Style.spacing.xl
     height: Style.space(26)
     radius: Style.space(8)
@@ -74,11 +83,22 @@ Column {
     }
   }
 
-  // Sections. Wraps onto a second line on a narrow island.
+  // Sections. Wraps onto a second line on a narrow island. One Tab stop,
+  // on the current section; ← and → change it.
   Flow {
     width: parent.width
     spacing: Style.spacing.sm
+    Accessible.role: Accessible.PageTabList
+    Accessible.name: root.tr("a11y_sections")
+    function go(delta) {
+      var next = IslandModel.stepChoice(IslandSettings.SECTIONS, root.section, delta)
+      if (next === root.section) return
+      root.section = next
+      var chip = sectionChips.itemAt(IslandSettings.SECTIONS.indexOf(next))
+      if (chip) chip.forceActiveFocus()
+    }
     Repeater {
+      id: sectionChips
       model: IslandSettings.SECTIONS
       Rectangle {
         id: chip
@@ -90,6 +110,15 @@ Column {
         color: active ? Util.alpha(Commons.Color.accent, 0.2)
           : Util.alpha(root.textColor, chipMouse.containsMouse ? 0.1 : 0.05)
         Behavior on color { ColorAnimation { duration: 140 } }
+        activeFocusOnTab: active
+        Keys.onLeftPressed: chip.parent.go(-1)
+        Keys.onRightPressed: chip.parent.go(1)
+        Accessible.role: Accessible.PageTab
+        Accessible.name: root.tr("sec_" + modelData)
+        Accessible.checkable: true
+        Accessible.checked: active
+        Accessible.onPressAction: root.section = chip.modelData
+        IslandFocusRing { radius: chip.radius + Style.space(2) }
         Text {
           id: chipText
           anchors.centerIn: parent
@@ -168,6 +197,7 @@ Column {
         Component {
           id: toggleComp
           IslandToggle {
+            label: root.tr("set_" + row.key)
             checked: row.value === true
             onToggled: (v) => root.save(row.key, v)
           }
@@ -175,6 +205,7 @@ Column {
         Component {
           id: stepperComp
           IslandStepper {
+            label: root.tr("set_" + row.key)
             value: row.value
             from: row.modelData.min
             to: row.modelData.max
@@ -186,6 +217,7 @@ Column {
         Component {
           id: segmentComp
           IslandSegment {
+            label: root.tr("set_" + row.key)
             options: root.optionsFor(row.modelData)
             value: row.value
             onPicked: (v) => root.save(row.key, v)
@@ -195,6 +227,7 @@ Column {
           id: fieldComp
           IslandField {
             island: root.island
+            label: root.tr("set_" + row.key)
             width: Math.min(Style.space(240), rows.width * 0.5)
             text: row.modelData.type === "cities" ? IslandSettings.citiesText(row.value) : String(row.value || "")
             placeholder: row.modelData.type === "cities" ? "Tokyo|Asia/Tokyo" : ""

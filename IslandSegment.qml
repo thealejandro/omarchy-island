@@ -1,15 +1,30 @@
 import QtQuick
 import qs.Commons
 import qs.Commons as Commons
+import "IslandModel.js" as IslandModel
 
 // A row of choices with one picked, for enum settings. options is a list
 // of { value, label }; values are compared as JSON so null works too.
+// Tab reaches it, ← and → pick the neighbour.
 Rectangle {
   id: root
 
   property var options: []
   property var value: null
+  property string label: ""
   signal picked(var value)
+
+  function step(delta) {
+    var next = IslandModel.stepChoice(options.map(function(o) { return o.value }), value, delta)
+    if (JSON.stringify(next) !== JSON.stringify(value)) picked(next)
+  }
+
+  activeFocusOnTab: visible && enabled
+  Keys.onLeftPressed: step(-1)
+  Keys.onRightPressed: step(1)
+  Accessible.role: Accessible.PageTabList
+  Accessible.name: label
+  Accessible.focusable: true
 
   implicitWidth: row.implicitWidth + 2 * Style.space(2)
   implicitHeight: Style.space(24)
@@ -34,6 +49,11 @@ Rectangle {
         color: active ? Util.alpha(Commons.Color.accent, 0.22)
           : Util.alpha(Commons.Color.bar.text, mouse.containsMouse ? 0.08 : 0)
         Behavior on color { ColorAnimation { duration: 140 } }
+        Accessible.role: Accessible.PageTab
+        Accessible.name: modelData.label
+        Accessible.checkable: true
+        Accessible.checked: active
+        Accessible.onPressAction: root.picked(chip.modelData.value)
 
         Text {
           id: label
@@ -55,4 +75,6 @@ Rectangle {
       }
     }
   }
+
+  IslandFocusRing { radius: root.radius + Style.space(2) }
 }

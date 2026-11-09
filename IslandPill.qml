@@ -3,7 +3,7 @@ import qs.Commons
 import qs.Commons as Commons
 
 // A small text button: an optional glyph and a label. "on" lights it with
-// the accent, as the toggles do.
+// the accent, as the toggles do. Tab reaches it, Space or Enter presses it.
 Rectangle {
   id: pill
 
@@ -17,6 +17,13 @@ Rectangle {
 
   implicitWidth: row.implicitWidth + 2 * (compact ? Style.spacing.lg : Style.spacing.xl)
   implicitHeight: Style.space(compact ? 22 : 26)
+  activeFocusOnTab: visible && enabled
+  Keys.onSpacePressed: pill.clicked()
+  Keys.onReturnPressed: pill.clicked()
+  Keys.onEnterPressed: pill.clicked()
+  Accessible.role: Accessible.Button
+  Accessible.name: label
+  Accessible.onPressAction: pill.clicked()
   radius: Style.space(compact ? 7 : 8)
   color: on ? Util.alpha(Commons.Color.accent, mouse.containsMouse ? 0.3 : 0.2)
     : Util.alpha(Commons.Color.bar.text, mouse.containsMouse ? 0.13 : 0.07)
@@ -46,6 +53,8 @@ Rectangle {
       font.bold: true
     }
   }
+
+  IslandFocusRing { radius: pill.radius + Style.space(2) }
 
   MouseArea {
     id: mouse

@@ -1,8 +1,10 @@
 import QtQuick
 import qs.Commons
 import qs.Commons as Commons
+import "IslandModel.js" as IslandModel
 
 // The open island's pages as a slim row of glyphs; the current one is lit.
+// One Tab stop, on the current page's tab; ← and → change the page.
 Row {
   id: root
 
@@ -13,8 +15,20 @@ Row {
     notifications: quiet ? "󰂛" : "󰂚", settings: "󰒓" })
 
   spacing: Style.spacing.xs
+  Accessible.role: Accessible.PageTabList
+  Accessible.name: island.tr("a11y_pages")
+
+  // The neighbouring page, keeping the keyboard on its tab.
+  function go(delta) {
+    var next = IslandModel.stepChoice(island.pages, island.page, delta)
+    if (next === island.page) return
+    island.page = next
+    var tab = tabs.itemAt(island.pages.indexOf(next))
+    if (tab) tab.forceActiveFocus()
+  }
 
   Repeater {
+    id: tabs
     model: root.island.pages
 
     Rectangle {
@@ -27,6 +41,14 @@ Row {
       color: active ? Util.alpha(Commons.Color.accent, 0.2)
         : Util.alpha(Commons.Color.bar.text, mouse.containsMouse ? 0.1 : 0)
       Behavior on color { ColorAnimation { duration: 140 } }
+      activeFocusOnTab: active
+      Keys.onLeftPressed: root.go(-1)
+      Keys.onRightPressed: root.go(1)
+      Accessible.role: Accessible.PageTab
+      Accessible.name: root.island.tr("page_" + modelData)
+      Accessible.checkable: true
+      Accessible.checked: active
+      Accessible.onPressAction: root.island.page = tab.modelData
 
       Glyph {
         anchors.centerIn: parent
@@ -47,6 +69,7 @@ Row {
         y: Style.space(2)
         color: Commons.Color.accent
       }
+      IslandFocusRing { radius: tab.radius + Style.space(2) }
       MouseArea {
         id: mouse
         anchors.fill: parent

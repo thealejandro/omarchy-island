@@ -73,12 +73,14 @@ Item {
     IslandButton {
       anchors.verticalCenter: parent.verticalCenter
       glyph: "󰑓"
+      label: root.island.tr("a11y_reset")
       visible: root.island.timerActive
       onClicked: root.island.resetTimer()
     }
     IslandButton {
       anchors.verticalCenter: parent.verticalCenter
       glyph: root.island.timerRunning ? "󰏤" : "󰐊"
+      label: root.island.tr(root.island.timerRunning ? "a11y_pause" : "a11y_play")
       filled: true
       size: Style.space(30)
       onClicked: root.island.toggleTimer()

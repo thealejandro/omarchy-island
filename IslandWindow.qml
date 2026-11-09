@@ -128,9 +128,13 @@ PanelWindow {
   exclusionMode: ExclusionMode.Ignore
   WlrLayershell.namespace: "omarchy-island"
   WlrLayershell.layer: WlrLayer.Top
-  // Only while a text field in the island is being edited, so the island
-  // never takes the keyboard from the window you were typing in.
-  WlrLayershell.keyboardFocus: island.wantsKeyboard && expanded ? WlrKeyboardFocus.Exclusive : WlrKeyboardFocus.None
+  // Exclusive while a text field in the island is being edited or after
+  // `island keyboard`; on demand (a click hands it over) while pinned with
+  // keyboard navigation on; never while it's only hovered open, so the
+  // island doesn't take the keyboard from the window you were typing in.
+  WlrLayershell.keyboardFocus: !expanded ? WlrKeyboardFocus.None
+    : (island.wantsKeyboard || island.keyboardGrab ? WlrKeyboardFocus.Exclusive
+      : (island.pinned && island.keyboardNav ? WlrKeyboardFocus.OnDemand : WlrKeyboardFocus.None))
 
   // The input region follows the island's *final* size, not the animated
   // one. If it shrank under a still pointer the compositor would send a
@@ -336,6 +340,25 @@ PanelWindow {
 
   Item {
     id: body
+
+    // Keyboard navigation starts here: Tab walks the controls from it, and
+    // Esc (from any control that doesn't use it) closes the island.
+    readonly property bool navigable: win.expanded && win.island.pinned && win.island.keyboardNav
+    readonly property bool windowActive: Window.active
+    function home() {
+      if (!navigable || win.island.keyboardMode) return
+      var f = Window.activeFocusItem
+      if (!f || f === Window.contentItem || !f.visible) forceActiveFocus()
+    }
+    onWindowActiveChanged: if (windowActive) home()
+    Connections {
+      target: win.island
+      function onKeyboardHome() { Qt.callLater(body.home) }
+    }
+    Keys.onEscapePressed: {
+      win.island.pinned = false
+      win.hovered = false
+    }
 
     property real bodyWidth: win.targetWidth
     property real bodyHeight: win.targetHeight
