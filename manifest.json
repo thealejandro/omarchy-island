@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "id": "thealejandro.island",
   "name": "Island",
-  "version": "0.6.2",
+  "version": "0.7.0",
   "author": "thealejandro",
   "description": "A dynamic island for the Omarchy bar, on any edge and hanging from the clock: now playing with media controls, a calendar with a local agenda and reminders, world time and a 3-day forecast, a pomodoro focus timer, quick actions and Omarchy quick toggles, with a visual settings page. Can take over Omarchy volume and brightness OSD and, when you turn it on, its notifications (with a list and history); peeks on track changes, events, charging and low battery, and follows your theme live.",
   "kinds": [
