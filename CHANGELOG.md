@@ -127,6 +127,8 @@ project follows [Semantic Versioning](https://semver.org/).
 - Omarchy's OSD (volume, brightness…) in the island, battery peeks, theme
   border options for light themes.
 
+[0.6.2]: https://github.com/thealejandro/omarchy-island/compare/v0.6.1...v0.6.2
+[0.6.1]: https://github.com/thealejandro/omarchy-island/compare/v0.6.0...v0.6.1
 [0.6.0]: https://github.com/thealejandro/omarchy-island/compare/v0.5.0...v0.6.0
 [0.5.0]: https://github.com/thealejandro/omarchy-island/compare/v0.4.0...v0.5.0
 [0.4.0]: https://github.com/thealejandro/omarchy-island/releases/tag/v0.4.0
