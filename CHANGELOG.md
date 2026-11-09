@@ -21,6 +21,15 @@ project follows [Semantic Versioning](https://semver.org/).
   streams and sink monitors don't count), with `fuser` for cameras opened
   directly, only when there's a camera. `privacyDots` and `privacyPeek` in
   Settings › System. (#14)
+- AI agent status: Claude Code, Codex, Gemini CLI, Aider and anything that
+  can run a command tell the island when they are working, need your
+  permission, finish or fail. Home shows up to two of them (a click raises
+  the terminal window), a glance drops out of the bar when one needs you or
+  finishes, and a red dot sits by the clock while one is waiting. Hooks call
+  `scripts/agent-hook.sh` (or `omarchy-shell island agent …`); nothing is
+  polled, only the name of the working folder is kept, and agents that go
+  quiet are forgotten. `agents`, `agentPeek`, `agentPeekDuration`,
+  `agentDot` and `agentStale` in Settings › System. (#12)
 
 ## [0.7.0] - 2026-11-09
 
