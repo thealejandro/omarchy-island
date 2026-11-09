@@ -41,6 +41,10 @@ test("apps: own pid first, then a class that names the app", () => {
   assert.deepEqual(plain(NM.clickTarget({ app: "Telegram Desktop", pid: 300 }, windows)), { focus: "0xc1" })
   assert.deepEqual(plain(NM.clickTarget({ app: "Telegram Desktop" }, windows)), { focus: "0xc1" })
   assert.deepEqual(plain(NM.clickTarget({ app: "Slack" }, windows)), { focus: "0xb1" })
+  assert.deepEqual(plain(NM.clickTarget({ app: "Zed" }, windows)), null)
+  const ghostty = NM.parseClients(JSON.stringify([{ class: "com.mitchellh.ghostty", title: "~", address: "0x9", pid: 1 }]))
+  assert.deepEqual(plain(NM.clickTarget({ app: "Ghostty" }, ghostty)), { focus: "0x9" })
+  assert.equal(NM.clickTarget({ app: "host" }, ghostty), null)
 })
 
 test("a file named like the app in an editor's title is no match", () => {

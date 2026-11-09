@@ -230,7 +230,8 @@ function windowForSource(windows, source) {
     return null
   }
   // An app name: whole class, a class ending in its words ("Telegram
-  // Desktop" is org.telegram.desktop), or a Chrome web app's host label.
+  // Desktop" is org.telegram.desktop) or in its name, or a Chrome web app's
+  // host label.
   // Never shorter than four characters.
   var slugged = name.replace(/[^a-z0-9]+/g, "")
   if (slugged.length < 4) return null
@@ -241,6 +242,8 @@ function windowForSource(windows, source) {
     if (lower === slugged) { found.push(windows[i]); continue }
     var dotted = "." + lower.replace(/[^a-z0-9]+/g, ".")
     if (tail && dotted.slice(-tail.length) === tail) { found.push(windows[i]); continue }
+    // Reverse-DNS classes: "Ghostty" is com.mitchellh.ghostty.
+    if (dotted.slice(-(slugged.length + 1)) === "." + slugged) { found.push(windows[i]); continue }
     if (lower.indexOf("chrome-") !== 0) continue
     var labels = lower.substring(7).split("__")[0].split(".")
     if (labels.indexOf(slugged) >= 0) found.push(windows[i])
