@@ -121,7 +121,7 @@ anything it can't find degrades to a simpler behavior instead of breaking
 ## Install
 
 ```bash
-omarchy plugin add https://github.com/thealejandro/omarchy-island.git --enable
+omarchy plugin add https://github.com/thealejandro/island.git --enable
 ```
 
 Then put it on the bar next to the clock. It takes no room there; it lets
@@ -451,7 +451,7 @@ under the clock, as a glance, while a song plays and the island is closed
 They come from [lrclib.net](https://lrclib.net), a free community service
 with no account or key. **What leaves your computer**: the artist, title,
 album and length of the song, in a request to lrclib.net, plus the
-`User-Agent` `omarchy-island/<version> (https://github.com/thealejandro/omarchy-island)`.
+`User-Agent` `omarchy-island/<version> (https://github.com/thealejandro/island)`.
 Never the file's path or the player's name. **When**: when a new song
 starts while the island is open (or with `lyricsPeek` on), and when you open
 it on a song it hasn't looked up; at most three requests per song, one after
@@ -690,8 +690,8 @@ instead of assuming it:
 Clone anywhere and link it into the plugin directory:
 
 ```bash
-git clone https://github.com/thealejandro/omarchy-island.git
-ln -s "$PWD/omarchy-island" ~/.config/omarchy/plugins/thealejandro.island
+git clone https://github.com/thealejandro/island.git
+ln -s "$PWD/island" ~/.config/omarchy/plugins/thealejandro.island
 omarchy-shell shell rescanPlugins
 omarchy plugin enable thealejandro.island
 ```

@@ -81,7 +81,7 @@ test("arguments: HTTPS only, identified, values are separate arguments", () => {
     assert.ok(args.includes("--proto"))
     assert.ok(args.includes("=https"))
     assert.ok(args.includes("--proto-redir"))
-    assert.ok(args.includes("omarchy-island/0.8.0 (https://github.com/thealejandro/omarchy-island)"))
+    assert.ok(args.includes("omarchy-island/0.8.0 (https://github.com/thealejandro/island)"))
     assert.ok(args.includes("-G"))
     assert.ok(args.includes("track_name=" + nasty))
     assert.ok(args.includes("artist_name=A&B=C"))
