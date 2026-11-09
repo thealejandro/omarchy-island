@@ -228,6 +228,7 @@ Column {
           IslandField {
             island: root.island
             label: root.tr("set_" + row.key)
+            revertOnLeave: true
             width: Math.min(Style.space(240), rows.width * 0.5)
             text: row.modelData.type === "cities" ? IslandSettings.citiesText(row.value) : String(row.value || "")
             placeholder: row.modelData.type === "cities" ? "Tokyo|Asia/Tokyo" : ""

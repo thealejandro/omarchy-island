@@ -14,6 +14,10 @@ Rectangle {
   property string placeholder: ""
   property string label: ""
   property bool editing: input.activeFocus
+  // Leaving without Enter (Tab, a click elsewhere) puts the saved text back,
+  // so what's shown is always what's saved. Off for forms with a save button,
+  // where Tab moves between fields that are saved together.
+  property bool revertOnLeave: false
   // What's typed so far, committed or not (for forms with a save button).
   readonly property string current: input.text
   signal accepted(string text)
@@ -76,6 +80,8 @@ Rectangle {
         if (!root.island.wantsKeyboard) root.island.wantsKeyboard = true
         selectAll()
       } else {
+        // finish() has already kept what it commits.
+        if (root.revertOnLeave) text = root.text
         // Later, and only if no other field took the keyboard (Tab from one
         // field straight into the next).
         Qt.callLater(function() {
