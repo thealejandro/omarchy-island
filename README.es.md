@@ -180,7 +180,8 @@ omarchy plugin enable omarchy.notifications; omarchy plugin enable omarchy.osd
 - Cerrada, la isla muestra una pequeña muesca bajo el reloj, su propia
   silueta en el color de la barra, para saber que está ahí (`idleNotch`:
   `off` la quita; `hour`, `day` y `battery` añaden una línea fina que crece
-  con la hora, el día o el nivel de batería). Cede ante los puntos, los vistazos y el
+  con la hora, el día o el nivel de batería; `icon` pone un icono pequeño
+  dentro, ver más abajo). Cede ante los puntos, los vistazos y el
   temporizador, no recibe clics, y con `hoverOpen` posar el puntero en
   ella abre la isla.
 - Elige página en las pestañas de la esquina. Un clic en un día del
@@ -248,7 +249,10 @@ quita solo las claves propias de la isla.
 | `lyrics` | `true`, `false` | `false` | Letra sincronizada en la tarjeta de reproducción, de lrclib.net (necesita `showMedia`); ver [Letra](#letra) |
 | `lyricsPeek` | `true`, `false` | `false` | La línea actual se queda bajo el reloj, como vistazo, con la isla cerrada mientras suena una canción (necesita `lyrics`) |
 | `animations` | `true`, `false` | `true` | Muelle y movimiento de páginas y vistazos |
-| `idleNotch` | `off`, `notch`, `hour`, `day`, `battery` | `notch` | Con la isla cerrada: nada, una ceja de la barra bajo el reloj, o eso y una línea fina que se llena con la hora, el día (de 15 en 15 minutos) o el nivel de batería (roja con 20% o menos sin cargar; ceja normal sin batería) |
+| `idleNotch` | `off`, `notch`, `icon`, `hour`, `day`, `battery` | `notch` | Con la isla cerrada: nada, una ceja de la barra bajo el reloj, una muesca más alta con un icono pequeño (`idleIcon`), o la ceja y una línea fina que se llena con la hora, el día (de 15 en 15 minutos) o el nivel de batería (roja con 20% o menos sin cargar; ceja normal sin batería). El icono no cede ante los puntos; cuelgan debajo |
+| `idleIcon` | `glasses`, `isle`, `prompt`, `capsule`, `braces`, `mark`, `archipelago`, `swell`, `channel`, `fold`, o un nombre de archivo | `glasses` | El icono de `idleNotch: icon` (hay diez incluidos; `glasses`, el predeterminado, sale del logo del autor; los seis primeros tienen una pieza propia que se mueve). El tuyo: pon un `.svg` o `.png` (hasta 256 KiB, PNG hasta 1024 px) en `~/.config/omarchy/island/icons` y escribe su nombre, por ejemplo `rocket.svg`. Si no sirve, se ve la muesca normal |
+| `idleIconTint` | `auto`, `on`, `off` | `auto` | Pinta el icono con el color de acento a través de su forma. `auto`: los iconos incluidos, los SVG de un solo color y los archivos `…-symbolic`; los PNG se ven tal cual |
+| `idleMotion` | `true`, `false` | `true` | De vez en cuando (cada 20 a 45 s, o cuando llega algo nuevo) el icono mira a un lado. Entre medias no corre nada, y con `animations` apagado tampoco |
 | `openWidth` | 420–800 | `560` | Ancho de la isla abierta |
 | `blur` | `true`, `false` | `true` | Desenfoque detrás de la isla con la barra de cristal |
 | `clock` | `true`, `false` | `true` | Abrir al pasar sobre el reloj (`false`: solo la franja del borde) |

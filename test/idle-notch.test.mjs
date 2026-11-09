@@ -86,10 +86,10 @@ test("msUntilNextMinute is always 1..60000", () => {
   }
 })
 
-test("idleNotch setting: enum off|notch|hour|day|battery, default notch, look section", () => {
+test("idleNotch setting: enum off|notch|icon|hour|day|battery, default notch, look section", () => {
   const spec = plain(IS.spec("idleNotch"))
   assert.equal(spec.type, "enum")
-  assert.deepEqual(spec.options, ["off", "notch", "hour", "day", "battery"])
+  assert.deepEqual(spec.options, ["off", "notch", "icon", "hour", "day", "battery"])
   assert.equal(spec.def, "notch")
   assert.equal(spec.section, "look")
   assert.equal(IS.normalize({ idleNotch: "eyes" }).idleNotch, "notch")

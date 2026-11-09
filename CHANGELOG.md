@@ -8,6 +8,14 @@ project follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Closed island: `idleNotch: icon` puts a small icon in a taller notch
+  under the clock. Ten are built in (`glasses`, the default and
+  the author's logo, `isle`, `prompt`, `capsule`, `braces`, `mark`,
+  `archipelago`, `swell`, `channel`, `fold`, set with `idleIcon`, picked in Settings >
+  Look with a preview), or use your own `.svg` or `.png` from
+  `~/.config/omarchy/island/icons`. It is painted with the accent
+  (`idleIconTint`) and, with `idleMotion`, glances (the glasses' dot looks around, the prompt's cursor blinks, the
+  isle leans, the rest sway) every 20 to 45 s or when something new arrives; no timer runs otherwise. (#61)
 - Closed island: a small notch under the clock, the island's silhouette in
   the bar's colour, so you can tell it is there (`idleNotch: notch`, the
   default). `idleNotch: hour` adds the hour thread, a thin accent line

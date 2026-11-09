@@ -53,7 +53,7 @@ PanelWindow {
   // notch gesture), resting it on the clock, or just past the bar.
   readonly property bool hotZones: island.hoverOpen && !island.barHidden
   readonly property int edgeThickness: 2
-  readonly property int stripDepth: Style.space(8)
+  readonly property int stripDepth: Math.max(Style.space(8), notchDepth + Style.space(2))
   readonly property int stripLength: Style.space(320)
 
   // Where the clock is along the bar, as the island's bar widget found it;
@@ -71,12 +71,16 @@ PanelWindow {
   readonly property string mode: expanded ? "open" : (peeking ? "peek" : "closed")
 
   // Closed island: a sliver of the bar under the clock (the notch), and with
-  // idleNotch "hour", "day" or "battery" a thin thread that fills with it.
-  readonly property string idleLook: IslandIdle.look(island.idleNotch, mode, island.barHidden, island.idleBusy, island.hasBattery)
+  // idleNotch "hour", "day" or "battery" a thin thread that fills with it, and
+  // "icon" a small icon (a plain notch when it can't be drawn).
+  readonly property string idleLook: IslandIdle.look(island.idleNotch, mode, island.barHidden, island.idleBusy,
+    island.hasBattery, island.iconAvailable && !notchIcon.failed)
   readonly property bool notchShown: idleLook !== "none"
-  readonly property int notchDepth: Style.space(4)
-  readonly property int notchEar: Style.space(2)
-  readonly property int notchLength: Math.max(Style.space(28),
+  onIconLookChanged: if (!iconLook) notchIcon.reset()
+  readonly property bool iconLook: idleLook === "icon"
+  readonly property int notchDepth: iconLook ? Style.space(18) : Style.space(4)
+  readonly property int notchEar: iconLook ? Style.space(4) : Style.space(2)
+  readonly property int notchLength: Math.max(iconLook ? Style.space(32) : Style.space(28),
     Math.min(Style.space(64), Math.round(clockLength) - 2 * notchEar))
   // The dots hang from the notch when it is there.
   readonly property int dotsFrom: barSize + Style.space(3) + (notchShown ? notchDepth : 0)
@@ -373,7 +377,7 @@ PanelWindow {
       edge: win.edge
       bodyWidth: win.notchLength
       bodyHeight: win.notchDepth
-      radius: win.notchEar
+      radius: win.iconLook ? Style.space(6) : win.notchEar
       ear: win.notchEar
       fillColor: win.shellFill
       fillColorEnd: win.shellFillEnd
@@ -391,11 +395,34 @@ PanelWindow {
       readonly property int len: IslandIdle.threadLength(fraction, win.notchLength - 2 * inset, Style.space(2))
       readonly property var r: IslandGeometry.rect(win.edge, notch.width, notch.height, inset, len,
         Math.floor(win.notchDepth / 2), Style.spacing.hairline)
-      visible: win.idleLook !== "none" && win.idleLook !== "notch"
+      visible: win.idleLook === "hour" || win.idleLook === "day" || win.idleLook === "battery"
       x: r.x; y: r.y; width: r.width; height: r.height
       radius: Math.min(width, height) / 2
       color: win.island.idleLow ? Commons.Color.urgent : Commons.Color.accent
       opacity: 0.85
+    }
+
+    // Icon (idleNotch "icon"): in the notch's inner rect. It does not yield to
+    // busy; the dots hang below the notch. Only loaded with that setting.
+    IdleIcon {
+      id: notchIcon
+      anchors.centerIn: parent
+      builtin: win.island.idleNotch === "icon" ? win.island.iconBuiltin : ""
+      source: win.island.idleNotch === "icon" ? win.island.iconUrl : ""
+      tinted: win.island.iconTinted
+      tint: Commons.Color.accent
+      // No blue in the palette (foreground, background, accent, urgent, muted):
+      // the glasses' dot takes the accent too. One line to change.
+      detailTint: Commons.Color.foreground
+      along: win.notchLength - 2 * Style.space(6)
+      across: win.notchDepth - 2 * Style.space(3)
+      vertical: win.vertical
+      visible: win.iconLook
+      onFailedChanged: if (failed) console.warn("island: the notch icon could not be drawn; showing the plain notch")
+    }
+    Connections {
+      target: win.island
+      function onIdleGlance() { if (win.iconLook && win.island.animate) notchIcon.glance() }
     }
   }
 

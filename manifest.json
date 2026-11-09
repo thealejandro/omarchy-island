@@ -57,6 +57,9 @@
       "agentStale": 120,
       "animations": true,
       "idleNotch": "notch",
+      "idleIcon": "glasses",
+      "idleIconTint": "auto",
+      "idleMotion": true,
       "notifications": "off",
       "notifyBody": true,
       "notifyPeekDuration": 6000,
@@ -214,8 +217,27 @@
         "key": "idleNotch",
         "type": "enum",
         "label": "Closed island",
-        "options": ["off", "notch", "hour", "day", "battery"],
+        "options": ["off", "notch", "icon", "hour", "day", "battery"],
         "defaultValue": "notch"
+      },
+      {
+        "key": "idleIcon",
+        "type": "string",
+        "label": "Icon in the notch",
+        "defaultValue": "glasses"
+      },
+      {
+        "key": "idleIconTint",
+        "type": "enum",
+        "label": "Tint the icon",
+        "options": ["auto", "on", "off"],
+        "defaultValue": "auto"
+      },
+      {
+        "key": "idleMotion",
+        "type": "boolean",
+        "label": "Icon motion",
+        "defaultValue": true
       },
       {
         "key": "toggles",

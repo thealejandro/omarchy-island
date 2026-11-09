@@ -2,9 +2,9 @@
 
 // What the closed island draws under the clock: a notch (a sliver of the bar)
 // and, optionally, a thread inside it: the hour, the day (15-minute steps) or
-// the battery level.
+// the battery level. Or an icon in it (see IslandIcons.js).
 
-var LOOKS = ["off", "notch", "hour", "day", "battery"]
+var LOOKS = ["off", "notch", "icon", "hour", "day", "battery"]
 
 // Something is already shown (or should be) under the clock with the island
 // closed. Music is not counted: it is not shown there while the island is closed.
@@ -13,11 +13,14 @@ function busy(s) {
   return !!(s.unread || s.mic || s.camera || s.agent || s.timer)
 }
 
-// "none" | "notch" | "hour" | "day" | "battery": what is drawn under the clock.
-// The threads yield to anything busy; "battery" is a plain notch with no battery.
-function look(setting, mode, barHidden, isBusy, hasBattery) {
+// "none" | "notch" | "icon" | "hour" | "day" | "battery": what is drawn under
+// the clock. The threads yield to anything busy; "battery" is a plain notch
+// with no battery. The icon does not yield (the dots hang below it, like a
+// badge) and is a plain notch when there is no usable icon.
+function look(setting, mode, barHidden, isBusy, hasBattery, hasIcon) {
   if (LOOKS.indexOf(setting) === -1 || setting === "off") return "none"
   if (mode !== "closed" || barHidden) return "none"
+  if (setting === "icon") return hasIcon ? "icon" : "notch"
   if (isBusy || setting === "notch") return "notch"
   if (setting === "battery") return hasBattery ? "battery" : "notch"
   return setting
@@ -72,4 +75,30 @@ function msUntilNextQuarter(minutes, seconds, ms) {
   var r = (m % 15) * 60000 + Math.max(0, Number(seconds) || 0) * 1000 + Math.max(0, Number(ms) || 0)
   r = r % 900000
   return 900000 - r
+}
+
+// Ms until the next idle glance of the icon: 20 to 45 s from r in 0..1, so
+// the screens never move in lockstep with a clock.
+function glanceInterval(r) {
+  var x = Number(r)
+  if (!isFinite(x)) x = 0
+  return Math.round(20000 + Math.max(0, Math.min(1, x)) * 25000)
+}
+
+// The icon may move: closed island, bar visible, the icon look with an icon,
+// and both the icon motion and the island's animations on. `s.look` is the
+// idleNotch setting.
+function motionActive(s) {
+  if (!s) return false
+  return s.motion === true && s.animations === true && s.look === "icon"
+    && s.hasIcon === true && s.mode === "closed" && s.barHidden !== true
+}
+
+// An event glance (new unread, new track, an agent waiting) at least 3 s
+// after the last one.
+function canNudge(lastMs, nowMs) {
+  var last = Number(lastMs), now = Number(nowMs)
+  if (!isFinite(now)) return false
+  if (!isFinite(last) || last <= 0) return true
+  return now < last || now - last >= 3000
 }

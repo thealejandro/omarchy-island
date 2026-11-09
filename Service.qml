@@ -13,6 +13,8 @@ import "NotificationModel.js" as NM
 import "PrivacyModel.js" as PrivacyModel
 import "AgentModel.js" as AgentModel
 import "IslandIdle.js" as IslandIdle
+import "IslandIcons.js" as IslandIcons
+import "NotificationSecurity.js" as NotificationSecurity
 
 // Headless owner of the island state. One IslandWindow is mounted per screen;
 // they all read media and timer state from here, so two monitors never show
@@ -542,6 +544,7 @@ Item {
       if (key === root._lastTrackKey) return
       var first = root._lastTrackKey === ""
       root._lastTrackKey = key
+      if (!first) root.nudge()
       if (!first && root.hasMedia) root.peek("track")
     }
   }
@@ -789,7 +792,7 @@ Item {
     zoneProbeRun.running = true
   }
   onWorldCitiesChanged: probeZones()
-  onIsOpenChanged: { if (isOpen) { worldNow = Date.now(); probeZones() }; markSeen() }
+  onIsOpenChanged: { if (isOpen) { worldNow = Date.now(); probeZones() }; markSeen(); refreshIconsForSettings() }
 
   Process {
     id: zoneProbeRun
@@ -971,6 +974,8 @@ Item {
   Component.onCompleted: {
     refreshIcs()
     if (idleTicking) idleTick.arm()
+    if (iconWanted) refreshIcons()
+    if (motionActive) glanceTick.arm()
   }
   Process {
     id: icsRun
@@ -1163,6 +1168,7 @@ Item {
     markSeen()
     // Another page ends the keyboard mode, which only walks notifications.
     if (keyboardMode && page !== "notifications") stopKeyboard(false)
+    refreshIconsForSettings()
   }
 
   function notifyProbeOk() { _probeTries = 0 }
@@ -1360,6 +1366,124 @@ Item {
     : idleNotch === "battery" ? IslandIdle.fractionOfBattery(batteryLevel) : 0
   readonly property bool idleLow: idleNotch === "battery" && IslandIdle.batteryLow(batteryLevel, charging)
 
+  // ------------------------------------------------------------- idle icon
+
+  // The icon in the notch (idleNotch "icon"): a built-in glyph, or a .svg or
+  // .png of the user's from iconDir. Nothing below runs with another look,
+  // except the folder listing when Settings opens.
+  readonly property string iconDir: Quickshell.env("HOME") + "/.config/omarchy/island/icons"
+  readonly property bool iconWanted: idleNotch === "icon"
+  // { builtin } | { file } | null (anything else is a plain notch).
+  readonly property var iconRes: IslandIcons.resolve(cfg.idleIcon)
+  readonly property string iconBuiltin: iconRes && iconRes.builtin ? iconRes.builtin : ""
+  readonly property string iconFileName: iconRes && iconRes.file ? iconRes.file : ""
+  // Safe names found in iconDir the last time it was listed.
+  property var iconFiles: []
+  // The file that passed its checks, and whether it paints with one colour.
+  property string iconOkName: ""
+  property bool iconMono: false
+  readonly property bool iconAvailable: iconBuiltin !== "" || (iconFileName !== "" && iconOkName === iconFileName)
+  readonly property bool iconTinted: IslandIcons.tinted(cfg.idleIconTint, iconRes, iconMono)
+  readonly property string iconUrl: iconFileName !== "" && iconOkName === iconFileName
+    ? NotificationSecurity.localImageUrl(iconDir + "/" + iconFileName) : ""
+
+  function refreshIcons() { if (!iconList.running) iconList.running = true }
+  function refreshIconsForSettings() { if (isOpen && page === "settings") refreshIcons() }
+  onIconWantedChanged: if (iconWanted) refreshIcons()
+  // A named file that was not in the last listing: look again.
+  onIconFileNameChanged: if (iconWanted && iconFileName !== "" && iconFiles.indexOf(iconFileName) === -1) refreshIcons()
+
+  Process {
+    id: iconList
+    command: ["find", "-L", root.iconDir, "-maxdepth", "1", "-type", "f",
+      "(", "-iname", "*.svg", "-o", "-iname", "*.png", ")", "-printf", "%f\t%s\n"]
+    // A missing folder is not an error: the listing is just empty.
+    stderr: StdioCollector {}
+    stdout: StdioCollector {
+      onStreamFinished: root.iconFiles = IslandIcons.parseListing(text)
+    }
+  }
+
+  // The chosen file is read once, only when it was listed (so never before
+  // the folder was looked at: with another look, until Settings opens). PNG: signature and
+  // size; SVG: an <svg> root without scripts, and whether it is one colour.
+  FileView {
+    id: iconFile
+    readonly property string name: root.iconFiles.indexOf(root.iconFileName) !== -1 ? root.iconFileName : ""
+    path: name !== "" ? root.iconDir + "/" + name : ""
+    printErrors: false
+    onNameChanged: root.iconOkName = ""
+    onLoaded: {
+      var ok = false, mono = false
+      try {
+        if (/\.png$/i.test(name)) {
+          ok = IslandIcons.inspectPng(new Uint8Array(data())).ok
+        } else {
+          var info = IslandIcons.inspectSvg(text())
+          ok = info.ok
+          mono = info.mono
+        }
+      } catch (e) { }
+      if (!ok) console.warn("island: icon " + name + " is not a usable image; showing the plain notch")
+      root.iconMono = mono
+      root.iconOkName = ok ? name : ""
+    }
+    onLoadFailed: root.iconOkName = ""
+  }
+  // A listing after the file was already read (Settings opened again) reads
+  // it again, so an edited file is picked up.
+  onIconFilesChanged: if (iconFile.name !== "") iconFile.reload()
+
+  // The glance: now and then the icon looks to the side. One timer for every
+  // screen, running only while the notch icon is visible and may move.
+  readonly property bool motionActive: IslandIdle.motionActive({
+    motion: cfg.idleMotion, animations: animate, look: idleNotch, hasIcon: iconAvailable,
+    mode: isOpen ? "open" : (peeking ? "peek" : "closed"), barHidden: barHidden })
+  signal idleGlance()
+  property real _lastGlance: 0
+  Timer {
+    id: glanceTick
+    repeat: false
+    function arm() { interval = IslandIdle.glanceInterval(Math.random()); restart() }
+    onTriggered: { root.fireGlance(); arm() }
+  }
+  function fireGlance() { _lastGlance = Date.now(); idleGlance() }
+  // Something happened (new unread, new track, an agent waiting): glance now,
+  // unless one just did.
+  // The event usually opens a peek a moment later, which hides the icon: so
+  // the glance waits a little, and if the icon is hidden by then, until it is back.
+  property bool _nudgePending: false
+  function nudge() {
+    if (idleNotch !== "icon" || !cfg.idleMotion || !animate) return
+    _nudgePending = true
+    pendingGlance.interval = 1500
+    pendingGlance.restart()
+  }
+  Timer {
+    id: pendingGlance
+    onTriggered: {
+      if (!root.motionActive || !root._nudgePending) return
+      root._nudgePending = false
+      if (!IslandIdle.canNudge(root._lastGlance, Date.now())) return
+      root.fireGlance()
+      glanceTick.arm()
+    }
+  }
+  onMotionActiveChanged: {
+    if (motionActive) {
+      glanceTick.arm()
+      if (_nudgePending) { pendingGlance.interval = 600; pendingGlance.restart() }
+    } else { glanceTick.stop(); pendingGlance.stop() }
+  }
+  property int _lastUnread: 0
+  // The history loading at startup is not news.
+  readonly property real _startedAt: Date.now()
+  onUnreadChanged: {
+    if (unread > _lastUnread && Date.now() - _startedAt > 5000) nudge()
+    _lastUnread = unread
+  }
+  onAgentsWaitingChanged: if (agentsWaiting) nudge()
+
   // ms overrides how long the peek stays; 0 keeps it until closed.
   function peek(reason, ms) {
     if (!peeking) refreshAnchors()
@@ -1394,7 +1518,7 @@ Item {
     }
     function state(): string {
       return JSON.stringify({ pinned: root.pinned, peeking: root.peeking, playing: root.playing,
-        idleNotch: root.idleNotch, hourMinute: root.hourMinute, dayMinute: root.dayMinute,
+        idleNotch: root.idleNotch, idleIcon: root.cfg.idleIcon, idleMotion: root.cfg.idleMotion, hourMinute: root.hourMinute, dayMinute: root.dayMinute,
         idleFraction: Math.round(root.idleFraction * 1000) / 1000,
         title: root.title, position: Math.round(root.position), length: Math.round(root.length),
         timerRunning: root.timerRunning, timerRemaining: root.timerRemaining,
