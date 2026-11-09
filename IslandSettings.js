@@ -15,6 +15,8 @@ var SCHEMA = [
   { key: "defaultPage", type: "enum", options: ["home", "calendar", "world"], def: "home", section: "general" },
   { key: "calendarFirst", type: "bool", def: false, section: "general" },
   { key: "showMedia", type: "bool", def: true, section: "general" },
+  { key: "lyrics", type: "bool", def: false, section: "general" },
+  { key: "lyricsPeek", type: "bool", def: false, section: "general" },
   { key: "showTimer", type: "bool", def: true, section: "general" },
   { key: "showDock", type: "bool", def: true, section: "general" },
 

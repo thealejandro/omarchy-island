@@ -55,6 +55,9 @@ nada de Omarchy. Si lo quitas, tu escritorio queda exactamente como estaba.
   enlaces, más un historial de 24 horas. Las tarjetas de Omarchy se
   apartan mientras está activo, así que nada sale dos veces. Ver
   [Notificaciones](#notificaciones).
+- **Letra sincronizada** (opcional, desactivada por defecto): la línea que
+  suena se ve en la isla abierta, o se queda bajo el reloj mientras suena
+  una canción. Se obtiene de lrclib.net. Ver [Letra](#letra).
 - **Abrir**: pasa el ratón por el reloj de la barra, o justo debajo (o usa
   un atajo), y se abre la isla: portada,
   reproductor, título, artista, barra de progreso que puedes pulsar o
@@ -229,6 +232,8 @@ quita solo las claves propias de la isla.
 | `defaultPage` | `home`, `calendar`, `world` | `home` | Página con la que se abre |
 | `calendarFirst` | `true`, `false` | `false` | Lo próximo a la izquierda en Inicio |
 | `showMedia`, `showTimer`, `showDock` | `true`, `false` | `true` | Partes de la página Inicio |
+| `lyrics` | `true`, `false` | `false` | Letra sincronizada en la tarjeta de reproducción, de lrclib.net (necesita `showMedia`); ver [Letra](#letra) |
+| `lyricsPeek` | `true`, `false` | `false` | La línea actual se queda bajo el reloj, como vistazo, con la isla cerrada mientras suena una canción (necesita `lyrics`) |
 | `animations` | `true`, `false` | `true` | Muelle y movimiento de páginas y vistazos |
 | `openWidth` | 420–800 | `560` | Ancho de la isla abierta |
 | `blur` | `true`, `false` | `true` | Desenfoque detrás de la isla con la barra de cristal |
@@ -439,6 +444,46 @@ configurado en el widget de clima de Omarchy (o por IP), cada 20 minutos.
 en la barra) y **Cambiar ubicación** su selector de lugar, o el archivo que
 lee.
 
+## Letra
+
+Desactivada por defecto. Con `lyrics: true` (Ajustes › General › Letra
+sincronizada), la tarjeta de reproducción muestra la línea que suena y la
+siguiente, al compás de la canción. Con `lyricsPeek: true` la línea actual
+también se queda bajo el reloj, como un vistazo, mientras suena una canción
+y la isla está cerrada (cualquier otro vistazo pasa por delante y la letra
+vuelve después).
+
+Viene de [lrclib.net](https://lrclib.net), un servicio comunitario gratuito
+sin cuenta ni clave. **Qué sale de tu equipo**: el artista, el título, el
+álbum y la duración de la canción, en una petición a lrclib.net, junto con el
+`User-Agent` `omarchy-island/<versión> (https://github.com/thealejandro/omarchy-island)`.
+Nunca la ruta del archivo ni el nombre del reproductor. **Cuándo**: al
+empezar una canción nueva con la isla abierta (o con `lyricsPeek`), y al
+abrirla sobre una canción que aún no ha buscado; como mucho tres peticiones
+por canción, una tras otra. Con el ajuste apagado, que es el valor por
+defecto, no se pide nada ni se carga nada. Los nombres con «(Remastered)»,
+«feat. …» y similares se vuelven a probar sin ellos, y luego con una
+búsqueda.
+
+**Qué se guarda**: cada respuesta, encontrada o no, en
+`~/.cache/omarchy/island/lyrics` (o bajo `$XDG_CACHE_HOME`): hasta 400
+canciones, las encontradas 90 días y las que faltan un día. Una canción en
+caché se muestra sin volver a preguntar. Para borrarla:
+`rm -r ~/.cache/omarchy/island/lyrics`.
+
+Solo se muestran letras con tiempos; las que no los tienen y las
+instrumentales no muestran nada. Pueden faltar, ser otras o ir algo
+desfasadas en algunas canciones (lrclib compara la duración con dos
+segundos de margen, y algunos reproductores, como un navegador con un
+vídeo, la informan mal). Las letras las escriben quienes colaboran en
+lrclib.net, y la tarjeta dice de dónde vienen.
+
+La línea sigue la posición real del reproductor: se notan los saltos, las
+pausas y los cambios de velocidad, y no hay sondeo (ver
+[Rendimiento](#rendimiento)). `omarchy-shell island state` muestra `lyrics`
+(`off`, `idle`, `loading`, `synced`, `plain`, `instrumental`, `none`) y la
+`lyric` actual.
+
 ## Micrófono y cámara
 
 Mientras una app graba del micrófono, aparece un punto naranja justo
@@ -599,6 +644,9 @@ planos). Con `notifications: island` el shell pesa unos MB menos (cerrada
   25 ms), sin ningún fotograma de más de 25 ms al abrir o cerrar.
 - La posición de la canción solo avanza mientras suena música y la isla
   está abierta.
+- La letra, si está activada, usa un solo temporizador que espera a la
+  siguiente línea (no sondea) y lee la posición del reproductor cada vez
+  que salta. Con la isla cerrada no hace nada, salvo con `lyricsPeek`.
 
 ## Compatibilidad
 
@@ -675,6 +723,7 @@ node --test 'test/*.test.mjs'
 | `IslandModel.js`   | Funciones puras: elegir reproductor, reloj, textos, mes, clima, horas del mundo |
 | `AgendaModel.js`   | Funciones puras de eventos: repeticiones, próximos, avisos, líneas externas |
 | `IcsModel.js`, `scripts/ics-fetch.sh` | Calendarios iCalendar: lectura, repeticiones, husos; descarga de carpetas, archivos y enlaces |
+| `LyricsService.qml`, `LyricsModel.js`, `scripts/lyrics-fetch.sh` | Letra sincronizada: búsqueda en lrclib.net y caché, lectura de LRC, seguir la canción |
 | `PrivacyService.qml`, `PrivacyModel.js` | Quién usa el micrófono o la cámara (PipeWire, fuser) |
 | `AgentModel.js`, `scripts/agent-hook.sh` | Estado de agentes de IA: sesiones, limpieza, caducidad; el script de hooks para Claude Code, Codex y otros |
 | `IslandWindow.qml` | Capa por pantalla, máscara de entrada, hover, clics de la barra, animación |

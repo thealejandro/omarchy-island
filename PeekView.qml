@@ -12,7 +12,7 @@ Row {
 
   required property var island
 
-  // "notification" | "osd" | "agent" | "battery" | "agenda" | "privacy" | "timer" | "media"
+  // "notification" | "osd" | "agent" | "battery" | "agenda" | "privacy" | "lyrics" | "timer" | "media"
   readonly property var note: island.peekReason === "notification" && island.notify ? island.notify.current : null
   readonly property string kind: note ? "notification"
     : island.peekReason === "osd" && island.osd ? "osd"
@@ -20,8 +20,11 @@ Row {
     : island.peekReason === "agenda" && island.agendaNote ? "agenda"
     : island.peekReason === "privacy" && island.privacyNote ? "privacy"
     : island.peekReason === "battery" && island.hasBattery ? "battery"
+    : island.peekReason === "lyrics" && island.lyricLine !== "" ? "lyrics"
     : island.peekReason === "timer" || (!island.hasMedia && island.timerActive) ? "timer"
     : "media"
+  // Media and the lyrics glance both carry the cover and the equalizer.
+  readonly property bool hasCover: kind === "media" || kind === "lyrics"
   readonly property bool showTimer: kind === "timer"
   readonly property bool indicator: kind === "osd" || kind === "battery" || kind === "agenda" || kind === "privacy" || kind === "agent"
   readonly property bool showBar: kind === "osd" ? island.osd.hasProgress : kind === "battery"
@@ -59,15 +62,15 @@ Row {
 
     Image {
       anchors.fill: parent
-      visible: root.kind === "media" && status === Image.Ready
-      source: root.kind === "media" ? root.island.artUrl : ""
+      visible: root.hasCover && status === Image.Ready
+      source: root.hasCover ? root.island.artUrl : ""
       sourceSize: Qt.size(64, 64)
       fillMode: Image.PreserveAspectCrop
       asynchronous: true
     }
     Glyph {
       anchors.centerIn: parent
-      visible: root.kind !== "media" || root.island.artUrl === ""
+      visible: !root.hasCover || root.island.artUrl === ""
       text: root.kind === "notification" ? root.noteText
       : root.kind === "osd" ? root.island.osd.icon
         : root.kind === "battery" ? IslandModel.batteryIcon(root.island.batteryLevel, root.island.charging)
@@ -125,6 +128,7 @@ Row {
       : root.kind === "agent" ? root.island.agentLabel
       : root.kind === "agenda" ? root.island.agendaNote.title + "  ·  " + (root.island.agendaNote.minutes > 0
         ? root.island.tr("eventIn", root.island.agendaNote.minutes) : root.island.tr("eventNow"))
+      : root.kind === "lyrics" ? root.island.lyricLine
       : root.showTimer ? root.island.tr(root.island.timerPhase) + "  " + IslandModel.clock(root.island.timerRemaining)
       : root.island.title + (root.island.artist ? "  ·  " + root.island.artist : "")
     color: Commons.Color.bar.text
@@ -146,7 +150,7 @@ Row {
 
   Equalizer {
     anchors.verticalCenter: parent.verticalCenter
-    visible: root.kind === "media"
+    visible: root.hasCover
     playing: root.island.playing
   }
 }

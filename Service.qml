@@ -545,6 +545,22 @@ Item {
     }
   }
 
+  // ------------------------------------------------------------- lyrics
+
+  // Synced lyrics from lrclib.net (LyricsService.qml, loaded only while the
+  // setting is on); the service writes what the island shows into these.
+  readonly property bool lyricsEnabled: cfg.lyrics && cfg.showMedia
+  readonly property string lyricsState: lyricsLoader.item ? lyricsLoader.item.status : "off"
+  readonly property string lyricLine: lyricsLoader.item ? lyricsLoader.item.current : ""
+  readonly property string lyricNext: lyricsLoader.item ? lyricsLoader.item.next : ""
+  Loader {
+    id: lyricsLoader
+    active: root.lyricsEnabled
+    onActiveChanged: if (active) setSource(Qt.resolvedUrl("LyricsService.qml"), { island: root })
+      else setSource("")
+    Component.onCompleted: if (active) setSource(Qt.resolvedUrl("LyricsService.qml"), { island: root })
+  }
+
   // ------------------------------------------------------------- focus timer
 
   property int focusMinutes: 25
@@ -1331,7 +1347,8 @@ Item {
         notifications: root.notificationsLive ? "island" : (root.notificationsStandby ? "standby" : "off"),
         unread: root.unread, dnd: root.doNotDisturb, keyboard: root.keyboardGrab,
         mic: root.micInUse ? root.micApps : [], camera: root.cameraInUse ? root.cameraApps : [],
-        agents: root.cfg.agents ? AgentModel.listing(root.agentSessions, false) : [], agentsWaiting: root.agentsWaiting })
+        agents: root.cfg.agents ? AgentModel.listing(root.agentSessions, false) : [], agentsWaiting: root.agentsWaiting,
+        lyrics: root.lyricsEnabled ? root.lyricsState : "off", lyric: root.lyricLine })
     }
     function ping(): string { return "ok" }
     // Opens the island on one of its pages: home, calendar, world,

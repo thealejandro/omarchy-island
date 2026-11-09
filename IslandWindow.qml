@@ -55,12 +55,18 @@ PanelWindow {
   readonly property bool expanded: hovered || island.pinned
   readonly property bool peeking: !expanded && island.peeking
   readonly property string mode: expanded ? "open" : (peeking ? "peek" : "closed")
+  property string previousMode: "closed"
   onModeChanged: {
+    var was = previousMode
+    previousMode = mode
     if (mode === "open") { keepOpen = true; keepPeek = false }
     else if (mode === "peek") keepPeek = true
     if (mode !== "open") openRelease.restart()
     if (mode !== "peek") peekRelease.restart()
     if (mode === "closed") island.islandClosed()
+    // The lyrics glance never ends by itself, so the island would not close
+    // for good (and its clocks would keep running) when it shrinks into it.
+    else if (mode === "peek" && was === "open" && island.peekReason === "lyrics") island.islandClosed()
     else if (mode === "open") island.isOpen = true
   }
 

@@ -23,6 +23,8 @@
       "defaultPage": "home",
       "calendarFirst": false,
       "showMedia": true,
+      "lyrics": false,
+      "lyricsPeek": false,
       "showTimer": true,
       "showDock": true,
       "openWidth": 560,
@@ -94,6 +96,18 @@
         "type": "boolean",
         "label": "Now playing",
         "defaultValue": true
+      },
+      {
+        "key": "lyrics",
+        "type": "boolean",
+        "label": "Synced lyrics",
+        "defaultValue": false
+      },
+      {
+        "key": "lyricsPeek",
+        "type": "boolean",
+        "label": "Lyrics glance while a song plays",
+        "defaultValue": false
       },
       {
         "key": "showTimer",
