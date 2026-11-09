@@ -43,6 +43,9 @@ as it was.
 - **Peek**: when the song changes, the timer ends, you plug in or unplug a
   laptop, or the battery runs low (20% and 10%), a one-line glance drops out
   of the bar for a few seconds.
+- **AI agents**: Claude Code, Codex and others tell the island, through
+  hooks, when they work, need your permission or finish: a row on Home, a
+  glance, and a dot beside the clock. See [AI agents](#ai-agents).
 - **Volume and brightness in the island** (optional): Omarchy's OSD (volume,
   brightness, mic mute, keyboard light, media keys) shows up as a peek with
   a level bar instead of a floating card. See `osd` below.
@@ -190,6 +193,7 @@ IPC (`omarchy-shell island <method>`):
 | `anchor <screen> <center> <length>` | Where to hang from, for bars that can't tell the island themselves |
 | `anchors` | JSON with the bar edge and the anchors in use |
 | `state`  | JSON with the current state              |
+| `agent <name> <state>`, `agents`… | AI agents' status, see [AI agents](#ai-agents) |
 
 ## Settings
 
@@ -239,6 +243,11 @@ the island's own keys and nothing else.
 | `battery` | `true`, `false` | `true` | Charging and low-battery peeks |
 | `privacyDots` | `true`, `false` | `true` | Orange dot while an app uses the microphone, green while one uses the camera |
 | `privacyPeek` | `true`, `false` | `true` | A glance naming the app when it starts using them |
+| `agents` | `true`, `false` | `true` | Show AI agents (Claude Code, Codex…) on Home, see [AI agents](#ai-agents) |
+| `agentPeek` | `true`, `false` | `true` | A glance when an agent needs you, finishes or fails |
+| `agentPeekDuration` | 2000–15000 ms | `5000` | How long it stays (double when it needs you) |
+| `agentDot` | `true`, `false` | `true` | Red dot left of the clock while an agent needs you |
+| `agentStale` | 10–480 min | `120` | A working or waiting agent nobody has heard from becomes idle |
 | `notifications` | `off`, `island` | `off` | Show notifications in the island instead of Omarchy's cards |
 | `notifyBody` | `true`, `false` | `true` | The text in the glance (`false`: app and title only) |
 | `notifyPeekDuration` | 2000–15000 ms | `6000` | How long a notification glance stays |
@@ -427,6 +436,121 @@ other users aren't visible without root. Themes can recolour the dots in
 `shell.toml`: `[island]` `mic`, `camera` (and `mic-alpha`, `camera-alpha`).
 `privacyDots: false` turns it all off and loads nothing.
 
+## AI agents
+
+Claude Code, Codex, Gemini CLI, Aider and anything else that can run a
+command on an event can tell the island what it is doing. On Home, the
+island lists up to two agents (the newest first) with a state: *Working*,
+*Needs you*, *Finished*, *Failed* or *Idle*, and "+N" when there are more. A
+glance drops out of the bar when one needs your permission (it stays twice
+as long), finishes or fails, and a red dot sits to the left of the clock
+while one is waiting for you. Clicking an agent's row raises its window when
+the island knows which one it is (see *Raising the window* below).
+`omarchy-shell island agents` lists them as JSON, and `state` has them too
+(`agents`, `agentsWaiting`).
+
+Nothing is polled: the island only hears what the hooks send. Finished
+agents leave the list after 5 minutes, failed ones after 10, and one that
+was working or waiting but hasn't been heard from for `agentStale` minutes
+(2 h by default) becomes idle for a minute and goes. `agents: false` turns
+it all off.
+
+Made for people who run many sessions at once too: the island follows up to
+64. Past that, the oldest finished, idle or failed ones go first, then the
+one that has been working longest; **one waiting for your permission is
+never dropped to make room** (only a ceiling of 128, for a hook gone wild).
+When many finish together each glance replaces the last instead of queueing,
+and the red dot stays while any waits. `agent-hook.sh` costs a few tens of
+milliseconds per event: events the island doesn't use stop after one `jq`,
+and Hyprland is only asked for the window when a session starts working or
+asks for permission.
+
+**The working directory is never stored or shown in full**: the island keeps
+only the name of its last folder (`~/Work/my-app` shows as *my-app*), and
+text coming from an agent is stripped of control and escape characters and
+cut to a few dozen characters.
+
+### Claude Code
+
+Add this to `~/.claude/settings.json` (merge it with the `hooks` you have):
+
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "$HOME/.config/omarchy/plugins/thealejandro.island/scripts/agent-hook.sh claude", "async": true, "timeout": 5 }] }],
+    "Notification": [{ "matcher": "permission_prompt|elicitation_dialog|agent_needs_input", "hooks": [{ "type": "command", "command": "$HOME/.config/omarchy/plugins/thealejandro.island/scripts/agent-hook.sh claude", "async": true, "timeout": 5 }] }],
+    "Stop": [{ "hooks": [{ "type": "command", "command": "$HOME/.config/omarchy/plugins/thealejandro.island/scripts/agent-hook.sh claude", "async": true, "timeout": 5 }] }],
+    "StopFailure": [{ "hooks": [{ "type": "command", "command": "$HOME/.config/omarchy/plugins/thealejandro.island/scripts/agent-hook.sh claude", "async": true, "timeout": 5 }] }],
+    "SessionEnd": [{ "hooks": [{ "type": "command", "command": "$HOME/.config/omarchy/plugins/thealejandro.island/scripts/agent-hook.sh claude", "async": true, "timeout": 5 }] }]
+  }
+}
+```
+
+The script reads the hook's JSON from stdin and works the state out from
+the event. Use `Notification` (as above) **or** a `PermissionRequest` hook
+for "needs you", not both. A hook that fails or is slow never holds Claude
+Code up: the script exits quietly if `jq` or `omarchy-shell` is missing.
+An agent shows *Needs you* until it starts working again (your next prompt)
+or finishes.
+
+### Codex
+
+Add this to `~/.codex/hooks.json` (hooks may need turning on in Codex's
+config; check its documentation):
+
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "$HOME/.config/omarchy/plugins/thealejandro.island/scripts/agent-hook.sh codex", "timeout": 5 }] }],
+    "PermissionRequest": [{ "hooks": [{ "type": "command", "command": "$HOME/.config/omarchy/plugins/thealejandro.island/scripts/agent-hook.sh codex", "timeout": 5 }] }],
+    "Stop": [{ "hooks": [{ "type": "command", "command": "$HOME/.config/omarchy/plugins/thealejandro.island/scripts/agent-hook.sh codex", "timeout": 5 }] }],
+    "SessionEnd": [{ "hooks": [{ "type": "command", "command": "$HOME/.config/omarchy/plugins/thealejandro.island/scripts/agent-hook.sh codex", "timeout": 5 }] }]
+  }
+}
+```
+
+Alternatively, Codex's `notify` setting in `~/.codex/config.toml` runs a
+program when a turn ends. This is an assumption, not something Codex's
+documentation spells out: the script treats the JSON Codex appends as
+opaque, reads `thread-id` and `cwd` from it if they are there, and uses the
+state you give it:
+
+```toml
+notify = ["$HOME/.config/omarchy/plugins/thealejandro.island/scripts/agent-hook.sh", "codex", "done"]
+```
+
+### Anything else
+
+```bash
+omarchy-shell -q island agent aider working
+omarchy-shell -q island agent aider done
+omarchy-shell -q island agent aider end        # forget it
+```
+
+| Method | Effect |
+|--------|--------|
+| `agent <name> <state>` | One session per agent; state `working`, `waiting`, `done`, `error`, `idle` (or `end` to drop it) |
+| `agentSession <name> <id> <state> <cwd> <message>` | The same with a session id, the folder it works in and a short message (`""` to leave one out) |
+| `agentWindow <name> <id> <pid> <address>` | The window it runs in, for the click |
+| `agentClear <name> <id>` | Forget one session, all of an agent's (`id` `""`) or all of them (`name` `""`) |
+| `agentJson '<json>'` | `{ "agent", "id", "state", "cwd", "message", "pid", "address" }`, up to 4 KiB |
+| `agents` | JSON with the sessions |
+
+All of them take every argument (use `""`) and answer `ok`, `invalid` or
+`off` (when `agents` is off). The names `start`, `busy`, `permission`,
+`stop`, `fail`, `exit`… are accepted as aliases of the states.
+
+### Raising the window
+
+The island raises a window by its Hyprland address, or by the pid of the
+window's process, only when you click, and never by guessing from a title or
+a class. `agent-hook.sh` finds the terminal the agent runs in by walking up
+its parent processes. For your own scripts, pass `pid` or `address` to
+`agentWindow`; the address of the window you are in is
+`hyprctl activewindow -j | jq -r .address`. Inside tmux or zellij the
+terminal may not be an ancestor of the agent, and then the row isn't
+clickable.
+
 ## Performance
 
 The island runs inside `omarchy-shell`, so what it costs is what the shell
@@ -530,9 +654,10 @@ node --test 'test/*.test.mjs'
 | `AgendaModel.js`   | Pure helpers for events: repeats, upcoming, reminders, external lines |
 | `IcsModel.js`, `scripts/ics-fetch.sh` | iCalendar calendars: parsing, repeats, time zones; fetching folders, files and links |
 | `PrivacyService.qml`, `PrivacyModel.js` | Who uses the microphone or the camera (PipeWire, fuser) |
+| `AgentModel.js`, `scripts/agent-hook.sh` | AI agents' status: sessions, cleaning, expiry; the hook script for Claude Code, Codex and others |
 | `IslandWindow.qml` | Per-screen layer surface, input mask, hover, bar clicks, motion |
 | `IslandShape.qml`  | The silhouette with concave ears, turned to the bar's edge |
-| `PeekView.qml`     | The one-line glance: track, timer, OSD, battery, event or notification |
+| `PeekView.qml`     | The one-line glance: track, timer, OSD, battery, event, AI agent or notification |
 | `OpenView.qml`     | Header, page tabs and the current page               |
 | `HomePage.qml`, `TodayCard.qml` | The home page and its "what's next" card |
 | `NotificationsPage.qml`, `NotificationGroup.qml`, `NotificationCard.qml`, `NotificationIcon.qml` | Notifications page |

@@ -313,6 +313,8 @@ PanelWindow {
           // Reaching for a notification's glance opens its page.
           if (win.island.peekReason === "notification" && win.island.pages.indexOf("notifications") >= 0)
             win.island.page = "notifications"
+          // Reaching for an agent's glance opens Home, where its row is.
+          else if (win.island.peekReason === "agent") win.island.page = "home"
           win.hovered = true
         } else enterTimer.restart()
       } else {
@@ -360,6 +362,21 @@ PanelWindow {
       visible: opacity > 0
       Behavior on opacity { enabled: win.island.animate; NumberAnimation { duration: 180 } }
     }
+  }
+
+  // An AI agent needs you: a red dot just past the bar, to the left of the
+  // clock (the microphone and camera dots are on its right).
+  Rectangle {
+    readonly property bool lit: win.mode === "closed" && win.island.cfg.agentDot
+      && win.island.agentsWaiting && !win.island.barHidden
+    readonly property int d: Style.space(6)
+    readonly property var r: win.place(win.clockCenter - Style.space(8) - d, d, win.barSize + Style.space(3), d)
+    x: r.x; y: r.y; width: d; height: d
+    radius: d / 2
+    color: Commons.Color.urgent
+    opacity: lit ? 1 : 0
+    visible: opacity > 0
+    Behavior on opacity { enabled: win.island.animate; NumberAnimation { duration: 180 } }
   }
 
   Item {

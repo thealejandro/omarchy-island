@@ -4,7 +4,7 @@
   "name": "Island",
   "version": "0.7.0",
   "author": "thealejandro",
-  "description": "A dynamic island for the Omarchy bar, on any edge and hanging from the clock: now playing with media controls, a calendar with a local agenda and reminders, world time and a 3-day forecast, a pomodoro focus timer, quick actions and Omarchy quick toggles, with a visual settings page. Can take over Omarchy volume and brightness OSD and, when you turn it on, its notifications (with a list and history); peeks on track changes, events, charging and low battery, and follows your theme live.",
+  "description": "A dynamic island for the Omarchy bar, on any edge and hanging from the clock: now playing with media controls, a calendar with a local agenda and reminders, world time and a 3-day forecast, a pomodoro focus timer, quick actions and Omarchy quick toggles, with a visual settings page. Can take over Omarchy volume and brightness OSD and, when you turn it on, its notifications (with a list and history); peeks on track changes, events, charging and low battery, shows when AI coding agents (Claude Code, Codex…) need you or finish, and follows your theme live.",
   "kinds": [
     "service",
     "bar-widget"
@@ -48,6 +48,11 @@
       "battery": true,
       "privacyDots": true,
       "privacyPeek": true,
+      "agents": true,
+      "agentPeek": true,
+      "agentPeekDuration": 5000,
+      "agentDot": true,
+      "agentStale": 120,
       "animations": true,
       "notifications": "off",
       "notifyBody": true,
@@ -299,6 +304,42 @@
         "type": "boolean",
         "label": "Glance when an app starts using them",
         "defaultValue": true
+      },
+      {
+        "key": "agents",
+        "type": "boolean",
+        "label": "AI agent status",
+        "defaultValue": true
+      },
+      {
+        "key": "agentPeek",
+        "type": "boolean",
+        "label": "Glance when an agent needs you or finishes",
+        "defaultValue": true
+      },
+      {
+        "key": "agentPeekDuration",
+        "type": "integer",
+        "label": "Agent glance duration",
+        "min": 2000,
+        "max": 15000,
+        "step": 500,
+        "defaultValue": 5000
+      },
+      {
+        "key": "agentDot",
+        "type": "boolean",
+        "label": "Dot when an agent needs you",
+        "defaultValue": true
+      },
+      {
+        "key": "agentStale",
+        "type": "integer",
+        "label": "Forget a stuck agent after",
+        "min": 10,
+        "max": 480,
+        "step": 10,
+        "defaultValue": 120
       },
       {
         "key": "notifications",

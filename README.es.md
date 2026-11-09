@@ -42,6 +42,9 @@ nada de Omarchy. Si lo quitas, tu escritorio queda exactamente como estaba.
 - **Vistazo**: cuando cambia la canción, termina el temporizador, conectas o
   desconectas el portátil, o la batería baja (20 % y 10 %), una línea baja de
   la barra unos segundos.
+- **Agentes de IA**: Claude Code, Codex y otros avisan a la isla, con
+  hooks, cuando trabajan, piden permiso o terminan: una fila en Inicio, un
+  vistazo y un punto junto al reloj. Ver [Agentes de IA](#agentes-de-ia).
 - **Volumen y brillo en la isla** (opcional): el OSD de Omarchy (volumen,
   brillo, micrófono, luz del teclado, teclas multimedia) aparece como un
   vistazo con su barra de nivel en lugar de una tarjeta flotante. Ver `osd`
@@ -204,6 +207,7 @@ IPC (`omarchy-shell island <método>`):
 | `anchor <pantalla> <centro> <largo>` | De dónde colgar, para barras que no se lo pueden decir a la isla |
 | `anchors`     | JSON con el borde de la barra y las anclas en uso |
 | `state`       | JSON con el estado actual                       |
+| `agent <nombre> <estado>`, `agents`… | Estado de agentes de IA, ver [Agentes de IA](#agentes-de-ia) |
 
 ## Ajustes
 
@@ -252,6 +256,11 @@ quita solo las claves propias de la isla.
 | `battery` | `true`, `false` | `true` | Vistazos de carga y batería baja |
 | `privacyDots` | `true`, `false` | `true` | Punto naranja mientras una app usa el micrófono, verde mientras una usa la cámara |
 | `privacyPeek` | `true`, `false` | `true` | Un vistazo con el nombre de la app cuando empieza a usarlos |
+| `agents` | `true`, `false` | `true` | Muestra agentes de IA (Claude Code, Codex…) en Inicio, ver [Agentes de IA](#agentes-de-ia) |
+| `agentPeek` | `true`, `false` | `true` | Un vistazo cuando un agente te necesita, termina o falla |
+| `agentPeekDuration` | 2000–15000 ms | `5000` | Cuánto dura (el doble si te necesita) |
+| `agentDot` | `true`, `false` | `true` | Punto rojo a la izquierda del reloj mientras un agente te necesita |
+| `agentStale` | 10–480 min | `120` | Un agente trabajando o esperando que no da señales pasa a inactivo |
 | `notifications` | `off`, `island` | `off` | Mostrar las notificaciones en la isla en lugar de las tarjetas de Omarchy |
 | `notifyBody` | `true`, `false` | `true` | El texto en el vistazo (`false`: solo app y título) |
 | `notifyPeekDuration` | 2000–15000 ms | `6000` | Duración del vistazo de una notificación |
@@ -449,6 +458,121 @@ usuarios no se ven sin root. Los temas pueden cambiar el color de los
 puntos en `shell.toml`: `[island]` `mic`, `camera` (y `mic-alpha`,
 `camera-alpha`). `privacyDots: false` lo apaga todo y no carga nada.
 
+## Agentes de IA
+
+Claude Code, Codex, Gemini CLI, Aider y cualquier otra cosa que pueda
+ejecutar un comando en un evento pueden decirle a la isla qué están
+haciendo. En Inicio, la isla lista hasta dos agentes (el más reciente
+primero) con su estado: *Trabajando*, *Te necesita*, *Terminó*, *Falló* o
+*Inactivo*, y "+N" si hay más. Un vistazo baja de la barra cuando uno pide
+permiso (dura el doble), termina o falla, y un punto rojo queda a la
+izquierda del reloj mientras uno te espera. Pulsar la fila de un agente
+sube su ventana cuando la isla sabe cuál es (ver *Subir la ventana*).
+`omarchy-shell island agents` los lista en JSON, y `state` también
+(`agents`, `agentsWaiting`).
+
+No se consulta nada: la isla solo oye lo que envían los hooks. Los agentes
+que terminan salen de la lista a los 5 minutos, los que fallan a los 10, y
+uno que estaba trabajando o esperando pero no da señales en `agentStale`
+minutos (2 h por defecto) pasa a inactivo durante un minuto y desaparece.
+`agents: false` lo apaga todo.
+
+Pensado también para quien lanza muchas sesiones a la vez: la isla sigue
+hasta 64. Pasado ese número salen primero las terminadas, inactivas o
+fallidas más antiguas y luego la que lleva más tiempo trabajando; **una que
+espera tu permiso nunca sale para hacer sitio** (solo un tope de 128, para
+un hook que se desboque). Si terminan muchas a la vez, cada vistazo
+sustituye al anterior en lugar de encolarse, y el punto rojo sigue mientras
+alguna espere. `agent-hook.sh` cuesta unas decenas de milisegundos por
+evento: los eventos que la isla no usa se quedan en un `jq`, y a Hyprland
+solo se le pregunta por la ventana cuando una sesión empieza a trabajar o
+pide permiso.
+
+**El directorio de trabajo nunca se guarda ni se muestra entero**: la isla
+solo se queda con el nombre de su última carpeta (`~/Work/mi-app` se ve como
+*mi-app*), y al texto que llega de un agente se le quitan los caracteres de
+control y de escape y se recorta a unas decenas de caracteres.
+
+### Claude Code
+
+Añade esto a `~/.claude/settings.json` (únelo con los `hooks` que ya tengas):
+
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "$HOME/.config/omarchy/plugins/thealejandro.island/scripts/agent-hook.sh claude", "async": true, "timeout": 5 }] }],
+    "Notification": [{ "matcher": "permission_prompt|elicitation_dialog|agent_needs_input", "hooks": [{ "type": "command", "command": "$HOME/.config/omarchy/plugins/thealejandro.island/scripts/agent-hook.sh claude", "async": true, "timeout": 5 }] }],
+    "Stop": [{ "hooks": [{ "type": "command", "command": "$HOME/.config/omarchy/plugins/thealejandro.island/scripts/agent-hook.sh claude", "async": true, "timeout": 5 }] }],
+    "StopFailure": [{ "hooks": [{ "type": "command", "command": "$HOME/.config/omarchy/plugins/thealejandro.island/scripts/agent-hook.sh claude", "async": true, "timeout": 5 }] }],
+    "SessionEnd": [{ "hooks": [{ "type": "command", "command": "$HOME/.config/omarchy/plugins/thealejandro.island/scripts/agent-hook.sh claude", "async": true, "timeout": 5 }] }]
+  }
+}
+```
+
+El script lee el JSON del hook por stdin y deduce el estado del evento. Usa
+`Notification` (como arriba) **o** un hook `PermissionRequest` para «te
+necesita», no los dos. Un hook que falla o tarda nunca retiene a Claude
+Code: el script sale en silencio si falta `jq` u `omarchy-shell`. Un agente
+muestra *Te necesita* hasta que vuelve a trabajar (tu siguiente mensaje) o
+termina.
+
+### Codex
+
+Añade esto a `~/.codex/hooks.json` (puede que haya que activar los hooks en
+la configuración de Codex; mira su documentación):
+
+```json
+{
+  "hooks": {
+    "UserPromptSubmit": [{ "hooks": [{ "type": "command", "command": "$HOME/.config/omarchy/plugins/thealejandro.island/scripts/agent-hook.sh codex", "timeout": 5 }] }],
+    "PermissionRequest": [{ "hooks": [{ "type": "command", "command": "$HOME/.config/omarchy/plugins/thealejandro.island/scripts/agent-hook.sh codex", "timeout": 5 }] }],
+    "Stop": [{ "hooks": [{ "type": "command", "command": "$HOME/.config/omarchy/plugins/thealejandro.island/scripts/agent-hook.sh codex", "timeout": 5 }] }],
+    "SessionEnd": [{ "hooks": [{ "type": "command", "command": "$HOME/.config/omarchy/plugins/thealejandro.island/scripts/agent-hook.sh codex", "timeout": 5 }] }]
+  }
+}
+```
+
+Como alternativa, el ajuste `notify` de Codex en `~/.codex/config.toml`
+ejecuta un programa al terminar un turno. Es una suposición, no algo que la
+documentación de Codex detalle: el script trata el JSON que Codex añade como
+opaco, lee `thread-id` y `cwd` si están y usa el estado que le des:
+
+```toml
+notify = ["$HOME/.config/omarchy/plugins/thealejandro.island/scripts/agent-hook.sh", "codex", "done"]
+```
+
+### Cualquier otro
+
+```bash
+omarchy-shell -q island agent aider working
+omarchy-shell -q island agent aider done
+omarchy-shell -q island agent aider end        # olvidarlo
+```
+
+| Método | Efecto |
+|--------|--------|
+| `agent <nombre> <estado>` | Una sesión por agente; estado `working`, `waiting`, `done`, `error`, `idle` (o `end` para quitarla) |
+| `agentSession <nombre> <id> <estado> <cwd> <mensaje>` | Lo mismo con id de sesión, la carpeta en que trabaja y un mensaje corto (`""` para omitirlos) |
+| `agentWindow <nombre> <id> <pid> <address>` | La ventana en que corre, para el clic |
+| `agentClear <nombre> <id>` | Olvida una sesión, todas las de un agente (`id` `""`) o todas (`nombre` `""`) |
+| `agentJson '<json>'` | `{ "agent", "id", "state", "cwd", "message", "pid", "address" }`, hasta 4 KiB |
+| `agents` | JSON con las sesiones |
+
+Todos piden todos los argumentos (usa `""`) y responden `ok`, `invalid` u
+`off` (con `agents` apagado). Los nombres `start`, `busy`, `permission`,
+`stop`, `fail`, `exit`… valen como alias de los estados.
+
+### Subir la ventana
+
+La isla sube una ventana por su address de Hyprland, o por el pid del
+proceso de la ventana, solo cuando pulsas, y nunca adivinándola por un
+título o una clase. `agent-hook.sh` encuentra la terminal en la que corre el
+agente subiendo por sus procesos padre. En tus propios scripts, pasa `pid` o
+`address` a `agentWindow`; la address de la ventana en la que estás es
+`hyprctl activewindow -j | jq -r .address`. Dentro de tmux o zellij puede
+que la terminal no sea un ancestro del agente, y entonces la fila no se
+puede pulsar.
+
 ## Rendimiento
 
 La isla corre dentro de `omarchy-shell`, así que lo que cuesta es lo que
@@ -552,9 +676,10 @@ node --test 'test/*.test.mjs'
 | `AgendaModel.js`   | Funciones puras de eventos: repeticiones, próximos, avisos, líneas externas |
 | `IcsModel.js`, `scripts/ics-fetch.sh` | Calendarios iCalendar: lectura, repeticiones, husos; descarga de carpetas, archivos y enlaces |
 | `PrivacyService.qml`, `PrivacyModel.js` | Quién usa el micrófono o la cámara (PipeWire, fuser) |
+| `AgentModel.js`, `scripts/agent-hook.sh` | Estado de agentes de IA: sesiones, limpieza, caducidad; el script de hooks para Claude Code, Codex y otros |
 | `IslandWindow.qml` | Capa por pantalla, máscara de entrada, hover, clics de la barra, animación |
 | `IslandShape.qml`  | La silueta con orejas cóncavas, girada al borde de la barra |
-| `PeekView.qml`     | El vistazo de una línea: canción, temporizador, OSD, batería, evento o notificación |
+| `PeekView.qml`     | El vistazo de una línea: canción, temporizador, OSD, batería, evento, agente de IA o notificación |
 | `OpenView.qml`     | Cabecera, pestañas y página actual                     |
 | `HomePage.qml`, `TodayCard.qml` | La página de inicio y su tarjeta «Lo próximo» |
 | `NotificationsPage.qml`, `NotificationGroup.qml`, `NotificationCard.qml`, `NotificationIcon.qml` | Página Notificaciones |

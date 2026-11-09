@@ -57,7 +57,12 @@ var SCHEMA = [
   { key: "osd", type: "bool", def: false, section: "system" },
   { key: "battery", type: "bool", def: true, section: "system" },
   { key: "privacyDots", type: "bool", def: true, section: "system" },
-  { key: "privacyPeek", type: "bool", def: true, section: "system" }
+  { key: "privacyPeek", type: "bool", def: true, section: "system" },
+  { key: "agents", type: "bool", def: true, section: "system" },
+  { key: "agentPeek", type: "bool", def: true, section: "system" },
+  { key: "agentPeekDuration", type: "int", min: 2000, max: 15000, step: 500, def: 5000, section: "system" },
+  { key: "agentDot", type: "bool", def: true, section: "system" },
+  { key: "agentStale", type: "int", min: 10, max: 480, step: 10, def: 120, section: "system" }
 ]
 
 var ZONE_ID = /^[A-Za-z_]+(\/[A-Za-z0-9_+\-]+)*$/
