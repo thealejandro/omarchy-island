@@ -1,0 +1,17 @@
+[package]
+name = "island-windows"
+description = "The island as a native Windows app"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[[bin]]
+name = "island"
+path = "src/main.rs"
+
+[dependencies]
+island-core = { path = "../../crates/island-core" }
+
+[lints]
+workspace = true
