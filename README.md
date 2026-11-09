@@ -233,6 +233,7 @@ the island's own keys and nothing else.
 | `notifyHistory` | `true`, `false` | `true` | Keep closed notifications for 24 h |
 | `notifyHistoryLimit` | 20–500 | `100` | Closed notifications kept |
 | `notifyBadge` | `true`, `false` | `true` | Unread dot under the clock and on the tab |
+| `notifyKeyboardIdle` | 3000–30000 | `10000` | Milliseconds without a key before the keyboard mode lets go |
 
 `toggles` decides where Omarchy's quick toggles live:
 
@@ -276,6 +277,12 @@ notification server:
   browser tab of the site for web notifications, or else the site's front
   page or the link in the text. The arrow under the close button shows
   the whole text.
+- Omarchy's shortcut to handle notifications from the keyboard
+  (Super+Ctrl+,) opens the island on its Notifications page and takes the
+  keyboard: ↑/↓ (or J/K, Tab) move between cards, Enter does what a click
+  does, Delete closes, 1–9 press a button, C copies the card's code and
+  Esc leaves. It lets go after `notifyKeyboardIdle` without a key (10 s)
+  or when the island closes.
 - When a notification brings a one-time code ("Your verification code is
   482913"), its card has a **Copy** button. The code goes to the clipboard
   marked sensitive, so clipboard managers leave it out of their history,

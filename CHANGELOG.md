@@ -23,6 +23,13 @@ project follows [Semantic Versioning](https://semver.org/).
   the site's browser tab for web notifications, else the site's front page
   or the link in the text. Earlier notifications can be clicked too; the
   arrow under the close button shows the whole text. (#32)
+- Omarchy's keyboard shortcut for notifications (Super+Ctrl+, , the
+  `notifications keyboard` IPC) now works with the island: it opens on
+  the Notifications page and takes the keyboard. ↑/↓ (or J/K, Tab) move
+  between cards, Enter does what a click does, Delete closes, 1–9 press a
+  button, C copies the card's code and Esc leaves. The keyboard is given
+  back on Esc, after `notifyKeyboardIdle` without keys (10 s), or when
+  the island closes. (#33)
 - Tests for the pure logic in Node (`node --test 'test/*.test.mjs'`), run
   by CI on every pull request.
 

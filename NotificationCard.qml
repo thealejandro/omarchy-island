@@ -29,6 +29,20 @@ Rectangle {
   property string copied: ""
   Timer { id: copiedTimer; interval: 2000; onTriggered: card.copied = "" }
 
+  // Picked in the keyboard mode: outlined, and scrolled into view.
+  readonly property bool selected: island.keyboardMode && island.keyboardKey === row.key
+  onSelectedChanged: if (selected) Qt.callLater(reveal)
+  function reveal() {
+    var flick = card.parent
+    while (flick && flick.contentY === undefined) flick = flick.parent
+    if (!flick || !flick.contentItem) return
+    var top = card.mapToItem(flick.contentItem, 0, 0).y - Style.spacing.lg
+    var bottom = top + card.height + 2 * Style.spacing.lg
+    var maxY = Math.max(0, flick.contentHeight - flick.height)
+    if (top < flick.contentY) flick.contentY = Math.max(0, top)
+    else if (bottom > flick.contentY + flick.height) flick.contentY = Math.min(maxY, bottom - flick.height)
+  }
+
   function when() {
     var r = NM.relativeTime(row.time, now)
     return r.key ? island.tr(r.key, r.arg) : island.locale.toString(r.arg, "d MMM HH:mm")
@@ -36,9 +50,9 @@ Rectangle {
 
   implicitHeight: content.implicitHeight + 2 * Style.spacing.lg
   radius: Style.space(10)
-  color: Util.alpha(textColor, hover.hovered ? 0.1 : (row.live ? 0.07 : 0.04))
-  border.width: critical && row.live ? 1 : 0
-  border.color: Util.alpha(Commons.Color.urgent, 0.6)
+  color: Util.alpha(textColor, hover.hovered || selected ? 0.1 : (row.live ? 0.07 : 0.04))
+  border.width: selected ? 2 : (critical && row.live ? 1 : 0)
+  border.color: selected ? Commons.Color.accent : Util.alpha(Commons.Color.urgent, 0.6)
   Behavior on color { ColorAnimation { duration: 120 } }
 
   HoverHandler { id: hover }

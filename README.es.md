@@ -245,6 +245,7 @@ quita solo las claves propias de la isla.
 | `notifyHistory` | `true`, `false` | `true` | Guardar las notificaciones cerradas 24 h |
 | `notifyHistoryLimit` | 20–500 | `100` | Notificaciones cerradas que se guardan |
 | `notifyBadge` | `true`, `false` | `true` | Punto de no leídas bajo el reloj y en la pestaña |
+| `notifyKeyboardIdle` | 3000–30000 | `10000` | Milisegundos sin pulsar nada antes de que el modo teclado suelte el teclado |
 
 `toggles` decide dónde viven los toggles rápidos de Omarchy:
 
@@ -290,6 +291,12 @@ servidor de notificaciones:
   ventana de la app), la pestaña del sitio en las del navegador o, si no
   hay, la portada del sitio o el enlace del texto. La flecha bajo el botón
   de cerrar muestra el texto completo.
+- El atajo de Omarchy para manejar las notificaciones con el teclado
+  (Super+Ctrl+,) abre la isla en su página Notificaciones y toma el
+  teclado: ↑/↓ (o J/K, Tab) para moverse entre tarjetas, Enter hace lo
+  mismo que un clic, Supr cierra, 1–9 pulsan un botón, C copia el código
+  de la tarjeta y Esc sale. Suelta el teclado tras `notifyKeyboardIdle`
+  sin pulsar nada (10 s) o al cerrarse la isla.
 - Cuando una notificación trae un código de un solo uso («Tu código de
   verificación es 482913»), su tarjeta tiene un botón **Copiar**. El
   código va al portapapeles marcado como sensible, así los gestores de

@@ -48,6 +48,7 @@ var SCHEMA = [
   { key: "notifyHistory", type: "bool", def: true, section: "notify" },
   { key: "notifyHistoryLimit", type: "int", min: 20, max: 500, step: 20, def: 100, section: "notify" },
   { key: "notifyBadge", type: "bool", def: true, section: "notify" },
+  { key: "notifyKeyboardIdle", type: "int", min: 3000, max: 30000, step: 1000, def: 10000, section: "notify" },
 
   { key: "notifications", type: "enum", options: ["off", "island"], def: "off", section: "system" },
   { key: "osd", type: "bool", def: false, section: "system" },
