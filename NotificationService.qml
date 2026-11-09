@@ -177,8 +177,8 @@ Item {
     for (var i = 0; i < keys.length; i++) dismiss(keys[i])
     return keys.length
   }
-  function dismissApp(app) {
-    var keys = liveRows.filter(function(r) { return NM.appLabel(r) === app }).map(function(r) { return r.key })
+  function dismissGroup(groupKey) {
+    var keys = liveRows.filter(function(r) { return NM.groupKey(r) === groupKey }).map(function(r) { return r.key })
     for (var i = 0; i < keys.length; i++) dismiss(keys[i])
   }
   function dismissMatching(needle) {
@@ -242,6 +242,36 @@ Item {
     return true
   }
 
+  // A one-time code goes to the clipboard marked sensitive (clipboard
+  // managers leave it out of their history) and is cleared after a minute if
+  // it is still what's there. Only codes the row really offers are copied.
+  property string secretHeld: ""
+  function copyCode(key, value) {
+    var r = rowFor(key)
+    var v = String(value || "")
+    if (!r || !r.live || !r.codes || r.codes.indexOf(v) < 0) return false
+    Quickshell.execDetached(["wl-copy", "--sensitive", "--", v])
+    secretHeld = v
+    secretLife.restart()
+    patch(key, { read: true })
+    return true
+  }
+  Timer {
+    id: secretLife
+    interval: 60000
+    onTriggered: if (!clipReader.running) clipReader.running = true
+  }
+  Process {
+    id: clipReader
+    command: ["wl-paste", "--no-newline"]
+    stdout: StdioCollector {
+      onStreamFinished: {
+        if (svc.secretHeld && String(text) === svc.secretHeld) Quickshell.execDetached(["wl-copy", "--clear"])
+        svc.secretHeld = ""
+      }
+    }
+  }
+
   // For the IPC: the newest live one.
   function newestLive() { return liveRows.length > 0 ? liveRows[0].key : "" }
   // One button: press it; a click target: click it; otherwise dismiss.
@@ -263,8 +293,8 @@ Item {
   // ---------------------------------------------------------------- glance
 
   function enqueue(row) {
-    // Several from one app in a row read as one glance with a count.
-    if (current && current.app === row.app && row.time - current.time < 3000 && island.peekReason === "notification") {
+    // Several from one app (or site) in a row read as one glance with a count.
+    if (current && NM.groupKey(current) === NM.groupKey(row) &&row.time - current.time < 3000 && island.peekReason === "notification") {
       burst++
       current = row
       island.peek("notification", NM.peekFor(row, cfg.notifyPeekDuration))

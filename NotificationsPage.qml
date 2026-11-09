@@ -3,7 +3,8 @@ import qs.Commons
 import qs.Commons as Commons
 import "NotificationModel.js" as NM
 
-// Notifications: what is still open, grouped by app, then the earlier ones.
+// Notifications: what is still open, grouped by app (by site for a browser),
+// then the earlier ones.
 // Silence, mark read, close all and clear the history along the top.
 Column {
   id: root
@@ -15,7 +16,7 @@ Column {
   readonly property var groups: NM.groupByApp(live)
   readonly property color textColor: Commons.Color.bar.text
   readonly property color dimColor: Util.alpha(Commons.Color.bar.text, 0.72)
-  // Apps folded by hand; big groups start folded.
+  // Groups folded by hand; big groups start folded.
   property var folds: ({})
   property real now: Date.now()
 
@@ -107,11 +108,11 @@ Column {
       group: modelData
       width: root.width
       now: root.now
-      folded: root.folds[modelData.app] !== undefined ? root.folds[modelData.app] : modelData.rows.length > 3
+      folded: root.folds[modelData.key] !== undefined ? root.folds[modelData.key] : modelData.rows.length > 3
       onFoldToggled: {
         var next = ({})
         for (var k in root.folds) next[k] = root.folds[k]
-        next[modelData.app] = !folded
+        next[modelData.key] = !folded
         root.folds = next
       }
     }
