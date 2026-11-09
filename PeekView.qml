@@ -2,6 +2,7 @@ import QtQuick
 import qs.Commons
 import qs.Commons as Commons
 import "IslandModel.js" as IslandModel
+import "AgentModel.js" as AgentModel
 
 // The glance: one line saying what just changed. Media and the timer show
 // their track or countdown; Omarchy's OSD and the battery show an icon with
@@ -11,17 +12,18 @@ Row {
 
   required property var island
 
-  // "notification" | "osd" | "battery" | "agenda" | "privacy" | "timer" | "media"
+  // "notification" | "osd" | "agent" | "battery" | "agenda" | "privacy" | "timer" | "media"
   readonly property var note: island.peekReason === "notification" && island.notify ? island.notify.current : null
   readonly property string kind: note ? "notification"
     : island.peekReason === "osd" && island.osd ? "osd"
+    : island.peekReason === "agent" && island.agentNote ? "agent"
     : island.peekReason === "agenda" && island.agendaNote ? "agenda"
     : island.peekReason === "privacy" && island.privacyNote ? "privacy"
     : island.peekReason === "battery" && island.hasBattery ? "battery"
     : island.peekReason === "timer" || (!island.hasMedia && island.timerActive) ? "timer"
     : "media"
   readonly property bool showTimer: kind === "timer"
-  readonly property bool indicator: kind === "osd" || kind === "battery" || kind === "agenda" || kind === "privacy"
+  readonly property bool indicator: kind === "osd" || kind === "battery" || kind === "agenda" || kind === "privacy" || kind === "agent"
   readonly property bool showBar: kind === "osd" ? island.osd.hasProgress : kind === "battery"
   readonly property real level: kind === "osd" ? island.osd.progress
     : kind === "battery" ? island.batteryLevel / 100 : 0
@@ -71,8 +73,9 @@ Row {
         : root.kind === "battery" ? IslandModel.batteryIcon(root.island.batteryLevel, root.island.charging)
         : root.kind === "agenda" ? "󰃰"
         : root.kind === "privacy" ? (root.island.cameraInUse ? "󰄀" : "󰍬")
+        : root.kind === "agent" ? AgentModel.glyph(root.island.agentNote.state)
         : root.showTimer ? "󰔛" : "󰝚"
-      color: root.batteryLow ? Commons.Color.urgent
+      color: root.batteryLow || (root.kind === "agent" && root.island.agentNote.state !== "done") ? Commons.Color.urgent
         : root.kind === "privacy" ? (root.island.cameraInUse
           ? Commons.Color.composed("island.camera", "island.camera-alpha", "#30d158", 1)
           : Commons.Color.composed("island.mic", "island.mic-alpha", "#ff9f0a", 1))
@@ -119,6 +122,7 @@ Row {
       : root.kind === "osd" ? (root.island.osd.hasProgress ? root.island.osd.label : root.island.osd.message)
       : root.kind === "battery" ? root.island.tr(root.island.batteryNote) + "  " + root.island.batteryLevel + "%"
       : root.kind === "privacy" ? root.island.privacyLabel
+      : root.kind === "agent" ? root.island.agentLabel
       : root.kind === "agenda" ? root.island.agendaNote.title + "  ·  " + (root.island.agendaNote.minutes > 0
         ? root.island.tr("eventIn", root.island.agendaNote.minutes) : root.island.tr("eventNow"))
       : root.showTimer ? root.island.tr(root.island.timerPhase) + "  " + IslandModel.clock(root.island.timerRemaining)

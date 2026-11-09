@@ -11,6 +11,7 @@ import "AgendaModel.js" as AgendaModel
 import "IcsModel.js" as IcsModel
 import "NotificationModel.js" as NM
 import "PrivacyModel.js" as PrivacyModel
+import "AgentModel.js" as AgentModel
 
 // Headless owner of the island state. One IslandWindow is mounted per screen;
 // they all read media and timer state from here, so two monitors never show
@@ -486,7 +487,7 @@ Item {
   }
   function islandClosed() {
     isOpen = false
-    if (peekReason === "notification") peeking = false
+    if (peekReason === "notification" || peekReason === "agent") peeking = false
     calendarDay = ""
     tabHint = ""
     wantsKeyboard = false
@@ -1031,6 +1032,96 @@ Item {
     Component.onCompleted: if (active) setSource(Qt.resolvedUrl("PrivacyService.qml"), { island: root })
   }
 
+  // ------------------------------------------------------------- agents
+
+  // What AI coding agents are doing, as their hooks tell it over IPC
+  // (AgentModel). Nothing is polled: a single timer waits for the next
+  // session to expire and is stopped while there are none.
+  property var agentSessions: []
+  property var agentNote: null
+  readonly property var agentSummary: AgentModel.summary(agentSessions)
+  readonly property bool agentsWaiting: cfg.agents && agentSummary.waiting > 0
+  readonly property string agentLabel: agentNote ? tr(agentNote.key, agentNote.arg) : ""
+  readonly property bool agentsOn: cfg.agents
+  readonly property int agentStaleMs: cfg.agentStale * 60000
+  onAgentsOnChanged: if (!agentsOn) { agentSessions = []; agentNote = null; agentSchedule() }
+  onAgentStaleMsChanged: agentSchedule()
+
+  Timer {
+    id: agentTimer
+    onTriggered: {
+      root.agentSessions = AgentModel.prune(root.agentSessions, Date.now(), root.agentStaleMs)
+      root.agentSchedule()
+    }
+  }
+  function agentSchedule() {
+    var ms = AgentModel.nextPruneDelay(agentSessions, Date.now(), agentStaleMs)
+    if (ms <= 0) { agentTimer.stop(); return }
+    agentTimer.interval = Math.min(ms, 2147483000)
+    agentTimer.restart()
+  }
+  // One event from an agent: "ok", "invalid" or "off".
+  function agentUpdate(fields) {
+    if (!cfg.agents) {
+      if (agentSessions.length > 0) agentSessions = []
+      return "off"
+    }
+    var now = Date.now()
+    var r = AgentModel.update(agentSessions, fields, now)
+    if (r.invalid) return "invalid"
+    agentSessions = AgentModel.prune(r.list, now, agentStaleMs)
+    if (r.session && cfg.agentPeek && !isOpen && AgentModel.shouldPeek(r.prev, r.session)
+        && !(peeking && peekReason === "osd")) {
+      agentNote = AgentModel.peekNote(r.session)
+      agentSessions = AgentModel.markPeeked(agentSessions, r.session.key, r.session.state)
+      peek("agent", r.session.state === "waiting" ? cfg.agentPeekDuration * 2 : cfg.agentPeekDuration)
+    }
+    agentSchedule()
+    return "ok"
+  }
+  function agentClear(name, id) {
+    if (!cfg.agents) return "off"
+    var n = AgentModel.cleanName(name)
+    if (String(name || "") !== "" && n === "") return "invalid"
+    if (n === "") agentSessions = []
+    else if (String(id || "") === "") agentSessions = AgentModel.removeAgent(agentSessions, n)
+    else agentSessions = AgentModel.remove(agentSessions, AgentModel.sessionKey(n, AgentModel.cleanId(id)))
+    agentSchedule()
+    return "ok"
+  }
+  function agentWindow(name, id, pid, address) {
+    if (!cfg.agents) return "off"
+    var n = AgentModel.cleanName(name)
+    if (n === "") return "invalid"
+    var r = AgentModel.setWindow(agentSessions, AgentModel.sessionKey(n, AgentModel.cleanId(id)), pid, address)
+    if (!r.found) return "invalid"
+    agentSessions = r.list
+    return "ok"
+  }
+
+  // Raise the window an agent runs in. Only on a click: hyprctl is asked
+  // then, never in the background.
+  Process {
+    id: agentGoTo
+    property var session: null
+    command: ["hyprctl", "clients", "-j"]
+    stdout: StdioCollector {
+      onStreamFinished: {
+        var target = AgentModel.focusTarget(agentGoTo.session, NM.parseClients(text))
+        agentGoTo.session = null
+        // The address comes out of NM checked: 0x and hex.
+        if (target) Quickshell.execDetached(["hyprctl", "dispatch", 'hl.dsp.focus({ window = "address:' + target.focus + '" })'])
+      }
+    }
+  }
+  function agentFocus(session) {
+    if (!session || agentGoTo.running) return false
+    if (!(session.pid > 0) && !session.address) return false
+    agentGoTo.session = session
+    agentGoTo.running = true
+    return true
+  }
+
   Loader {
     id: notifyLoader
     active: root.notificationsLive && !root._notifyBounce
@@ -1238,7 +1329,8 @@ Item {
         battery: root.batteryLevel, charging: root.charging,
         notifications: root.notificationsLive ? "island" : (root.notificationsStandby ? "standby" : "off"),
         unread: root.unread, dnd: root.doNotDisturb, keyboard: root.keyboardGrab,
-        mic: root.micInUse ? root.micApps : [], camera: root.cameraInUse ? root.cameraApps : [] })
+        mic: root.micInUse ? root.micApps : [], camera: root.cameraInUse ? root.cameraApps : [],
+        agents: root.cfg.agents ? AgentModel.listing(root.agentSessions, false) : [], agentsWaiting: root.agentsWaiting })
     }
     function ping(): string { return "ok" }
     // Opens the island on one of its pages: home, calendar, world,
@@ -1271,6 +1363,29 @@ Item {
       return JSON.stringify(root.eventsOn(date || AgendaModel.isoDate(new Date())))
     }
     function anchors(): string { return JSON.stringify({ position: root.barPosition, anchors: root.anchorMap, sides: root.sideMap }) }
+    // What an AI agent is doing: state working, waiting, done, error or idle
+    // (end drops it). Answers ok, invalid or off (the setting is off).
+    function agent(name: string, state: string): string {
+      return root.agentUpdate({ agent: name, state: state })
+    }
+    function agentSession(name: string, id: string, state: string, cwd: string, message: string): string {
+      return root.agentUpdate({ agent: name, id: id, state: state, cwd: cwd, message: message })
+    }
+    // The window an agent's session runs in, to raise it from the island.
+    function agentWindow(name: string, id: string, pid: string, address: string): string {
+      return root.agentWindow(name, id, pid, address)
+    }
+    // Forgets one session, every session of an agent (id ""), or all (name "").
+    function agentClear(name: string, id: string): string { return root.agentClear(name, id) }
+    // One JSON object { agent, id, state, cwd, message, pid, address }, up to
+    // 4 KiB; what scripts/agent-hook.sh sends.
+    function agentJson(payload: string): string {
+      var f = AgentModel.parseJson(payload)
+      return f ? root.agentUpdate(f) : "invalid"
+    }
+    function agents(): string {
+      return JSON.stringify(root.cfg.agents ? AgentModel.listing(root.agentSessions, true) : [])
+    }
   }
 
   Variants {
