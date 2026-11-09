@@ -134,7 +134,7 @@ comportamiento más simple en lugar de romperse (ver
 ## Instalación
 
 ```bash
-omarchy plugin add https://github.com/thealejandro/omarchy-island.git --enable
+omarchy plugin add https://github.com/thealejandro/island.git --enable
 ```
 
 Después ponla en la barra junto al reloj. Ahí no ocupa sitio; sirve para
@@ -474,7 +474,7 @@ vuelve después).
 Viene de [lrclib.net](https://lrclib.net), un servicio comunitario gratuito
 sin cuenta ni clave. **Qué sale de tu equipo**: el artista, el título, el
 álbum y la duración de la canción, en una petición a lrclib.net, junto con el
-`User-Agent` `omarchy-island/<versión> (https://github.com/thealejandro/omarchy-island)`.
+`User-Agent` `omarchy-island/<versión> (https://github.com/thealejandro/island)`.
 Nunca la ruta del archivo ni el nombre del reproductor. **Cuándo**: al
 empezar una canción nueva con la isla abierta (o con `lyricsPeek`), y al
 abrirla sobre una canción que aún no ha buscado; como mucho tres peticiones
@@ -718,8 +718,8 @@ de darlo por hecho:
 Clónalo donde quieras y enlázalo en la carpeta de plugins:
 
 ```bash
-git clone https://github.com/thealejandro/omarchy-island.git
-ln -s "$PWD/omarchy-island" ~/.config/omarchy/plugins/thealejandro.island
+git clone https://github.com/thealejandro/island.git
+ln -s "$PWD/island" ~/.config/omarchy/plugins/thealejandro.island
 omarchy-shell shell rescanPlugins
 omarchy plugin enable thealejandro.island
 ```

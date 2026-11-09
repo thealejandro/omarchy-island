@@ -31,7 +31,7 @@ if [ "$dur" -lt 1 ] || [ "$dur" -gt 3600 ] || [ -z "$artist" ] || [ -z "$title" 
 fi
 
 api=https://lrclib.net/api
-agent="omarchy-island/$version (https://github.com/thealejandro/omarchy-island)"
+agent="omarchy-island/$version (https://github.com/thealejandro/island)"
 keep=400
 
 tmp=$(mktemp "${XDG_RUNTIME_DIR:-/tmp}/island-lyrics.XXXXXX") || { printf 'error 000\n'; exit 0; }
