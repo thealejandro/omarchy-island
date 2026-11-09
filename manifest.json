@@ -46,6 +46,8 @@
       "agendaCommand": "",
       "osd": false,
       "battery": true,
+      "privacyDots": true,
+      "privacyPeek": true,
       "animations": true,
       "notifications": "off",
       "notifyBody": true,
@@ -284,6 +286,18 @@
         "key": "battery",
         "type": "boolean",
         "label": "Battery glances",
+        "defaultValue": true
+      },
+      {
+        "key": "privacyDots",
+        "type": "boolean",
+        "label": "Microphone and camera dots",
+        "defaultValue": true
+      },
+      {
+        "key": "privacyPeek",
+        "type": "boolean",
+        "label": "Glance when an app starts using them",
         "defaultValue": true
       },
       {

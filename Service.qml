@@ -10,6 +10,7 @@ import "IslandSettings.js" as IslandSettings
 import "AgendaModel.js" as AgendaModel
 import "IcsModel.js" as IcsModel
 import "NotificationModel.js" as NM
+import "PrivacyModel.js" as PrivacyModel
 
 // Headless owner of the island state. One IslandWindow is mounted per screen;
 // they all read media and timer state from here, so two monitors never show
@@ -1012,6 +1013,24 @@ Item {
   readonly property var notify: notifyLoader.item
   readonly property int unread: notify ? notify.unread : 0
 
+  // ------------------------------------------------------------- privacy
+
+  // Apps using the microphone or the camera right now (PrivacyService.qml,
+  // only loaded while privacyDots is on).
+  property var micApps: []
+  property var cameraApps: []
+  readonly property bool micInUse: cfg.privacyDots && micApps.length > 0
+  readonly property bool cameraInUse: cfg.privacyDots && cameraApps.length > 0
+  readonly property var privacyNote: PrivacyModel.label({ mic: micInUse ? micApps : [], camera: cameraInUse ? cameraApps : [] })
+  readonly property string privacyLabel: privacyNote ? tr(privacyNote.key, privacyNote.arg) : ""
+  Loader {
+    id: privacyLoader
+    active: root.cfg.privacyDots
+    onActiveChanged: if (active) setSource(Qt.resolvedUrl("PrivacyService.qml"), { island: root })
+      else setSource("")
+    Component.onCompleted: if (active) setSource(Qt.resolvedUrl("PrivacyService.qml"), { island: root })
+  }
+
   Loader {
     id: notifyLoader
     active: root.notificationsLive && !root._notifyBounce
@@ -1218,7 +1237,8 @@ Item {
         focusMinutes: root.focusMinutes, lang: root.lang, page: root.page, osd: root.osdEnabled,
         battery: root.batteryLevel, charging: root.charging,
         notifications: root.notificationsLive ? "island" : (root.notificationsStandby ? "standby" : "off"),
-        unread: root.unread, dnd: root.doNotDisturb, keyboard: root.keyboardGrab })
+        unread: root.unread, dnd: root.doNotDisturb, keyboard: root.keyboardGrab,
+        mic: root.micInUse ? root.micApps : [], camera: root.cameraInUse ? root.cameraApps : [] })
     }
     function ping(): string { return "ok" }
     // Opens the island on one of its pages: home, calendar, world,

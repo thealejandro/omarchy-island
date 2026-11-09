@@ -338,6 +338,30 @@ PanelWindow {
     Behavior on opacity { NumberAnimation { duration: 180 } }
   }
 
+  // Microphone (orange) and camera (green) in use, just past the bar beside
+  // the unread dot, like a phone's. Themes can recolour them in shell.toml:
+  // [island] mic = "<color>", camera = "<color>".
+  Repeater {
+    model: [
+      { on: win.island.micInUse, color: Commons.Color.composed("island.mic", "island.mic-alpha", "#ff9f0a", 1) },
+      { on: win.island.cameraInUse, color: Commons.Color.composed("island.camera", "island.camera-alpha", "#30d158", 1) }
+    ]
+    Rectangle {
+      required property var modelData
+      required property int index
+      readonly property bool lit: win.mode === "closed" && modelData.on && !win.island.barHidden
+      readonly property int d: Style.space(6)
+      readonly property var r: win.place(win.clockCenter + Style.space(8) + index * (d + Style.space(3)), d,
+        win.barSize + Style.space(3), d)
+      x: r.x; y: r.y; width: d; height: d
+      radius: d / 2
+      color: modelData.color
+      opacity: lit ? 1 : 0
+      visible: opacity > 0
+      Behavior on opacity { enabled: win.island.animate; NumberAnimation { duration: 180 } }
+    }
+  }
+
   Item {
     id: body
 
