@@ -154,14 +154,18 @@ Column {
         readonly property string key: modelData.key
         readonly property var value: root.island.cfg[key]
         readonly property string hintKey: "hint_" + key
+        // A wide control (the six-way idle look) would squeeze the label to a
+        // couple of letters: then the label goes on top and the control below.
+        readonly property bool stacked: control.width > row.width - Style.space(150)
         width: rows.width
-        height: Math.max(labels.height, control.height)
+        height: stacked ? labels.height + Style.spacing.sm + control.height
+                        : Math.max(labels.height, control.height)
 
         Column {
           id: labels
-          anchors.left: parent.left
-          anchors.verticalCenter: parent.verticalCenter
-          width: Math.max(0, row.width - control.width - Style.spacing.xl)
+          x: 0
+          y: row.stacked ? 0 : (row.height - height) / 2
+          width: row.stacked ? row.width : Math.max(0, row.width - control.width - Style.spacing.xl)
           Text {
             width: parent.width
             text: root.tr("set_" + row.key)
@@ -183,8 +187,8 @@ Column {
 
         Loader {
           id: control
-          anchors.right: parent.right
-          anchors.verticalCenter: parent.verticalCenter
+          x: row.stacked ? 0 : row.width - width
+          y: row.stacked ? labels.height + Style.spacing.sm : (row.height - height) / 2
           sourceComponent: {
             if (row.key === "idleIcon") return iconPickerComp
             switch (row.modelData.type) {
@@ -254,6 +258,7 @@ Column {
               rightGlyph: "›"
               leftLabel: "‹"
               rightLabel: "›"
+              wrap: true
               onStepped: (v) => root.save(row.key, picker.names[v])
             }
           }
