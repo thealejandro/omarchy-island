@@ -22,6 +22,10 @@ Rectangle {
   readonly property bool clickable: row.live && (!!row.execArgv || row.hasDefault)
   readonly property color textColor: Commons.Color.bar.text
   readonly property color dimColor: Util.alpha(Commons.Color.bar.text, 0.72)
+  readonly property var codes: row.codes || []
+  // The code just copied, shown with a tick for a moment.
+  property string copied: ""
+  Timer { id: copiedTimer; interval: 2000; onTriggered: card.copied = "" }
 
   function when() {
     var r = NM.relativeTime(row.time, now)
@@ -68,7 +72,7 @@ Rectangle {
         width: parent.width
         elide: Text.ElideRight
         textFormat: Text.PlainText
-        text: (card.showApp && card.row.app ? card.row.app + "  ·  " : "") + card.when()
+        text: (card.showApp && NM.senderLabel(card.row) ? NM.senderLabel(card.row) + "  ·  " : "") + card.when()
         color: card.dimColor
         font.family: Style.font.family
         font.pixelSize: Style.font.caption
@@ -114,8 +118,20 @@ Rectangle {
       Flow {
         width: parent.width
         spacing: Style.spacing.sm
-        visible: (card.row.live && card.row.actions.length > 0) || card.row.link !== ""
+        visible: (card.row.live && (card.row.actions.length > 0 || card.codes.length > 0)) || card.row.link !== ""
         topPadding: Style.spacing.sm
+        // One-time codes first: copying one is what the card is there for.
+        Repeater {
+          model: card.row.live ? card.codes : []
+          IslandPill {
+            required property var modelData
+            compact: true
+            on: card.copied === modelData
+            glyph: card.copied === modelData ? "󰄬" : "󰆏"
+            label: card.copied === modelData ? card.island.tr("nt_copied") : card.island.tr("nt_copyCode", modelData)
+            onClicked: if (card.notify.copyCode(card.row.key, modelData)) { card.copied = modelData; copiedTimer.restart() }
+          }
+        }
         Repeater {
           model: card.row.live ? card.row.actions : []
           IslandPill {

@@ -29,6 +29,108 @@ function plainText(text) {
 
 function oneLine(text) { return str(text).replace(/\s*\n\s*/g, "  ").trim() }
 
+// ------------------------------------------------------------- who and what
+// Modelled on Omarchy's notifications plugin (Markup.js, Detect.js; MIT).
+
+// Only a browser's leading anchor names a site; any other app's is a link.
+var BROWSERS = /^(google chrome|chromium|brave|brave browser|brave origin|microsoft edge|vivaldi|opera|helium|firefox|zen|librewolf)$/i
+function isBrowser(app) { return BROWSERS.test(str(app).trim()) }
+
+function hostOf(url) {
+  var safe = Sec.safeHttpUrl(str(url).replace(/&amp;/g, "&"))
+  var m = /^https?:\/\/([^\/:?#]+)/.exec(safe)
+  return m ? Sec.hostname(m[1]) : ""
+}
+
+// A browser body that opens with a link to the site itself ("<a
+// href=https://web.whatsapp.com/>web.whatsapp.com</a>") is the site naming
+// itself: lift it off as the source. The label must be that host or a bare
+// domain, so a real link the sender put first stays.
+function liftSource(rawBody) {
+  var text = str(rawBody)
+  var m = /^\s*<a\s+href=["']?([^"'\s>]+)["']?[^>]*>([\s\S]*?)<\/a>\s*/i.exec(text)
+  if (!m) return { source: "", body: text }
+  var host = hostOf(m[1])
+  var label = m[2].trim()
+  if (!host || !(label === host || /^[\w.-]+\.[a-z]{2,}$/i.test(label))) return { source: "", body: text }
+  return { source: host, body: text.slice(m[0].length) }
+}
+
+function slug(text) {
+  return str(text).toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, "")
+}
+
+// Which group a row goes in: per site for a browser, alone for Omarchy's own
+// toasts and bare notify-send (they are unrelated messages), else per app.
+function groupKey(row) {
+  if (!row) return ""
+  if (row.app === "omarchy-action" || row.app === "notify-send" || row.app === "") return "toast:" + str(row.key)
+  if (row.source && isBrowser(row.app)) return "web:" + row.source
+  return "app:" + slug(row.app)
+}
+
+// The sender's name as shown: the site for a browser, else the app.
+function senderLabel(row) {
+  if (!row) return ""
+  return row.source && isBrowser(row.app) ? row.source : str(row.app)
+}
+
+// A code is only a code if the text says so: by shape alone it is also an
+// order number, a port, a build or a year. It must sit near its keyword
+// (English or Spanish), so "Claude Code 2.1.40" offers nothing.
+var CODE_WORDS = /\b(code|otp|one[\s-]?time|verification|verify|passcode|pin|2fa|two[\s-]factor|security key|confirm(?:ation)?|c[oó]digo|verificaci[oó]n|clave|contrase[nñ]a de un solo uso)\b/i
+var CODE_SHAPE = /(?:^|[^\w-])((?:[A-Za-z]-)?\d{2,4}[\s-]\d{2,5}|(?:[A-Za-z]-)?\d{4,8})(?![\w-])/g
+var CODE_ALNUM = /(?:^|[^\w-])([A-Z0-9]{5,8})(?![\w-])/g
+var NEAR_BEFORE = 24
+var NEAR_AFTER = 72
+var MAX_CODES = 4
+
+// "Claude Code", "VS Code": a capitalised word before a capitalised "Code"
+// is a product name; "use code SAVE20" and "Your Verification Code" are not.
+function isProductName(t, at, word) {
+  if (word.toLowerCase() !== "code" || word[0] !== "C") return false
+  var before = /([A-Za-z][\w.]*)\s+$/.exec(t.slice(Math.max(0, at - 20), at))
+  if (!before || !/^([A-Z][a-z]+|[A-Z]{2,})$/.test(before[1])) return false
+  return !CODE_WORDS.test(before[1])
+}
+
+function harvest(t, re, seen, out, keep) {
+  var m
+  re.lastIndex = 0
+  while ((m = re.exec(t)) !== null) {
+    var value = keep(m[1])
+    if (!value || seen[value]) continue
+    seen[value] = true
+    out.push(value)
+  }
+}
+
+// One-time codes in a notification's text, digits first; [] when unsure.
+function codes(text) {
+  var t = str(text).slice(0, Sec.MAX_BODY)
+  var spans = [], m
+  var re = new RegExp(CODE_WORDS.source, "gi")
+  while ((m = re.exec(t)) !== null && spans.length < MAX_CODES) {
+    if (!isProductName(t, m.index, m[0]))
+      spans.push([Math.max(0, m.index - NEAR_BEFORE), m.index + m[0].length + NEAR_AFTER])
+  }
+  var out = [], seen = {}, i
+  for (i = 0; i < spans.length; i++) {
+    harvest(t.slice(spans[i][0], spans[i][1]), CODE_SHAPE, seen, out, function(raw) {
+      var v = raw.replace(/^[A-Za-z]-/, "").replace(/[\s-]/g, "")
+      if (v.length < 4 || v.length > 8 || /^(19|20)\d\d$/.test(v)) return ""
+      return v
+    })
+  }
+  if (out.length) return out.slice(0, MAX_CODES)
+  for (i = 0; i < spans.length; i++) {
+    harvest(t.slice(spans[i][0], spans[i][1]), CODE_ALNUM, seen, out, function(raw) {
+      return /\d/.test(raw) && /[A-Z]/.test(raw) ? raw : ""
+    })
+  }
+  return out.slice(0, MAX_CODES)
+}
+
 function hint(n, name) {
   try { var h = n.hints; return h && h[name] !== undefined ? h[name] : undefined } catch (e) { return undefined }
 }
@@ -45,7 +147,11 @@ function snapshot(n, key, now) {
     var text = Sec.bounded(list[i].text, Sec.MAX_LABEL).trim()
     if (text !== "") actions.push({ id: id, text: text })
   }
-  var rawBody = Sec.bounded(n.body, Sec.MAX_BODY)
+  var app = Sec.bounded(n.appName, Sec.MAX_APP).trim()
+  var lifted = isBrowser(app) ? liftSource(Sec.bounded(n.body, Sec.MAX_BODY)) : { source: "", body: Sec.bounded(n.body, Sec.MAX_BODY) }
+  var rawBody = lifted.body
+  var summary = Sec.bounded(n.summary, Sec.MAX_SUMMARY).trim()
+  var body = plainText(rawBody)
   var image = str(n.image)
   // A picture handed over the bus only lives as long as the notification.
   image = image.indexOf("image://qsimage/") === 0 ? image : Sec.localImageUrl(image)
@@ -57,14 +163,17 @@ function snapshot(n, key, now) {
   return {
     key: key,
     id: Number(n.id) || 0,
-    app: Sec.bounded(n.appName, Sec.MAX_APP).trim(),
+    app: app,
+    source: lifted.source,
     appIcon: iconFile ? "" : Sec.iconName(appIcon.replace(/^image:\/\/icon\//, "")),
     iconFile: iconFile,
     desktopEntry: Sec.iconName(n.desktopEntry),
     image: image,
-    summary: Sec.bounded(n.summary, Sec.MAX_SUMMARY).trim(),
-    body: plainText(rawBody),
+    summary: summary,
+    body: body,
     link: Sec.firstLink(rawBody),
+    // Only while live, and never written to disk.
+    codes: codes(summary + "\n" + body),
     urgency: Number(n.urgency) === CRITICAL ? CRITICAL : (Number(n.urgency) === LOW ? LOW : NORMAL),
     expire: Number(n.expireTimeout) || 0,
     actions: actions,
@@ -107,18 +216,19 @@ function bypassesQuiet(row) {
 
 function appLabel(row) { return row && row.app ? row.app : "" }
 
-// Newest first in, groups out in the order their newest row arrived.
+// Newest first in, groups out in the order their newest row arrived. A
+// browser's rows are grouped per site, Omarchy's toasts stand alone.
 function groupByApp(rows) {
   var groups = []
   var at = {}
   for (var i = 0; i < rows.length; i++) {
     var r = rows[i]
-    var name = appLabel(r) || "?"
-    if (at[name] === undefined) {
-      at[name] = groups.length
-      groups.push({ app: name, rows: [], unread: 0, critical: false })
+    var key = groupKey(r)
+    if (at[key] === undefined) {
+      at[key] = groups.length
+      groups.push({ key: key, app: senderLabel(r) || "?", rows: [], unread: 0, critical: false })
     }
-    var g = groups[at[name]]
+    var g = groups[at[key]]
     g.rows.push(r)
     if (!r.read) g.unread++
     if (r.urgency === CRITICAL) g.critical = true
@@ -143,7 +253,7 @@ function prune(rows, limit, now) {
   return out
 }
 
-var STORED = ["app", "appIcon", "iconFile", "desktopEntry", "summary", "body", "link", "urgency", "time", "read"]
+var STORED = ["app", "source", "appIcon", "iconFile", "desktopEntry", "summary", "body", "link", "urgency", "time", "read"]
 
 // What goes to disk: closed rows (a live one is stored as closed, since
 // its sender's object can't be brought back), without the bus picture,
@@ -176,6 +286,8 @@ function parseStore(text, seedStart) {
       key: "h" + (seedStart + i),
       id: 0,
       app: Sec.bounded(s.app, Sec.MAX_APP),
+      source: Sec.hostname(str(s.source)),
+      codes: [],
       appIcon: Sec.iconName(s.appIcon),
       iconFile: Sec.localImageUrl(str(s.iconFile)),
       desktopEntry: Sec.iconName(s.desktopEntry),

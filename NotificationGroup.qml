@@ -56,7 +56,7 @@ Column {
         glyph: "󰅖"
         size: Style.space(22)
         glyphSize: Style.font.bodySmall
-        onClicked: root.island.notify.dismissApp(root.group.app)
+        onClicked: root.island.notify.dismissGroup(root.group.key)
       }
     }
   }

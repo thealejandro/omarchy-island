@@ -4,6 +4,23 @@ All notable changes to this project are documented here. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the
 project follows [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- Browser notifications are grouped per site (WhatsApp Web, GitHub…)
+  instead of all under the browser, and named after the site; Omarchy's
+  own toasts each stand alone. Several in a row from one site still read
+  as one glance with a count. (#31)
+- A notification with a one-time code ("Your verification code is
+  482913", "Tu código es 482 913") offers **Copy** on its card. The code
+  goes to the clipboard marked sensitive and is cleared after a minute if
+  it's still there; codes are never saved with the history. Only a number
+  near a word like *code*, *verification* or *código* counts, so order
+  numbers, years and "Claude Code 2.1" don't. (#31)
+- Tests for the pure logic in Node (`node --test 'test/*.test.mjs'`), run
+  by CI on every pull request.
+
 ## [0.6.2] - 2026-11-08
 
 ### Fixed

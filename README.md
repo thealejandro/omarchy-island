@@ -265,9 +265,16 @@ notification server:
   the title and (with `notifyBody`) the text, for `notifyPeekDuration` or
   the sender's own timeout. Critical ones stay until you deal with them.
   Reaching for the glance opens the Notifications page.
-- The Notifications page groups them by app, newest first, with their
-  buttons, an inline reply when the app offers one, a safe link to open,
-  and a close button per notification or per app. **Silence** is the same
+- The Notifications page groups them by app, newest first (a browser's
+  per site, so WhatsApp Web and GitHub don't share a Chromium group, and
+  Omarchy's own toasts each on their own), with their buttons, an inline
+  reply when the app offers one, a safe link to open, and a close button
+  per notification or per group.
+- When a notification brings a one-time code ("Your verification code is
+  482913"), its card has a **Copy** button. The code goes to the clipboard
+  marked sensitive, so clipboard managers leave it out of their history,
+  and it's cleared after a minute if it's still there. Codes are never
+  saved with the history. **Silence** is the same
   do-not-disturb as Omarchy's (it's kept in Omarchy's own
   `~/.local/state/omarchy/notifications/quiet.json`), so the bar indicator
   and the dock toggle agree.
@@ -430,6 +437,13 @@ omarchy plugin enable thealejandro.island
 
 Quickshell caches compiled QML, so after editing the code run
 `omarchy restart shell` to see the changes.
+
+The pure logic (the `.js` files) has tests that run in Node 22 or newer,
+with nothing to install; CI runs them on every pull request:
+
+```bash
+node --test 'test/*.test.mjs'
+```
 
 | File               | What it does                                         |
 |--------------------|------------------------------------------------------|
