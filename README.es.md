@@ -477,6 +477,17 @@ uno que estaba trabajando o esperando pero no da señales en `agentStale`
 minutos (2 h por defecto) pasa a inactivo durante un minuto y desaparece.
 `agents: false` lo apaga todo.
 
+Pensado también para quien lanza muchas sesiones a la vez: la isla sigue
+hasta 64. Pasado ese número salen primero las terminadas, inactivas o
+fallidas más antiguas y luego la que lleva más tiempo trabajando; **una que
+espera tu permiso nunca sale para hacer sitio** (solo un tope de 128, para
+un hook que se desboque). Si terminan muchas a la vez, cada vistazo
+sustituye al anterior en lugar de encolarse, y el punto rojo sigue mientras
+alguna espere. `agent-hook.sh` cuesta unas decenas de milisegundos por
+evento: los eventos que la isla no usa se quedan en un `jq`, y a Hyprland
+solo se le pregunta por la ventana cuando una sesión empieza a trabajar o
+pide permiso.
+
 **El directorio de trabajo nunca se guarda ni se muestra entero**: la isla
 solo se queda con el nombre de su última carpeta (`~/Work/mi-app` se ve como
 *mi-app*), y al texto que llega de un agente se le quitan los caracteres de

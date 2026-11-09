@@ -455,6 +455,16 @@ was working or waiting but hasn't been heard from for `agentStale` minutes
 (2 h by default) becomes idle for a minute and goes. `agents: false` turns
 it all off.
 
+Made for people who run many sessions at once too: the island follows up to
+64. Past that, the oldest finished, idle or failed ones go first, then the
+one that has been working longest; **one waiting for your permission is
+never dropped to make room** (only a ceiling of 128, for a hook gone wild).
+When many finish together each glance replaces the last instead of queueing,
+and the red dot stays while any waits. `agent-hook.sh` costs a few tens of
+milliseconds per event: events the island doesn't use stop after one `jq`,
+and Hyprland is only asked for the window when a session starts working or
+asks for permission.
+
 **The working directory is never stored or shown in full**: the island keeps
 only the name of its last folder (`~/Work/my-app` shows as *my-app*), and
 text coming from an agent is stripped of control and escape characters and

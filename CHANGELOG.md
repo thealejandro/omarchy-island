@@ -28,7 +28,8 @@ project follows [Semantic Versioning](https://semver.org/).
   finishes, and a red dot sits by the clock while one is waiting. Hooks call
   `scripts/agent-hook.sh` (or `omarchy-shell island agent …`); nothing is
   polled, only the name of the working folder is kept, and agents that go
-  quiet are forgotten. `agents`, `agentPeek`, `agentPeekDuration`,
+  quiet are forgotten. Up to 64 sessions at once, and one waiting for you
+  is never dropped to make room. `agents`, `agentPeek`, `agentPeekDuration`,
   `agentDot` and `agentStale` in Settings › System. (#12)
 
 ## [0.7.0] - 2026-11-09
