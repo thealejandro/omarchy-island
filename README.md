@@ -270,6 +270,12 @@ notification server:
   Omarchy's own toasts each on their own), with their buttons, an inline
   reply when the app offers one, a safe link to open, and a close button
   per notification or per group.
+- Clicking a notification does what its sender asked for (its default
+  action). When it asked for nothing, the click takes you to the sender:
+  its window (by the sending process, or the app's window class), the
+  browser tab of the site for web notifications, or else the site's front
+  page or the link in the text. The arrow under the close button shows
+  the whole text.
 - When a notification brings a one-time code ("Your verification code is
   482913"), its card has a **Copy** button. The code goes to the clipboard
   marked sensitive, so clipboard managers leave it out of their history,
