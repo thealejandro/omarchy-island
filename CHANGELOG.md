@@ -6,6 +6,16 @@ project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Your calendars in the agenda: `icsSources` takes vdirsyncer folders,
+  `.ics` files and private iCal links (Google Calendar, Outlook, iCloud,
+  Fastmail, Nextcloud…), shown read-only next to your own events and
+  reminded like them. Repeating events, exceptions, moved occurrences,
+  all-day and multi-day events and time zones (also Outlook's own) are
+  understood; links are fetched over HTTPS only, every `icsRefresh`
+  minutes (15 by default). (#22)
+
 ## [0.7.0] - 2026-11-09
 
 ### Added

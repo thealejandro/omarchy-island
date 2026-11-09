@@ -42,6 +42,8 @@ var SCHEMA = [
 
   { key: "weekStart", type: "weekday", def: null, section: "agenda" },
   { key: "reminderLead", type: "int", min: 0, max: 120, step: 5, def: 10, section: "agenda" },
+  { key: "icsSources", type: "string", def: "", section: "agenda" },
+  { key: "icsRefresh", type: "int", min: 5, max: 240, step: 5, def: 15, section: "agenda" },
   { key: "agendaCommand", type: "string", def: "", section: "agenda" },
 
   { key: "notifyBody", type: "bool", def: true, section: "notify" },

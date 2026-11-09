@@ -100,8 +100,8 @@ as it was.
   off.
 - **Light**: no extra process. Media comes from MPRIS (Spotify, browsers,
   mpv…); the only polling is the weather, every 20 minutes, the world
-  clock's time zones while the island is open, and `agendaCommand` if you
-  set one. A closed island holds no pages, cover art or icons. See
+  clock's time zones while the island is open, and `icsSources` and
+  `agendaCommand` if you set them. A closed island holds no pages, cover art or icons. See
   [Performance](#performance).
 
 ## Requirements
@@ -232,6 +232,8 @@ the island's own keys and nothing else.
 | `cities` | `[{"name","zone"}]` | elsewhen's | The island's own city list |
 | `weekStart` | 1 (Mon) – 7 (Sun) | the locale's | First day of the week |
 | `reminderLead` | 0–120 min | `10` | Reminder before an event |
+| `icsSources` | folders, `.ics` files, `https://` links (comma-separated) | `""` | Calendars to show (Google, Outlook, iCloud, vdirsyncer…) |
+| `icsRefresh` | 5–240 min | `15` | How often those calendars are read again |
 | `agendaCommand` | shell command | `""` | Extra events from another calendar |
 | `osd` | `true`, `false` | `false` | Show Omarchy's OSD in the island |
 | `battery` | `true`, `false` | `true` | Charging and low-battery peeks |
@@ -351,6 +353,36 @@ atomically and picks up edits made by hand:
 The bell on an event of today hands it to Omarchy's reminders instead
 (`omarchy reminder <minutes> "<title>"`), and Omarchy's active reminders are
 listed on today.
+
+**Your calendars (Google, Outlook, iCloud, CalDAV).** `icsSources` takes a
+comma-separated list of calendars in iCalendar form, shown read-only next
+to your own events (and reminded like them). Each one can be:
+
+- **A private iCal link** (`https://…` or `webcal://…`), fetched every
+  `icsRefresh` minutes. Google Calendar: *Settings › your calendar ›
+  Integrate calendar › Secret address in iCal format*. Outlook.com /
+  Microsoft 365: *Settings › Calendar › Shared calendars › Publish a
+  calendar* (the ICS link). iCloud: share the calendar as a *Public
+  calendar*. Fastmail, Proton and Nextcloud offer one too.
+- **A folder** of `.ics` files, such as the ones
+  [vdirsyncer](https://github.com/pimutils/vdirsyncer) keeps in sync from
+  any CalDAV server (Nextcloud, Radicale, iCloud, Fastmail, Google via its
+  CalDAV support) with `fileext = ".ics"`.
+- **An `.ics` file** (an export, a holidays calendar…).
+
+```bash
+omarchy bar set thealejandro.island icsSources "~/.local/share/vdirsyncer/calendars, https://calendar.google.com/calendar/ical/…/basic.ics"
+```
+
+Treat a private iCal link like a password: anyone who has it can read that
+calendar. It stays in your `shell.json`, so leave that file out of public
+dotfiles (or use the vdirsyncer folder instead, whose credentials live in
+its own config). The island fetches links over HTTPS only and never logs
+them. It understands single and repeating events (daily, weekly, monthly,
+yearly, with exceptions and moved occurrences), all-day and multi-day
+events and time zones, and shows a year either side of today (at most 2000
+events). Anything a calendar does that it doesn't understand is left out
+rather than shown wrong.
 
 **Other calendars.** `agendaCommand` runs a command when the island starts
 and every 15 minutes; each line it prints as

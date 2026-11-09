@@ -104,7 +104,7 @@ nada de Omarchy. Si lo quitas, tu escritorio queda exactamente como estaba.
 - **Ligera**: sin procesos extra. La música llega por MPRIS (Spotify,
   navegadores, mpv…); lo único que se consulta solo es el clima, cada 20
   minutos, los husos de la hora mundial mientras la isla está abierta y
-  `agendaCommand` si lo configuras. Cerrada, la isla no guarda páginas,
+  `icsSources` y `agendaCommand` si los configuras. Cerrada, la isla no guarda páginas,
   portadas ni iconos. Ver [Rendimiento](#rendimiento).
 
 ## Novedades
@@ -245,6 +245,8 @@ quita solo las claves propias de la isla.
 | `cities` | `[{"name","zone"}]` | las de elsewhen | Lista de ciudades propia |
 | `weekStart` | 1 (lun) – 7 (dom) | el del idioma | Primer día de la semana |
 | `reminderLead` | 0–120 min | `10` | Aviso antes de un evento |
+| `icsSources` | carpetas, archivos `.ics`, enlaces `https://` (separados por comas) | `""` | Calendarios que mostrar (Google, Outlook, iCloud, vdirsyncer…) |
+| `icsRefresh` | 5–240 min | `15` | Cada cuánto se vuelven a leer esos calendarios |
 | `agendaCommand` | comando | `""` | Eventos extra de otro calendario |
 | `osd` | `true`, `false` | `false` | Mostrar el OSD de Omarchy en la isla |
 | `battery` | `true`, `false` | `true` | Vistazos de carga y batería baja |
@@ -367,6 +369,39 @@ atómica y recoge lo que edites a mano:
 La campana de un evento de hoy lo pasa a los recordatorios de Omarchy
 (`omarchy reminder <minutos> "<título>"`), y los recordatorios activos de
 Omarchy aparecen en hoy.
+
+**Tus calendarios (Google, Outlook, iCloud, CalDAV).** `icsSources` recibe
+una lista, separada por comas, de calendarios en formato iCalendar, que se
+muestran de solo lectura junto a tus eventos (y avisan igual que ellos).
+Cada uno puede ser:
+
+- **Un enlace iCal privado** (`https://…` o `webcal://…`), que se descarga
+  cada `icsRefresh` minutos. Google Calendar: *Configuración › tu
+  calendario › Integrar el calendario › Dirección secreta en formato
+  iCal*. Outlook.com / Microsoft 365: *Configuración › Calendario ›
+  Calendarios compartidos › Publicar un calendario* (el enlace ICS).
+  iCloud: comparte el calendario como *Calendario público*. Fastmail,
+  Proton y Nextcloud también lo ofrecen.
+- **Una carpeta** de archivos `.ics`, como las que
+  [vdirsyncer](https://github.com/pimutils/vdirsyncer) mantiene
+  sincronizadas desde cualquier servidor CalDAV (Nextcloud, Radicale,
+  iCloud, Fastmail, Google con su soporte CalDAV) con `fileext = ".ics"`.
+- **Un archivo `.ics`** (una exportación, un calendario de festivos…).
+
+```bash
+omarchy bar set thealejandro.island icsSources "~/.local/share/vdirsyncer/calendars, https://calendar.google.com/calendar/ical/…/basic.ics"
+```
+
+Trata un enlace iCal privado como una contraseña: quien lo tenga puede leer
+ese calendario. Se guarda en tu `shell.json`, así que no publiques ese
+archivo en unos dotfiles públicos (o usa la carpeta de vdirsyncer, cuyas
+credenciales viven en su propia configuración). La isla descarga los
+enlaces solo por HTTPS y nunca los escribe en el log. Entiende eventos
+sueltos y repetidos (diarios, semanales, mensuales, anuales, con
+excepciones y ocurrencias movidas), de todo el día y de varios días, y
+husos horarios, y muestra un año antes y después de hoy (hasta 2000
+eventos). Lo que un calendario haga y no entienda se omite en lugar de
+mostrarse mal.
 
 **Otros calendarios.** `agendaCommand` ejecuta un comando al arrancar la
 isla y cada 15 minutos; cada línea que imprima como
