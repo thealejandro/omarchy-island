@@ -24,12 +24,18 @@ toma los colores, la fuente y el acento de tu tema y no reemplaza ni modifica
 nada de Omarchy. Si lo quitas, tu escritorio queda exactamente como estaba.
 
 <p align="center">
-  <img src="docs/island-demo.gif" alt="La isla asomándose al cambiar de canción, mostrando el volumen y abriéndose desde el reloj: música, calendario, temporizador y dock" width="600">
+  <img src="docs/island-demo.gif" alt="La isla asomándose con la canción actual, abriéndose desde el reloj y pasando por Calendario con la agenda, Notificaciones y Ajustes" width="600">
 </p>
 
-| Abierta | Vistazo |
+| Inicio | Vistazo |
 | --- | --- |
-| ![Isla abierta](docs/island-open.png) | ![Vistazo al cambiar de canción](docs/island-peek.png) |
+| ![Isla abierta en Inicio: próximos eventos, música, temporizador y dock](docs/island-open.png) | ![Vistazo con la canción actual](docs/island-peek.png) |
+| **Calendario** | **Notificaciones** |
+| ![Calendario con la agenda de hoy y los próximos días](docs/island-calendar.png) | ![Historial de notificaciones con Silencio y Borrar historial](docs/island-notifications.png) |
+| **Ajustes** | **Barra a la izquierda** |
+| ![Ajustes, pestaña General](docs/island-settings.png) | ![La isla colgando de una barra a la izquierda](docs/island-bar-left.png) |
+| **Barra abajo** | |
+| ![La isla subiendo desde una barra abajo](docs/island-bar-bottom.png) | |
 
 ## Funciones
 
