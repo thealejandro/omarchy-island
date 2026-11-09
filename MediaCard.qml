@@ -82,7 +82,8 @@ Column {
         }
         Text {
           anchors.verticalCenter: parent.verticalCenter
-          text: root.island.source
+          text: root.island.lyricsState === "synced" ? root.island.source + " · " + root.island.tr("lyricsBy") : root.island.source
+          textFormat: Text.PlainText
           color: Commons.Color.accent
           font.family: Style.font.family
           font.pixelSize: Style.font.caption
@@ -107,6 +108,59 @@ Column {
         color: root.dimColor
         font.family: Style.font.family
         font.pixelSize: Style.font.body
+      }
+    }
+  }
+
+  // The synced lyric: the line being sung and the one after it. Both are
+  // always single lines, so the box keeps its height and the card doesn't
+  // jump between lines. Only there when the song has timed lyrics
+  // (lrclib.net, off unless turned on).
+  Item {
+    id: lyric
+    width: parent.width
+    height: lyricLines.implicitHeight
+    visible: root.island.hasMedia && root.island.lyricsState === "synced"
+    clip: true
+    Accessible.role: Accessible.StaticText
+    Accessible.name: root.island.tr("a11y_lyric", root.island.lyricLine)
+
+    // A new line eases in; with animations off it just changes.
+    Connections {
+      target: root.island
+      function onLyricLineChanged() { if (root.island.animate && lyric.visible) lineIn.restart() }
+    }
+    ParallelAnimation {
+      id: lineIn
+      NumberAnimation { target: line; property: "opacity"; from: 0.35; to: 1; duration: 160; easing.type: Easing.OutCubic }
+      NumberAnimation { target: lineShift; property: "y"; from: Style.space(4); to: 0; duration: 160; easing.type: Easing.OutCubic }
+    }
+
+    Column {
+      id: lyricLines
+      width: parent.width
+      spacing: Style.spacing.xs
+      Text {
+        id: line
+        width: parent.width
+        elide: Text.ElideRight
+        textFormat: Text.PlainText
+        // In an instrumental gap there is no line: a quiet ellipsis.
+        text: root.island.lyricLine !== "" ? root.island.lyricLine : "…"
+        color: root.island.lyricLine !== "" ? root.textColor : root.dimColor
+        font.family: Style.font.family
+        font.pixelSize: Style.font.body
+        transform: Translate { id: lineShift }
+      }
+      Text {
+        width: parent.width
+        elide: Text.ElideRight
+        textFormat: Text.PlainText
+        // Kept a line tall when empty (the last line of the song).
+        text: root.island.lyricNext !== "" ? root.island.lyricNext : " "
+        color: Util.alpha(root.textColor, 0.5)
+        font.family: Style.font.family
+        font.pixelSize: Style.font.caption
       }
     }
   }
