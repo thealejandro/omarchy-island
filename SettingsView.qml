@@ -238,7 +238,7 @@ Column {
                 source: root.island.iconUrl
                 tinted: root.island.iconTinted
                 tint: Commons.Color.accent
-                detailTint: Commons.Color.accent
+                detailTint: Commons.Color.foreground
                 along: Style.space(36)
                 across: Style.space(12)
               }

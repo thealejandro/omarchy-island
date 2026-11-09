@@ -23,7 +23,7 @@ test("safeName: bare .svg or .png names only", () => {
 })
 
 test("resolve: bare names are built-ins, files carry an extension", () => {
-  assert.deepEqual(plain(Ic.BUILTINS), ["glasses", "isle", "prompt", "capsule", "braces", "mark", "archipelago", "swell", "channel", "fold", "branch"])
+  assert.deepEqual(plain(Ic.BUILTINS), ["glasses", "isle", "prompt", "capsule", "braces", "mark", "archipelago", "swell", "channel", "fold"])
   for (const b of Ic.BUILTINS) assert.deepEqual(plain(Ic.resolve(b)), { builtin: b })
   assert.deepEqual(plain(Ic.resolve("mark.svg")), { file: "mark.svg" })
   assert.deepEqual(plain(Ic.resolve("rocket.png")), { file: "rocket.png" })

@@ -413,7 +413,7 @@ PanelWindow {
       tint: Commons.Color.accent
       // No blue in the palette (foreground, background, accent, urgent, muted):
       // the glasses' dot takes the accent too. One line to change.
-      detailTint: Commons.Color.accent
+      detailTint: Commons.Color.foreground
       along: win.notchLength - 2 * Style.space(6)
       across: win.notchDepth - 2 * Style.space(3)
       vertical: win.vertical

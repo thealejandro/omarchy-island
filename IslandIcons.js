@@ -6,7 +6,7 @@
 // Service.qml and drawn by IdleIcon.qml.
 
 // Bare names. Anything else has to be a file name with an extension.
-var BUILTINS = ["glasses", "isle", "prompt", "capsule", "braces", "mark", "archipelago", "swell", "channel", "fold", "branch"]
+var BUILTINS = ["glasses", "isle", "prompt", "capsule", "braces", "mark", "archipelago", "swell", "channel", "fold"]
 
 // The glance runs one phase from 0 to 3 through four keyframes: rest, A, B,
 // rest. Everything that moves is a list of four keyframes and sample().
@@ -30,11 +30,10 @@ var GLYPHS = {
   capsule: { file: "capsule", w: 32, h: 12, dot: { r: 2.2, keys: track([16, 6], [24.5, 6], [7.5, 6]) } },
   braces: { file: "braces", w: 32, h: 12, dot: { r: 2, keys: track([16, 6], [20.5, 6], [11.5, 6]) } },
   mark: { file: "mark-ring", w: 24, h: 24, dot: { r: 3.5, keys: track([12, 12], [15, 12], [9, 12]) } },
-  archipelago: { file: "archipelago", w: 24, h: 24 },
-  swell: { file: "swell", w: 24, h: 24 },
+  archipelago: { file: "archipelago", w: 22, h: 11 },
+  swell: { file: "swell", w: 22, h: 13 },
   channel: { file: "channel", w: 32, h: 12 },
-  fold: { file: "fold", w: 32, h: 12 },
-  branch: { file: "branch", w: 32, h: 12 }
+  fold: { file: "fold", w: 32, h: 12 }
 }
 
 function glyph(name) {
