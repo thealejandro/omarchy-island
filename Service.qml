@@ -1168,6 +1168,7 @@ Item {
     markSeen()
     // Another page ends the keyboard mode, which only walks notifications.
     if (keyboardMode && page !== "notifications") stopKeyboard(false)
+    refreshIconsForSettings()
   }
 
   function notifyProbeOk() { _probeTries = 0 }
@@ -1388,7 +1389,6 @@ Item {
 
   function refreshIcons() { if (!iconList.running) iconList.running = true }
   function refreshIconsForSettings() { if (isOpen && page === "settings") refreshIcons() }
-  onPageChanged: refreshIconsForSettings()
   onIconWantedChanged: if (iconWanted) refreshIcons()
   // A named file that was not in the last listing: look again.
   onIconFileNameChanged: if (iconWanted && iconFileName !== "" && iconFiles.indexOf(iconFileName) === -1) refreshIcons()
@@ -1450,15 +1450,36 @@ Item {
   function fireGlance() { _lastGlance = Date.now(); idleGlance() }
   // Something happened (new unread, new track, an agent waiting): glance now,
   // unless one just did.
+  // The event usually opens a peek a moment later, which hides the icon: so
+  // the glance waits a little, and if the icon is hidden by then, until it is back.
+  property bool _nudgePending: false
   function nudge() {
-    if (!motionActive || !IslandIdle.canNudge(_lastGlance, Date.now())) return
-    fireGlance()
-    glanceTick.arm()
+    if (idleNotch !== "icon" || !cfg.idleMotion || !animate) return
+    _nudgePending = true
+    pendingGlance.interval = 1500
+    pendingGlance.restart()
   }
-  onMotionActiveChanged: if (motionActive) glanceTick.arm(); else glanceTick.stop()
+  Timer {
+    id: pendingGlance
+    onTriggered: {
+      if (!root.motionActive || !root._nudgePending) return
+      root._nudgePending = false
+      if (!IslandIdle.canNudge(root._lastGlance, Date.now())) return
+      root.fireGlance()
+      glanceTick.arm()
+    }
+  }
+  onMotionActiveChanged: {
+    if (motionActive) {
+      glanceTick.arm()
+      if (_nudgePending) { pendingGlance.interval = 600; pendingGlance.restart() }
+    } else { glanceTick.stop(); pendingGlance.stop() }
+  }
   property int _lastUnread: 0
+  // The history loading at startup is not news.
+  readonly property real _startedAt: Date.now()
   onUnreadChanged: {
-    if (unread > _lastUnread) nudge()
+    if (unread > _lastUnread && Date.now() - _startedAt > 5000) nudge()
     _lastUnread = unread
   }
   onAgentsWaitingChanged: if (agentsWaiting) nudge()
