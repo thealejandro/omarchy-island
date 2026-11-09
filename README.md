@@ -160,6 +160,12 @@ omarchy plugin enable omarchy.notifications; omarchy plugin enable omarchy.osd
   panels open on top of it.
 - Pick a page from the tabs in the top corner. A click on a day of the
   small calendar opens the Calendar page on that day.
+- With the island pinned, the keyboard works too: click it (or run
+  `omarchy-shell island keyboard`) and Tab walks its tabs, buttons and
+  settings with a visible ring, Space or Enter presses, ←/→ change page,
+  section or choice and step numbers, and Esc closes it. Hovering it open
+  never takes the keyboard from your window. Every icon button has a name
+  for screen readers. Off with `keyboard: false`.
 - Toggle it from a key, in `~/.config/hypr/bindings.lua`:
 
   ```lua
@@ -173,6 +179,7 @@ IPC (`omarchy-shell island <method>`):
 | `toggle` | Pin the island open / closed             |
 | `open`   | Pin it open                              |
 | `close`  | Close it                                 |
+| `keyboard` | Pin it open and take the keyboard (Tab to move, Esc to leave); again lets go |
 | `page <name>` | Open it on `home`, `calendar`, `world`, `notifications` or `settings` |
 | `notifications <island\|off>` | Take Omarchy's notifications or give them back (see [Notifications](#notifications)) |
 | `peek`   | Show the short glance                    |
@@ -214,6 +221,7 @@ the island's own keys and nothing else.
 | `anchor` | `clock`, `widget`, `center` | `clock` | Hang from Omarchy's clock, from the island's own spot on the bar, or the bar's center |
 | `clockWidth` | 60–400 | `120` | Hover zone when the clock can't be found |
 | `hoverOpen` | `true`, `false` | `true` | Open on hover at all |
+| `keyboard` | `true`, `false` | `true` | Walk the pinned island with Tab, Space and the arrows |
 | `hoverDelay` | 0–600 ms | `120` | Wait before opening on hover |
 | `peekDuration` | 1000–10000 ms | `3500` | How long a peek stays |
 | `toggles` | `island`, `both`, `bar` | `island` | Where Omarchy's quick toggles live |
