@@ -6,6 +6,8 @@
 //! (`LyricsModel.js`, `IslandSettings.js`); both sides keep the same limits.
 
 pub mod lyrics;
+pub mod shape;
+pub mod spring;
 
 /// Version of the desktop apps, from the workspace.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
