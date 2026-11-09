@@ -6,6 +6,13 @@ project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Fixed
+
+- Settings: a row whose control is too wide (Closed island, with six
+  choices) now puts the label on top instead of cutting it to a couple
+  of letters, and the icon picker wraps from the last icon to the first
+  and back. (#66)
+
 ## [0.10.0] - 2026-11-09
 
 ### Added

@@ -20,6 +20,9 @@ Item {
   property string rightGlyph: "󰐕"
   property string leftLabel: "−"
   property string rightLabel: "+"
+  // Past either end, start again from the other one (a list to browse rather
+  // than a number with limits). Both arrows then stay lit.
+  property bool wrap: false
   signal stepped(int value)
 
   implicitWidth: row.implicitWidth
@@ -33,7 +36,13 @@ Item {
   Accessible.focusable: true
 
   function bump(delta) {
-    var next = Math.max(from, Math.min(to, value + delta * step))
+    var next = value + delta * step
+    if (wrap && to > from) {
+      var span = to - from + 1
+      next = from + (((next - from) % span) + span) % span
+    } else {
+      next = Math.max(from, Math.min(to, next))
+    }
     if (next !== value) stepped(next)
   }
 
@@ -48,7 +57,7 @@ Item {
       tabbable: false
       size: Style.space(22)
       glyphSize: Style.font.bodySmall
-      opacity: root.value > root.from ? 1 : 0.35
+      opacity: root.wrap || root.value > root.from ? 1 : 0.35
       onClicked: root.bump(-1)
     }
     Text {
@@ -69,7 +78,7 @@ Item {
       tabbable: false
       size: Style.space(22)
       glyphSize: Style.font.bodySmall
-      opacity: root.value < root.to ? 1 : 0.35
+      opacity: root.wrap || root.value < root.to ? 1 : 0.35
       onClicked: root.bump(1)
     }
   }
