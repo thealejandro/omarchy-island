@@ -20,7 +20,11 @@ var ALIASES = {
   fail: "error", failed: "error",
   end: null, exit: null, clear: null
 }
-var MAX_SESSIONS = 12
+// Up to 64 sessions; past that the oldest finished, idle or failed ones go,
+// then the oldest working one. One that waits for you is never dropped for
+// room: only a hard ceiling (for a hook gone wild) can take one.
+var MAX_SESSIONS = 64
+var MAX_HARD = 128
 var MAX_NAME = 32
 var MAX_ID = 64
 var MAX_LABEL = 48
@@ -129,8 +133,10 @@ function trim(list, keep) {
   var out = list.slice()
   while (out.length > MAX_SESSIONS) {
     var victim = -1
-    // Oldest finished, failed or idle first, then working, then waiting.
-    var tiers = [["done", "error", "idle"], ["working"], ["waiting"]]
+    // Oldest finished, failed or idle first, then working; waiting ones only
+    // past the hard ceiling.
+    var tiers = [["done", "error", "idle"], ["working"]]
+    if (out.length > MAX_HARD) tiers.push(["waiting"])
     for (var t = 0; t < tiers.length && victim < 0; t++) {
       for (var i = 0; i < out.length; i++) {
         if (out[i].key === keep || tiers[t].indexOf(out[i].state) === -1) continue

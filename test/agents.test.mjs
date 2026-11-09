@@ -120,28 +120,46 @@ test("update: dirty fields are cleaned", () => {
   assert.equal(r.session.address, "")
 })
 
-test("at most 12 sessions: finished ones go before working ones, waiting last", () => {
+test("at most 64 sessions: finished ones go first, then working, never one that waits", () => {
+  const MAX = AM.MAX_SESSIONS, HARD = AM.MAX_HARD
+  assert.equal(MAX, 64)
+  assert.equal(HARD, 128)
   let list = []
   let t = 0
-  const add = (name, state) => { list = AM.update(list, { agent: "a" + name, state }, ++t).list }
+  const add = (id, state) => { list = AM.update(list, { agent: "claude", id, state }, ++t).list }
+  const has = (id) => list.some(s => s.id === id)
   add("w1", "working")
   add("q1", "waiting")
-  for (let i = 0; i < 10; i++) add("d" + i, "done")
-  assert.equal(list.length, 12)
+  for (let i = 0; i < MAX - 2; i++) add("d" + i, "done")
+  assert.equal(list.length, MAX)
   add("n", "working")
-  assert.equal(list.length, 12)
-  assert.ok(!list.some(s => s.agent === "ad0"), "the oldest done one went")
-  assert.ok(list.some(s => s.agent === "aw1") && list.some(s => s.agent === "aq1"))
+  assert.equal(list.length, MAX)
+  assert.ok(!has("d0"), "the oldest done one went")
+  assert.ok(has("w1") && has("q1"))
   // Only working and waiting left: the oldest working one goes.
   list = []
   t = 0
   add("q", "waiting")
-  for (let i = 0; i < 11; i++) add("w" + i, "working")
+  for (let i = 0; i < MAX - 1; i++) add("w" + i, "working")
   add("x", "working")
-  assert.equal(list.length, 12)
-  assert.ok(list.some(s => s.agent === "aq"))
-  assert.ok(!list.some(s => s.agent === "aw0"))
-  assert.equal(list[0].agent, "ax")
+  assert.equal(list.length, MAX)
+  assert.ok(has("q"))
+  assert.ok(!has("w0"))
+  assert.equal(list[0].id, "x")
+  // Everyone waits: nobody is dropped for room, up to the hard ceiling.
+  list = []
+  t = 0
+  for (let i = 0; i < MAX + 10; i++) add("q" + i, "waiting")
+  assert.equal(list.length, MAX + 10)
+  assert.ok(has("q0"))
+  add("late", "working")
+  assert.equal(list.length, MAX + 11, "a new working one still gets in")
+  assert.ok(has("late") && has("q0"))
+  // Past the ceiling the oldest waiting one goes, and the list never grows more.
+  for (let i = MAX + 10; i < HARD + 20; i++) add("q" + i, "waiting")
+  assert.equal(list.length, HARD)
+  assert.ok(!has("q0"))
+  assert.ok(has("q" + (HARD + 19)))
 })
 
 test("remove, removeAgent, setWindow, markPeeked", () => {

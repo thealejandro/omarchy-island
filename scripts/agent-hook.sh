@@ -13,6 +13,11 @@
 # shell running, a payload that isn't JSON) this exits 0 without a word.
 # The working directory is sent to the island, which keeps only the name of
 # its last folder.
+#
+# It runs on every event of every session, so it stays cheap: events the
+# island doesn't use stop after one jq, and Hyprland is only asked for the
+# agent's window when a session starts working or waits for you (the island
+# keeps the window it was given for the events after).
 set -euo pipefail
 trap 'exit 0' ERR
 
@@ -36,11 +41,31 @@ if [[ -z $payload && ! -t 0 ]]; then
 fi
 [[ -n $payload ]] || payload='{}'
 
+# The state, from the argument or the hook's event; nothing for events the
+# island doesn't show (subagents, other notifications).
+state=$(jq -r --arg state "$state" '
+  (if type == "object" then . else {} end) as $input
+  | ($input.hook_event_name // "") as $event
+  | ($input.notification_type // "") as $kind
+  | if $state != "" then $state
+    elif ($input | has("agent_id")) then ""
+    elif $event == "UserPromptSubmit" then "working"
+    elif $event == "PermissionRequest" then "waiting"
+    elif $event == "Notification" then
+      (if ($kind | test("^(permission_prompt|elicitation_dialog|agent_needs_input)$")) then "waiting"
+       elif $kind == "idle_prompt" then "idle" else "" end)
+    elif $event == "Stop" then "done"
+    elif $event == "StopFailure" then "error"
+    elif $event == "SessionEnd" then "end"
+    else "" end' <<<"$payload" 2>/dev/null || true)
+[[ -n $state ]] || exit 0
+
 # The window the agent runs in: the nearest ancestor of this process that
 # Hyprland has a window for, so a click in the island can bring it up.
 address=""
 pid=""
-if [[ -n ${HYPRLAND_INSTANCE_SIGNATURE:-} ]] && command -v hyprctl >/dev/null 2>&1; then
+if [[ $state == working || $state == waiting ]] \
+    && [[ -n ${HYPRLAND_INSTANCE_SIGNATURE:-} ]] && command -v hyprctl >/dev/null 2>&1; then
   declare -A windows=()
   clients=$(timeout 2 hyprctl clients -j 2>/dev/null || true)
   while read -r p a; do
@@ -59,29 +84,15 @@ if [[ -n ${HYPRLAND_INSTANCE_SIGNATURE:-} ]] && command -v hyprctl >/dev/null 2>
   done
 fi
 
-message=$(jq -c -n --arg agent "$agent" --arg state "$state" --arg pid "$pid" --arg address "$address" \
-  --argjson input "$(jq -c 'if type == "object" then . else {} end' <<<"$payload" 2>/dev/null || echo '{}')" '
-  def event: $input.hook_event_name // "";
-  def kind: $input.notification_type // "";
-  ( if $state != "" then $state
-    elif ($input | has("agent_id")) then ""
-    elif event == "UserPromptSubmit" then "working"
-    elif event == "PermissionRequest" then "waiting"
-    elif event == "Notification" then
-      (if (kind | test("^(permission_prompt|elicitation_dialog|agent_needs_input)$")) then "waiting"
-       elif kind == "idle_prompt" then "idle" else "" end)
-    elif event == "Stop" then "done"
-    elif event == "StopFailure" then "error"
-    elif event == "SessionEnd" then "end"
-    else "" end ) as $s
-  | if $s == "" then empty else
-      { agent: $agent, state: $s,
-        id: ($input.session_id // $input["thread-id"] // $input.thread_id // ""),
-        cwd: ($input.cwd // ""),
-        message: (if event == "Notification" then (($input.message // "") | tostring | .[0:160]) else "" end) }
-      + (if $pid != "" then { pid: $pid } else {} end)
-      + (if $address != "" then { address: $address } else {} end)
-    end' 2>/dev/null || true)
+message=$(jq -c --arg agent "$agent" --arg state "$state" --arg pid "$pid" --arg address "$address" '
+  (if type == "object" then . else {} end) as $input
+  | { agent: $agent, state: $state,
+      id: ($input.session_id // $input["thread-id"] // $input.thread_id // ""),
+      cwd: ($input.cwd // ""),
+      message: (if ($input.hook_event_name // "") == "Notification"
+                then (($input.message // "") | tostring | .[0:160]) else "" end) }
+  + (if $pid != "" then { pid: $pid } else {} end)
+  + (if $address != "" then { address: $address } else {} end)' <<<"$payload" 2>/dev/null || true)
 
 [[ -n $message ]] || exit 0
 timeout 3 omarchy-shell -q island agentJson "$message" >/dev/null 2>&1 || true
