@@ -48,12 +48,14 @@ Column {
       spacing: Style.spacing.xs
       IslandButton {
         glyph: root.folded ? "󰅀" : "󰅃"
+        label: root.island.tr(root.folded ? "a11y_unfold" : "a11y_fold")
         size: Style.space(22)
         glyphSize: Style.font.bodySmall
         onClicked: root.foldToggled()
       }
       IslandButton {
         glyph: "󰅖"
+        label: root.island.tr("a11y_closeGroup")
         size: Style.space(22)
         glyphSize: Style.font.bodySmall
         onClicked: root.island.notify.dismissGroup(root.group.key)

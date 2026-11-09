@@ -109,8 +109,8 @@ Column {
     Row {
       anchors.right: parent.right
       anchors.verticalCenter: parent.verticalCenter
-      IslandButton { glyph: "󰅁"; size: Style.space(24); glyphSize: Style.font.icon; onClicked: root.shift(-1) }
-      IslandButton { glyph: "󰅂"; size: Style.space(24); glyphSize: Style.font.icon; onClicked: root.shift(1) }
+      IslandButton { glyph: "󰅁"; label: root.island.tr("a11y_prevMonth"); size: Style.space(24); glyphSize: Style.font.icon; onClicked: root.shift(-1) }
+      IslandButton { glyph: "󰅂"; label: root.island.tr("a11y_nextMonth"); size: Style.space(24); glyphSize: Style.font.icon; onClicked: root.shift(1) }
     }
   }
 

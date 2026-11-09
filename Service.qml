@@ -80,6 +80,24 @@ Item {
   property bool wantsKeyboard: false
   onWantsKeyboardChanged: if (!wantsKeyboard && keyboardMode) stopKeyboard(false)
 
+  // ------------------------------------------------------------- keyboard navigation
+
+  // A pinned island can be walked with Tab (setting "keyboard"): it takes
+  // the keyboard when clicked, never on hover. `island keyboard` pins it
+  // and takes the keyboard straight away (keyboardGrab) until Esc or close.
+  readonly property bool keyboardNav: cfg.keyboard
+  property bool keyboardGrab: false
+  onPinnedChanged: if (!pinned) keyboardGrab = false
+  // A text field let go of the keyboard: navigation goes on from the island.
+  signal keyboardHome()
+  function grabKeyboard() {
+    if (!keyboardNav) return false
+    pinned = true
+    keyboardGrab = true
+    keyboardHome()
+    return true
+  }
+
   // ------------------------------------------------------------- keyboard mode
 
   // Omarchy's `notifications keyboard`: the island opens on its
@@ -470,6 +488,7 @@ Item {
     calendarDay = ""
     tabHint = ""
     wantsKeyboard = false
+    keyboardGrab = false
     page = defaultPage
   }
 
@@ -1146,6 +1165,12 @@ Item {
     function open(): string { root.pinned = true; return "ok" }
     function close(): string { root.pinned = false; root.peeking = false; return "ok" }
     function peek(): string { root.peek("ipc"); return "ok" }
+    // Opens the island and takes the keyboard to walk it with Tab; again
+    // (or Esc) lets go and closes it. "off" when the setting is off.
+    function keyboard(): string {
+      if (root.keyboardGrab) { root.pinned = false; return "closed" }
+      return root.grabKeyboard() ? "open" : "off"
+    }
     function timer(): string { root.toggleTimer(); return root.timerRunning ? "running" : "paused" }
     function focus(minutes: int): string {
       return root.setFocusMinutes(minutes) ? String(root.focusMinutes) : "busy"
@@ -1157,7 +1182,7 @@ Item {
         focusMinutes: root.focusMinutes, lang: root.lang, page: root.page, osd: root.osdEnabled,
         battery: root.batteryLevel, charging: root.charging,
         notifications: root.notificationsLive ? "island" : (root.notificationsStandby ? "standby" : "off"),
-        unread: root.unread, dnd: root.doNotDisturb })
+        unread: root.unread, dnd: root.doNotDisturb, keyboard: root.keyboardGrab })
     }
     function ping(): string { return "ok" }
     // Opens the island on one of its pages: home, calendar, world,

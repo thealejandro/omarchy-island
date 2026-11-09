@@ -173,6 +173,13 @@ omarchy plugin enable omarchy.notifications; omarchy plugin enable omarchy.osd
   clicables y sus paneles se abren encima.
 - Elige página en las pestañas de la esquina. Un clic en un día del
   calendario pequeño abre la página Calendario en ese día.
+- Con la isla fijada también funciona el teclado: haz clic en ella (o
+  ejecuta `omarchy-shell island keyboard`) y Tab recorre sus pestañas,
+  botones y ajustes con un anillo visible, Espacio o Enter pulsan, ←/→
+  cambian de página, sección u opción y suben o bajan números, y Esc la
+  cierra. Abrirla al pasar el puntero nunca le quita el teclado a tu
+  ventana. Todos los botones de icono tienen nombre para lectores de
+  pantalla. Se desactiva con `keyboard: false`.
 - Para abrirla con una tecla, en `~/.config/hypr/bindings.lua`:
 
   ```lua
@@ -186,6 +193,7 @@ IPC (`omarchy-shell island <método>`):
 | `toggle`      | Fija la isla abierta / cerrada                  |
 | `open`        | La fija abierta                                 |
 | `close`       | La cierra                                       |
+| `keyboard`    | La fija y toma el teclado (Tab para moverse, Esc para salir); otra vez lo suelta |
 | `page <nombre>` | La abre en `home`, `calendar`, `world`, `notifications` o `settings` |
 | `notifications <island\|off>` | Toma las notificaciones de Omarchy o se las devuelve (ver [Notificaciones](#notificaciones)) |
 | `peek`        | Muestra el vistazo                              |
@@ -226,6 +234,7 @@ quita solo las claves propias de la isla.
 | `anchor` | `clock`, `widget`, `center` | `clock` | Colgar del reloj de Omarchy, del sitio de la isla en la barra o del centro |
 | `clockWidth` | 60–400 | `120` | Zona de hover si no se encuentra el reloj |
 | `hoverOpen` | `true`, `false` | `true` | Abrir al pasar el puntero |
+| `keyboard` | `true`, `false` | `true` | Recorrer la isla fijada con Tab, Espacio y las flechas |
 | `hoverDelay` | 0–600 ms | `120` | Espera antes de abrir al pasar |
 | `peekDuration` | 1000–10000 ms | `3500` | Duración de un vistazo |
 | `toggles` | `island`, `both`, `bar` | `island` | Dónde viven los toggles de Omarchy |

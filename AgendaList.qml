@@ -62,6 +62,7 @@ Column {
       anchors.verticalCenter: parent.verticalCenter
       visible: root.editing === null
       glyph: "󰐕"
+      label: root.tr("a11y_add")
       size: Style.space(24)
       glyphSize: Style.font.icon
       onClicked: root.editing = ({})
@@ -154,6 +155,7 @@ Column {
           IslandButton {
             visible: root.isToday && row.modelData.time !== "" && row.minutes > 0
             glyph: "󰂚"
+            label: root.tr("a11y_remind")
             size: Style.space(22)
             glyphSize: Style.font.caption + Style.space(2)
             onClicked: root.notice = root.island.remindViaOmarchy(row.modelData, root.day)

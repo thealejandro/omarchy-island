@@ -29,6 +29,17 @@ Item {
     property bool on: false
     signal clicked()
 
+    activeFocusOnTab: visible
+    Keys.onSpacePressed: button.clicked()
+    Keys.onReturnPressed: button.clicked()
+    Keys.onEnterPressed: button.clicked()
+    Accessible.role: Accessible.Button
+    Accessible.name: label
+    Accessible.onPressAction: button.clicked()
+    onActiveFocusChanged: {
+      if (activeFocus) root.hint = button.label
+      else if (root.hint === button.label) root.hint = ""
+    }
     width: root.buttonSize
     height: root.buttonSize
     radius: Style.space(10)
@@ -66,11 +77,13 @@ Item {
       anchors.centerIn: parent
       text: button.glyph
       color: button.on ? Commons.Color.accent : root.textColor
-      opacity: button.on || mouse.containsMouse ? 1 : 0.75
+      opacity: button.on || mouse.containsMouse || button.activeFocus ? 1 : 0.75
       Behavior on opacity { NumberAnimation { duration: 160 } }
       font.family: Style.font.family
       font.pixelSize: Style.font.body + Style.space(3)
     }
+
+    IslandFocusRing { radius: button.radius + Style.space(2) }
 
     MouseArea {
       id: mouse

@@ -27,6 +27,7 @@ var SCHEMA = [
   { key: "anchor", type: "enum", options: ["clock", "widget", "center"], def: "clock", section: "open" },
   { key: "clockWidth", type: "int", min: 60, max: 400, step: 10, def: 120, section: "open" },
   { key: "hoverOpen", type: "bool", def: true, section: "open" },
+  { key: "keyboard", type: "bool", def: true, section: "open" },
   { key: "hoverDelay", type: "int", min: 0, max: 600, step: 20, def: 120, section: "open" },
   { key: "peekDuration", type: "int", min: 1000, max: 10000, step: 500, def: 3500, section: "open" },
 

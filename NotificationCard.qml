@@ -186,6 +186,7 @@ Rectangle {
       spacing: Style.spacing.xs
       IslandButton {
         glyph: "󰅖"
+        label: card.island.tr("a11y_close")
         size: Style.space(22)
         glyphSize: Style.font.bodySmall
         opacity: hover.hovered ? 1 : 0.55
@@ -195,6 +196,7 @@ Rectangle {
       IslandButton {
         visible: card.clickable && (body.truncated || card.expanded)
         glyph: card.expanded ? "󰅃" : "󰅀"
+        label: card.island.tr(card.expanded ? "a11y_collapse" : "a11y_expand")
         size: Style.space(22)
         glyphSize: Style.font.bodySmall
         opacity: hover.hovered ? 1 : 0.55

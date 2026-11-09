@@ -144,6 +144,25 @@ var STRINGS = {
     rep_yearly: "Yearly",
     act_reset: "Reset",
     act_openConfig: "Open shell.json",
+    set_keyboard: "Keyboard navigation",
+    hint_keyboard: "Pinned: Tab moves · Space presses · ←→ choose · Esc closes",
+    a11y_pages: "Pages",
+    a11y_sections: "Sections",
+    a11y_add: "Add event",
+    a11y_remind: "Remind me",
+    a11y_close: "Close",
+    a11y_closeGroup: "Close group",
+    a11y_expand: "Show more",
+    a11y_collapse: "Show less",
+    a11y_fold: "Fold group",
+    a11y_unfold: "Unfold group",
+    a11y_reset: "Reset timer",
+    a11y_play: "Play",
+    a11y_pause: "Pause",
+    a11y_prev: "Previous",
+    a11y_next: "Next",
+    a11y_prevMonth: "Previous month",
+    a11y_nextMonth: "Next month",
     note_noEntry: "The island has no entry in shell.json, so changes last until restart. Use “Next to the clock”.",
     note_version: "Tested with Omarchy 4.x; this is %1.",
     note_reset: "Reset removes only the island's own keys.",
@@ -307,6 +326,25 @@ var STRINGS = {
     rep_yearly: "Anual",
     act_reset: "Restablecer",
     act_openConfig: "Abrir shell.json",
+    set_keyboard: "Navegación con teclado",
+    hint_keyboard: "Fijada: Tab avanza · Espacio pulsa · ←→ eligen · Esc cierra",
+    a11y_pages: "Páginas",
+    a11y_sections: "Secciones",
+    a11y_add: "Añadir evento",
+    a11y_remind: "Avisarme",
+    a11y_close: "Cerrar",
+    a11y_closeGroup: "Cerrar grupo",
+    a11y_expand: "Mostrar más",
+    a11y_collapse: "Mostrar menos",
+    a11y_fold: "Plegar grupo",
+    a11y_unfold: "Desplegar grupo",
+    a11y_reset: "Reiniciar temporizador",
+    a11y_play: "Reproducir",
+    a11y_pause: "Pausar",
+    a11y_prev: "Anterior",
+    a11y_next: "Siguiente",
+    a11y_prevMonth: "Mes anterior",
+    a11y_nextMonth: "Mes siguiente",
     note_noEntry: "La isla no tiene entrada en shell.json: los cambios duran hasta reiniciar. Usa «Junto al reloj».",
     note_version: "Probado con Omarchy 4.x; esta es %1.",
     note_reset: "Restablecer solo quita las claves propias de la isla.",
@@ -571,4 +609,17 @@ function batteryIcon(level, charging) {
   var steps = ["\udb80\udc8e", "\udb80\udc7a", "\udb80\udc7b", "\udb80\udc7c", "\udb80\udc7d",
     "\udb80\udc7e", "\udb80\udc7f", "\udb80\udc80", "\udb80\udc81", "\udb80\udc82", "\udb80\udc79"]
   return steps[Math.max(0, Math.min(10, Math.round(level / 10)))]
+}
+
+// The arrow keys on a row of choices (page tabs, setting sections, a
+// segment): the neighbour of current, stopping at both ends; values are
+// compared as JSON so null works too. Something not in the row starts at
+// the first choice.
+function stepChoice(values, current, delta) {
+  if (!values || values.length === 0) return current
+  var key = JSON.stringify(current)
+  var i = -1
+  for (var j = 0; j < values.length; j++) if (JSON.stringify(values[j]) === key) { i = j; break }
+  if (i < 0) return values[0]
+  return values[Math.max(0, Math.min(values.length - 1, i + delta))]
 }

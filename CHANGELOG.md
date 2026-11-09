@@ -30,6 +30,13 @@ project follows [Semantic Versioning](https://semver.org/).
   button, C copies the card's code and Esc leaves. The keyboard is given
   back on Esc, after `notifyKeyboardIdle` without keys (10 s), or when
   the island closes. (#33)
+- The pinned island can be used from the keyboard: click it or run
+  `omarchy-shell island keyboard`, then Tab walks the page tabs, buttons,
+  dock and settings with an accent focus ring; Space or Enter presses,
+  ←/→ change page, settings section or choice and step numbers, and Esc
+  closes it. An island opened by hovering never takes the keyboard. Icon
+  buttons, switches and choices have names and roles for screen readers.
+  New setting `keyboard` (on by default). (#25)
 - Tests for the pure logic in Node (`node --test 'test/*.test.mjs'`), run
   by CI on every pull request.
 
