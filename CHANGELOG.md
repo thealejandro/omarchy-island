@@ -32,6 +32,12 @@ project follows [Semantic Versioning](https://semver.org/).
   is never dropped to make room. `agents`, `agentPeek`, `agentPeekDuration`,
   `agentDot` and `agentStale` in Settings › System. (#12)
 
+### Fixed
+
+- A text field in Settings left with Tab or a click elsewhere no longer
+  keeps showing text that wasn't saved: only Enter saves, and leaving any
+  other way puts the saved value back. (#51)
+
 ## [0.7.0] - 2026-11-09
 
 ### Added
