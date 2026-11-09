@@ -6,6 +6,16 @@ project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- Synced lyrics, off by default: with `lyrics` on, the now-playing card
+  shows the line being sung and the next one, in time with the song, from
+  lrclib.net. Only the artist, title, album and length are sent, at most
+  three requests per song and only when someone could see the lyrics; each
+  answer is cached on this computer for a while. `lyricsPeek` also keeps
+  the current line under the clock, as a glance, while a song plays and the
+  island is closed. One timer per line, nothing polled. (#11)
+
 ## [0.8.0] - 2026-11-09
 
 ### Added

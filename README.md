@@ -54,6 +54,9 @@ as it was.
   keeps them grouped by app, with their actions, replies and links, plus a
   24-hour history. Omarchy's cards step aside while it's on, so nothing
   shows twice. See [Notifications](#notifications).
+- **Synced lyrics** (optional, off by default): the line being sung shows
+  on the open island, or stays under the clock while a song plays. Fetched
+  from lrclib.net. See [Lyrics](#lyrics).
 - **Open**: hover the bar's clock, or just below it (or bind a key), to open
   the island: cover art, source player,
   title, artist, a progress bar you can click or drag, previous / play /
@@ -216,6 +219,8 @@ the island's own keys and nothing else.
 | `defaultPage` | `home`, `calendar`, `world` | `home` | Page the island opens on |
 | `calendarFirst` | `true`, `false` | `false` | What's next on the left on Home |
 | `showMedia`, `showTimer`, `showDock` | `true`, `false` | `true` | Parts of the Home page |
+| `lyrics` | `true`, `false` | `false` | Synced lyrics on the now-playing card, from lrclib.net (needs `showMedia`); see [Lyrics](#lyrics) |
+| `lyricsPeek` | `true`, `false` | `false` | The current line stays under the clock, as a glance, while the island is closed and a song plays (needs `lyrics`) |
 | `animations` | `true`, `false` | `true` | Spring, page and glance motion |
 | `openWidth` | 420–800 | `560` | Width of the open island |
 | `blur` | `true`, `false` | `true` | Blur behind the island with a glassy bar |
@@ -418,6 +423,41 @@ set in Omarchy's weather widget (or by IP), refreshed every 20 minutes.
 **Open forecast** opens Omarchy's weather panel (when the widget is on the
 bar) and **Change location** its place picker, or the file it reads.
 
+## Lyrics
+
+Off by default. With `lyrics: true` (Settings › General › Synced lyrics),
+the now-playing card shows the line being sung and the next one, moving in
+time with the song. With `lyricsPeek: true` the current line also stays
+under the clock, as a glance, while a song plays and the island is closed
+(any other glance takes its turn and the lyric comes back after it).
+
+They come from [lrclib.net](https://lrclib.net), a free community service
+with no account or key. **What leaves your computer**: the artist, title,
+album and length of the song, in a request to lrclib.net, plus the
+`User-Agent` `omarchy-island/<version> (https://github.com/thealejandro/omarchy-island)`.
+Never the file's path or the player's name. **When**: when a new song
+starts while the island is open (or with `lyricsPeek` on), and when you open
+it on a song it hasn't looked up; at most three requests per song, one after
+another. With the setting off, which is the default, nothing is requested
+and nothing is loaded. Names with "(Remastered)", "feat. …" and the like
+are tried again without them, and then by a search.
+
+**What is kept**: each answer, found or not, in
+`~/.cache/omarchy/island/lyrics` (or under `$XDG_CACHE_HOME`): up to 400
+songs, found ones for 90 days, missing ones for a day. A cached song is
+shown without asking again. To clear it: `rm -r ~/.cache/omarchy/island/lyrics`.
+
+Only lyrics with timestamps are shown; unsynced and instrumental ones show
+nothing. They can be missing, wrong or a little off for some songs (lrclib
+matches the length to within two seconds, and some players, a browser
+playing a video for one, report it badly). Lyrics are written by lrclib.net's
+contributors and the card says where they came from.
+
+The line follows the player's real position: seeking, pausing and changing
+speed are picked up, and there is no polling (see [Performance](#performance)).
+`omarchy-shell island state` shows `lyrics` (`off`, `idle`, `loading`,
+`synced`, `plain`, `instrumental`, `none`) and the current `lyric`.
+
 ## Microphone and camera
 
 While an app records from the microphone, an orange dot sits just past the
@@ -577,6 +617,9 @@ unloaded.
   first visible frame comes about 24 ms after the island starts opening
   (0.5.0: 25 ms), with no frame over 25 ms while it opens or closes.
 - The track position only ticks while music plays and the island is open.
+- Lyrics, when on, use one timer that waits for the next line (not a poll)
+  and reads the player's position each time it fires. With the island
+  closed it does nothing, unless `lyricsPeek` is on.
 
 ## Compatibility
 
@@ -653,6 +696,7 @@ node --test 'test/*.test.mjs'
 | `IslandModel.js`   | Pure helpers: player choice, clock, strings, month grid, weather, world times |
 | `AgendaModel.js`   | Pure helpers for events: repeats, upcoming, reminders, external lines |
 | `IcsModel.js`, `scripts/ics-fetch.sh` | iCalendar calendars: parsing, repeats, time zones; fetching folders, files and links |
+| `LyricsService.qml`, `LyricsModel.js`, `scripts/lyrics-fetch.sh` | Synced lyrics: lrclib.net lookup and cache, LRC parsing, following the song |
 | `PrivacyService.qml`, `PrivacyModel.js` | Who uses the microphone or the camera (PipeWire, fuser) |
 | `AgentModel.js`, `scripts/agent-hook.sh` | AI agents' status: sessions, cleaning, expiry; the hook script for Claude Code, Codex and others |
 | `IslandWindow.qml` | Per-screen layer surface, input mask, hover, bar clicks, motion |
