@@ -4,6 +4,15 @@ All notable changes to this project are documented here. The format is
 based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and the
 project follows [Semantic Versioning](https://semver.org/).
 
+## [0.6.2] - 2026-11-08
+
+### Fixed
+
+- Moving the bar (`omarchy bar position …`) while the island was open by
+  hovering no longer leaves it stuck open at the new edge: the window moved
+  away from under the pointer without a leave event, so the hover is now
+  reset whenever the bar changes edge.
+
 ## [0.6.1] - 2026-11-08
 
 ### Fixed

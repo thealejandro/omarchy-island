@@ -49,6 +49,9 @@ PanelWindow {
   readonly property real clockLength: anchorInfo ? anchorInfo.length : Style.space(island.clockWidth)
 
   property bool hovered: false
+  // Moving the bar moves the window away from under the pointer without a
+  // leave event, so a hover that was open would stay stuck open.
+  onEdgeChanged: { enterTimer.stop(); leaveTimer.stop(); hovered = false }
   readonly property bool expanded: hovered || island.pinned
   readonly property bool peeking: !expanded && island.peeking
   readonly property string mode: expanded ? "open" : (peeking ? "peek" : "closed")
