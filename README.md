@@ -25,12 +25,18 @@ replace or modify anything in Omarchy. Remove it and your desktop is exactly
 as it was.
 
 <p align="center">
-  <img src="docs/island-demo.gif" alt="The island peeking on a track change, showing the volume and opening from the clock: now playing, calendar, focus timer and dock" width="600">
+  <img src="docs/island-demo.gif" alt="The island peeking with the current track, then opening from the clock and walking through Calendar with the agenda, Notifications and Settings" width="600">
 </p>
 
-| Open | Peek |
+| Home | Peek |
 | --- | --- |
-| ![Open island](docs/island-open.png) | ![Peek after a track change](docs/island-peek.png) |
+| ![Open island on Home: next events, now playing, focus timer and dock](docs/island-open.png) | ![Peek with the current track](docs/island-peek.png) |
+| **Calendar** | **Notifications** |
+| ![Calendar with today's agenda and the next days](docs/island-calendar.png) | ![Notification history with Silence and Clear history](docs/island-notifications.png) |
+| **Settings** | **Bar on the left** |
+| ![Settings, General tab](docs/island-settings.png) | ![The island hanging from a bar on the left](docs/island-bar-left.png) |
+| **Bar at the bottom** | |
+| ![The island rising from a bar at the bottom](docs/island-bar-bottom.png) | |
 
 ## Features
 
