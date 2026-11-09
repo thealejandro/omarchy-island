@@ -18,6 +18,11 @@ project follows [Semantic Versioning](https://semver.org/).
   it's still there; codes are never saved with the history. Only a number
   near a word like *code*, *verification* or *código* counts, so order
   numbers, years and "Claude Code 2.1" don't. (#31)
+- Clicking a notification that has no action of its own goes to its
+  sender, like Omarchy: the sending process's window or the app's window,
+  the site's browser tab for web notifications, else the site's front page
+  or the link in the text. Earlier notifications can be clicked too; the
+  arrow under the close button shows the whole text. (#32)
 - Tests for the pure logic in Node (`node --test 'test/*.test.mjs'`), run
   by CI on every pull request.
 

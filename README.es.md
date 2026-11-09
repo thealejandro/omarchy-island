@@ -284,6 +284,12 @@ servidor de notificaciones:
   grupo de Chromium, y los avisos de Omarchy, cada uno por su lado), con
   sus botones, respuesta en línea cuando la app la ofrece, un enlace
   seguro para abrir y un botón de cerrar por notificación o por grupo.
+- Al pulsar una notificación se hace lo que pidió quien la envió (su
+  acción por defecto). Si no pidió nada, el clic te lleva a quien la
+  envió: su ventana (por el proceso que la mandó o por la clase de la
+  ventana de la app), la pestaña del sitio en las del navegador o, si no
+  hay, la portada del sitio o el enlace del texto. La flecha bajo el botón
+  de cerrar muestra el texto completo.
 - Cuando una notificación trae un código de un solo uso («Tu código de
   verificación es 482913»), su tarjeta tiene un botón **Copiar**. El
   código va al portapapeles marcado como sensible, así los gestores de

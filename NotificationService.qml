@@ -193,7 +193,8 @@ Item {
   }
 
   // Click on a notification: the sender's command (omarchy-exec-argv), its
-  // default action, or the first safe link in it.
+  // default action, or else the sender itself: its window, its site or the
+  // link in it (NM.clickTarget, once the window list is in).
   function activate(key) {
     var r = rowFor(key)
     if (!r) return false
@@ -204,12 +205,30 @@ Item {
       var list = n.actions || []
       for (var i = 0; i < list.length; i++) if (list[i].identifier === "default") { list[i].invoke(); done = true; break }
     }
-    if (!done && r.link) { Qt.openUrlExternally(r.link); done = true }
-    if (!done) return false
+    if (!done) {
+      if (!NM.mayHaveTarget(r)) return false
+      goTo.row = r
+      goTo.running = true
+    }
     patch(key, { read: true })
     if (r.live && !r.resident) release(key, "dismiss")
     island.pinned = false
     return true
+  }
+  Process {
+    id: goTo
+    property var row: null
+    command: ["hyprctl", "clients", "-j"]
+    stdout: StdioCollector {
+      onStreamFinished: {
+        var target = NM.clickTarget(goTo.row, NM.parseClients(text))
+        goTo.row = null
+        if (!target) return
+        // Both come out of NM checked: an address is 0x + hex, a URL http(s).
+        if (target.focus) Quickshell.execDetached(["hyprctl", "dispatch", 'hl.dsp.focus({ window = "address:' + target.focus + '" })'])
+        else if (target.open) Qt.openUrlExternally(target.open)
+      }
+    }
   }
   function invoke(key, actionId) {
     var n = refs[key]

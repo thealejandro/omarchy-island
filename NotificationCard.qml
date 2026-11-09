@@ -19,7 +19,9 @@ Rectangle {
 
   readonly property var notify: island.notify
   readonly property bool critical: row.urgency === NM.CRITICAL
-  readonly property bool clickable: row.live && (!!row.execArgv || row.hasDefault)
+  // Its own action or command, else (also for earlier ones) the sender's
+  // window, site or link.
+  readonly property bool clickable: (row.live && (!!row.execArgv || row.hasDefault)) || NM.mayHaveTarget(row)
   readonly property color textColor: Commons.Color.bar.text
   readonly property color dimColor: Util.alpha(Commons.Color.bar.text, 0.72)
   readonly property var codes: row.codes || []
@@ -165,13 +167,25 @@ Rectangle {
       }
     }
 
-    IslandButton {
+    Column {
       id: closeButton
-      glyph: "󰅖"
-      size: Style.space(22)
-      glyphSize: Style.font.bodySmall
-      opacity: hover.hovered ? 1 : 0.55
-      onClicked: card.notify.dismiss(card.row.key)
+      spacing: Style.spacing.xs
+      IslandButton {
+        glyph: "󰅖"
+        size: Style.space(22)
+        glyphSize: Style.font.bodySmall
+        opacity: hover.hovered ? 1 : 0.55
+        onClicked: card.notify.dismiss(card.row.key)
+      }
+      // The whole text, when the card's click goes elsewhere.
+      IslandButton {
+        visible: card.clickable && (body.truncated || card.expanded)
+        glyph: card.expanded ? "󰅃" : "󰅀"
+        size: Style.space(22)
+        glyphSize: Style.font.bodySmall
+        opacity: hover.hovered ? 1 : 0.55
+        onClicked: card.expanded = !card.expanded
+      }
     }
   }
 }

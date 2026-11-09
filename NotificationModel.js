@@ -131,6 +131,148 @@ function codes(text) {
   return out.slice(0, MAX_CODES)
 }
 
+// -------------------------------------------------------- whose window
+// Clicking a notification with nothing of its own to do goes to the
+// sender: its window, else its site, else its link. Modelled on Omarchy's
+// notifications plugin (Service.qml; MIT).
+
+var BROWSER_CLASSES = /^(chrome|google-chrome|chromium|firefox|zen|brave|microsoft-edge|edge|vivaldi|helium|librewolf)/
+// Every Chrome title ends "- Google Chrome"; left on, google.com would match
+// every Chrome window.
+var BROWSER_SUFFIX = /\s*[-–—|]\s*(google chrome|chromium|mozilla firefox|firefox|zen browser|brave origin|brave|microsoft edge|vivaldi|helium|librewolf)\s*$/
+// Labels that name nobody: common subdomains and public suffixes.
+var GENERIC_LABELS = { www: 1, app: 1, web: 1, my: 1, m: 1, mail: 1, com: 1, org: 1, net: 1,
+                       io: 1, co: 1, dev: 1, ai: 1, so: 1, site: 1, uk: 1 }
+
+// `hyprctl clients -j` → [{ wmClass, title, address, pid, focusOrder }].
+// focusOrder 0 is the window you are in, 1 the one before it.
+function parseClients(text) {
+  var list
+  try { list = JSON.parse(str(text)) } catch (e) { return [] }
+  if (!Array.isArray(list)) return []
+  var out = []
+  for (var i = 0; i < list.length && out.length < 500; i++) {
+    var c = list[i]
+    if (!c || typeof c !== "object") continue
+    var address = str(c.address)
+    var wmClass = str(c["class"])
+    if (!/^0x[0-9a-f]{1,16}$/i.test(address) || wmClass === "") continue
+    out.push({
+      wmClass: wmClass.slice(0, 256),
+      title: str(c.title).slice(0, 1024),
+      address: address,
+      pid: Number(c.pid) || 0,
+      focusOrder: c.focusHistoryID === undefined ? 9999 : Number(c.focusHistoryID)
+    })
+  }
+  return out
+}
+
+function mostRecent(found) {
+  var best = null
+  for (var i = 0; i < found.length; i++)
+    if (!best || found[i].focusOrder < best.focusOrder) best = found[i]
+  return best
+}
+
+function wordIn(text, word) {
+  var at = text.indexOf(word)
+  while (at >= 0) {
+    var before = at === 0 ? "" : text.charAt(at - 1)
+    var after = text.charAt(at + word.length)
+    if (!/[a-z0-9]/.test(before) && !/[a-z0-9]/.test(after)) return true
+    at = text.indexOf(word, at + 1)
+  }
+  return false
+}
+
+// What names a site in a title, most telling first: "app.slack.com" gives
+// ["slack"], "news.ycombinator.com" ["news", "ycombinator"].
+function brandsOf(host) {
+  var labels = str(host).toLowerCase().split(".")
+  var out = []
+  for (var i = 0; i < labels.length; i++)
+    if (labels[i].length >= 4 && !GENERIC_LABELS[labels[i]]) { out.push(labels[i]); break }
+  var registered = labels.length >= 2 ? labels[labels.length - 2] : ""
+  if (registered.length >= 4 && !GENERIC_LABELS[registered] && out.indexOf(registered) < 0) out.push(registered)
+  return out
+}
+
+// The sender process's own window: the one identity that is never a guess.
+function windowForPid(windows, pid) {
+  var want = Number(pid) || 0
+  if (!want) return null
+  var found = []
+  for (var i = 0; i < windows.length; i++) if (windows[i].pid === want) found.push(windows[i])
+  return mostRecent(found)
+}
+
+// A window for a site ("web.whatsapp.com": a web app's class, else a browser
+// tab whose title names it) or an app ("Telegram Desktop": its class).
+function windowForSource(windows, source) {
+  var name = str(source).toLowerCase()
+  if (!name) return null
+  var found = [], i
+  if (name.indexOf(".") > 0) {
+    for (i = 0; i < windows.length; i++)
+      if (windows[i].wmClass.toLowerCase().indexOf(name) >= 0) found.push(windows[i])
+    if (found.length) return mostRecent(found)
+    // Browsers only: "slack" in an editor's title is a file name.
+    var brands = brandsOf(name)
+    for (var b = 0; b < brands.length; b++) {
+      found = []
+      for (i = 0; i < windows.length; i++) {
+        if (!BROWSER_CLASSES.test(windows[i].wmClass.toLowerCase())) continue
+        if (wordIn(windows[i].title.toLowerCase().replace(BROWSER_SUFFIX, ""), brands[b])) found.push(windows[i])
+      }
+      if (found.length) return mostRecent(found)
+    }
+    return null
+  }
+  // An app name: whole class, a class ending in its words ("Telegram
+  // Desktop" is org.telegram.desktop) or in its name, or a Chrome web app's
+  // host label.
+  // Never shorter than four characters.
+  var slugged = name.replace(/[^a-z0-9]+/g, "")
+  if (slugged.length < 4) return null
+  var words = name.split(/[^a-z0-9]+/).filter(function(w) { return w })
+  var tail = words.length > 1 ? "." + words.join(".") : ""
+  for (i = 0; i < windows.length; i++) {
+    var lower = windows[i].wmClass.toLowerCase()
+    if (lower === slugged) { found.push(windows[i]); continue }
+    var dotted = "." + lower.replace(/[^a-z0-9]+/g, ".")
+    if (tail && dotted.slice(-tail.length) === tail) { found.push(windows[i]); continue }
+    // Reverse-DNS classes: "Ghostty" is com.mitchellh.ghostty.
+    if (dotted.slice(-(slugged.length + 1)) === "." + slugged) { found.push(windows[i]); continue }
+    if (lower.indexOf("chrome-") !== 0) continue
+    var labels = lower.substring(7).split("__")[0].split(".")
+    if (labels.indexOf(slugged) >= 0) found.push(windows[i])
+  }
+  return mostRecent(found)
+}
+
+// Where a click goes when the sender gave nothing to run: { focus: address },
+// { open: url } or null. For a browser's site: the tab that names it, else
+// the site's front page (the browser's pid is any of its windows, which says
+// nothing about the site). For an app: its own window, by pid or by class.
+// Then the link in the text: a Slack message quoting a link is still
+// Slack's, so the window wins over the link.
+function clickTarget(row, windows) {
+  if (!row) return null
+  var list = windows || []
+  var site = row.source && isBrowser(row.app) ? row.source : ""
+  var win = site ? windowForSource(list, site) : (windowForPid(list, row.pid) || windowForSource(list, row.app))
+  if (win) return { focus: win.address }
+  if (site && Sec.hostname(site)) return { open: "https://" + Sec.hostname(site) + "/" }
+  var link = Sec.safeHttpUrl(str(row.link))
+  return link ? { open: link } : null
+}
+
+// Whether clickTarget could find something without looking at windows.
+function mayHaveTarget(row) {
+  return !!row && (!!row.source || !!row.link || Number(row.pid) > 0 || str(row.app).replace(/[^a-z0-9]/gi, "").length >= 4)
+}
+
 function hint(n, name) {
   try { var h = n.hints; return h && h[name] !== undefined ? h[name] : undefined } catch (e) { return undefined }
 }
@@ -163,6 +305,8 @@ function snapshot(n, key, now) {
   return {
     key: key,
     id: Number(n.id) || 0,
+    // The sending process (libnotify's hint), to find its window; never stored.
+    pid: Math.max(0, parseInt(hint(n, "sender-pid"), 10) || 0),
     app: app,
     source: lifted.source,
     appIcon: iconFile ? "" : Sec.iconName(appIcon.replace(/^image:\/\/icon\//, "")),
@@ -285,6 +429,7 @@ function parseStore(text, seedStart) {
     out.push({
       key: "h" + (seedStart + i),
       id: 0,
+      pid: 0,
       app: Sec.bounded(s.app, Sec.MAX_APP),
       source: Sec.hostname(str(s.source)),
       codes: [],
