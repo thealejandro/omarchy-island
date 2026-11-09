@@ -26,6 +26,22 @@ test("look: hour yields to busy and is a plain notch then", () => {
   assert.equal(II.look("hour", "closed", true, false), "none")
 })
 
+test("look: day yields to busy and is a plain notch then", () => {
+  assert.equal(II.look("day", "closed", false, false), "day")
+  assert.equal(II.look("day", "closed", false, true), "notch")
+  assert.equal(II.look("day", "peek", false, false), "none")
+  assert.equal(II.look("day", "closed", true, false), "none")
+})
+
+test("look: battery needs a battery and yields to busy", () => {
+  assert.equal(II.look("battery", "closed", false, false, true), "battery")
+  assert.equal(II.look("battery", "closed", false, false, false), "notch")
+  assert.equal(II.look("battery", "closed", false, false), "notch")
+  assert.equal(II.look("battery", "closed", false, true, true), "notch")
+  assert.equal(II.look("battery", "open", false, false, true), "none")
+  assert.equal(II.look("battery", "closed", true, false, true), "none")
+})
+
 test("look: an unknown setting draws nothing", () => {
   assert.equal(II.look("eyes", "closed", false, false), "none")
   assert.equal(II.look(undefined, "closed", false, false), "none")
@@ -70,10 +86,10 @@ test("msUntilNextMinute is always 1..60000", () => {
   }
 })
 
-test("idleNotch setting: enum off|notch|hour, default notch, look section", () => {
+test("idleNotch setting: enum off|notch|hour|day|battery, default notch, look section", () => {
   const spec = plain(IS.spec("idleNotch"))
   assert.equal(spec.type, "enum")
-  assert.deepEqual(spec.options, ["off", "notch", "hour"])
+  assert.deepEqual(spec.options, ["off", "notch", "hour", "day", "battery"])
   assert.equal(spec.def, "notch")
   assert.equal(spec.section, "look")
   assert.equal(IS.normalize({ idleNotch: "eyes" }).idleNotch, "notch")
@@ -90,8 +106,54 @@ test("idleNotch: setting it back to the default clears the stored value", () => 
 test("idleNotch strings exist in English and Spanish", () => {
   for (const lang of ["en", "es"]) {
     const t = (k) => IM.t(lang, k)
-    for (const k of ["set_idleNotch", "hint_idleNotch", "opt_notch", "opt_hour", "opt_off"]) {
+    for (const k of ["set_idleNotch", "hint_idleNotch", "opt_notch", "opt_hour", "opt_day", "opt_battery", "opt_off"]) {
       assert.notEqual(t(k), k, `${lang} ${k}`)
     }
+  }
+})
+
+test("fractionOfDay: quarter-hour steps, middle of the step", () => {
+  assert.equal(II.fractionOfDay(0), 0.5 / 96)
+  assert.equal(II.fractionOfDay(14), 0.5 / 96)
+  assert.equal(II.fractionOfDay(15), 1.5 / 96)
+  assert.equal(II.fractionOfDay(720), 48.5 / 96)
+  assert.equal(II.fractionOfDay(1439), 95.5 / 96)
+  assert.ok(II.fractionOfDay(1439) < 1)
+  assert.equal(II.fractionOfDay(5000), II.fractionOfDay(1439))
+  assert.equal(II.fractionOfDay(-1), 0)
+  assert.equal(II.fractionOfDay(NaN), 0)
+  for (let q = 1; q < 96; q++) assert.ok(II.fractionOfDay(q * 15) > II.fractionOfDay(q * 15 - 1))
+})
+
+test("fractionOfBattery: level / 100, clamped, no battery is 0", () => {
+  assert.equal(II.fractionOfBattery(0), 0)
+  assert.equal(II.fractionOfBattery(50), 0.5)
+  assert.equal(II.fractionOfBattery(100), 1)
+  assert.equal(II.fractionOfBattery(101), 1)
+  assert.equal(II.fractionOfBattery(-1), 0)
+  assert.equal(II.fractionOfBattery(NaN), 0)
+  assert.equal(II.fractionOfBattery(undefined), 0)
+})
+
+test("batteryLow: 20% or less, discharging, with a battery", () => {
+  assert.equal(II.batteryLow(20, false), true)
+  assert.equal(II.batteryLow(0, false), true)
+  assert.equal(II.batteryLow(21, false), false)
+  assert.equal(II.batteryLow(10, true), false)
+  assert.equal(II.batteryLow(-1, false), false)
+})
+
+test("msUntilNextQuarter is always 1..900000 and lands on :00 :15 :30 :45", () => {
+  assert.equal(II.msUntilNextQuarter(0, 0, 0), 900000)
+  assert.equal(II.msUntilNextQuarter(15, 0, 0), 900000)
+  assert.equal(II.msUntilNextQuarter(14, 59, 999), 1)
+  assert.equal(II.msUntilNextQuarter(1, 0, 0), 840000)
+  assert.equal(II.msUntilNextQuarter(1439, 59, 999), 1)
+  assert.equal(II.msUntilNextQuarter(1440 - 15, 0, 0), 900000)
+  assert.equal(II.msUntilNextQuarter(7, 30, 500), 900000 - (7 * 60000 + 30500))
+  for (let m = 0; m < 1440; m += 7) for (const [s, ms] of [[0, 0], [30, 250], [59, 999]]) {
+    const w = II.msUntilNextQuarter(m, s, ms)
+    assert.ok(w >= 1 && w <= 900000, `${m}:${s}.${ms}`)
+    assert.equal((m * 60000 + s * 1000 + ms + w) % 900000, 0)
   }
 })

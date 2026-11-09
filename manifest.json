@@ -214,7 +214,7 @@
         "key": "idleNotch",
         "type": "enum",
         "label": "Closed island",
-        "options": ["off", "notch", "hour"],
+        "options": ["off", "notch", "hour", "day", "battery"],
         "defaultValue": "notch"
       },
       {

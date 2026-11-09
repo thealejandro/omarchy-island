@@ -71,8 +71,8 @@ PanelWindow {
   readonly property string mode: expanded ? "open" : (peeking ? "peek" : "closed")
 
   // Closed island: a sliver of the bar under the clock (the notch), and with
-  // idleNotch "hour" a thin accent thread that fills as the hour goes by.
-  readonly property string idleLook: IslandIdle.look(island.idleNotch, mode, island.barHidden, island.idleBusy)
+  // idleNotch "hour", "day" or "battery" a thin thread that fills with it.
+  readonly property string idleLook: IslandIdle.look(island.idleNotch, mode, island.barHidden, island.idleBusy, island.hasBattery)
   readonly property bool notchShown: idleLook !== "none"
   readonly property int notchDepth: Style.space(4)
   readonly property int notchEar: Style.space(2)
@@ -382,18 +382,19 @@ PanelWindow {
       strokeWidth: win.shellStrokeWidth
     }
 
-    // Hour thread: 1 px of accent that grows along the notch once a minute.
-    // No animation: it moves a pixel or two per minute.
+    // Thread (hour, day or battery): 1 px that grows along the notch. The
+    // clock ones move a pixel or two per tick, the battery one when the level
+    // changes; no animation. Low battery uses the urgent colour.
     Rectangle {
       readonly property int inset: Style.space(3)
-      readonly property real fraction: IslandIdle.fractionOfMinute(win.island.hourMinute)
+      readonly property real fraction: win.island.idleFraction
       readonly property int len: IslandIdle.threadLength(fraction, win.notchLength - 2 * inset, Style.space(2))
       readonly property var r: IslandGeometry.rect(win.edge, notch.width, notch.height, inset, len,
         Math.floor(win.notchDepth / 2), Style.spacing.hairline)
-      visible: win.idleLook === "hour"
+      visible: win.idleLook !== "none" && win.idleLook !== "notch"
       x: r.x; y: r.y; width: r.width; height: r.height
       radius: Math.min(width, height) / 2
-      color: Commons.Color.accent
+      color: win.island.idleLow ? Commons.Color.urgent : Commons.Color.accent
       opacity: 0.85
     }
   }
