@@ -460,3 +460,64 @@ function relativeTime(ts, now) {
   if (d < 86400000) return { key: "nt_hAgo", arg: Math.floor(d / 3600000) }
   return { key: "", arg: new Date(Number(ts)) }
 }
+
+// ------------------------------------------------------------ keyboard mode
+// `notifications keyboard`: the island takes the keyboard for a while and a
+// selection walks the cards in the order they show.
+
+// Big groups start folded until folded or unfolded by hand.
+function isFolded(folds, group) {
+  var hand = folds ? folds[group.key] : undefined
+  return hand !== undefined ? !!hand : group.rows.length > 3
+}
+
+// Keys of the cards on the page, top to bottom: each live group (only its
+// newest when folded), then the earlier ones the page shows.
+function keyboardOrder(groups, folds, earlier, earlierLimit) {
+  var out = []
+  for (var i = 0; i < (groups || []).length; i++) {
+    var rows = groups[i].rows
+    var n = isFolded(folds, groups[i]) ? Math.min(1, rows.length) : rows.length
+    for (var j = 0; j < n; j++) out.push(rows[j].key)
+  }
+  var past = (earlier || []).slice(0, earlierLimit === undefined ? earlier.length : earlierLimit)
+  for (var k = 0; k < past.length; k++) out.push(past[k].key)
+  return out
+}
+
+// What a key does: the keys of Omarchy's own keyboard mode, plus C to copy
+// the card's code. Names come from the window: arrows, tab, enter... and
+// plain letters or digits as typed.
+var KEY_COMMANDS = {
+  up: "prev", k: "prev", backtab: "prev",
+  down: "next", j: "next", tab: "next",
+  enter: "activate",
+  "delete": "dismiss", backspace: "dismiss",
+  c: "copy", escape: "exit"
+}
+function keyCommand(name) {
+  var k = str(name).toLowerCase()
+  if (/^[1-9]$/.test(k)) return { command: "action", n: parseInt(k, 10) }
+  return Object.prototype.hasOwnProperty.call(KEY_COMMANDS, k) ? { command: KEY_COMMANDS[k] } : null
+}
+
+// One step up or down the list, stopping at both ends.
+function stepKey(order, current, delta) {
+  if (!order || order.length === 0) return ""
+  var i = order.indexOf(current)
+  if (i < 0) return order[0]
+  return order[Math.max(0, Math.min(order.length - 1, i + delta))]
+}
+
+// After the list changed: the same card if it's still there, else the next
+// one that was below it, else the one above, else the top.
+function keepSelection(before, after, key) {
+  if (!after || after.length === 0) return ""
+  if (after.indexOf(key) >= 0) return key
+  var i = (before || []).indexOf(key)
+  if (i >= 0) {
+    for (var d = i + 1; d < before.length; d++) if (after.indexOf(before[d]) >= 0) return before[d]
+    for (var u = i - 1; u >= 0; u--) if (after.indexOf(before[u]) >= 0) return before[u]
+  }
+  return after[0]
+}

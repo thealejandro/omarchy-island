@@ -8,6 +8,7 @@ import "IslandModel.js" as IslandModel
 import "IslandGeometry.js" as IslandGeometry
 import "IslandSettings.js" as IslandSettings
 import "AgendaModel.js" as AgendaModel
+import "NotificationModel.js" as NM
 
 // Headless owner of the island state. One IslandWindow is mounted per screen;
 // they all read media and timer state from here, so two monitors never show
@@ -77,6 +78,71 @@ Item {
   // A text field in the island is being edited: the island takes the
   // keyboard and stays open until it's done.
   property bool wantsKeyboard: false
+  onWantsKeyboardChanged: if (!wantsKeyboard && keyboardMode) stopKeyboard(false)
+
+  // ------------------------------------------------------------- keyboard mode
+
+  // Omarchy's `notifications keyboard`: the island opens on its
+  // notifications and takes the keyboard to walk them, until Esc, a while
+  // without keys, or the island closing. keyboardOrder is the page's cards
+  // top to bottom (set by the page).
+  property bool keyboardMode: false
+  property string keyboardKey: ""
+  property var keyboardOrder: []
+  property var keyboardOrderBefore: []
+  onKeyboardOrderChanged: {
+    if (keyboardMode) keyboardKey = NM.keepSelection(keyboardOrderBefore, keyboardOrder, keyboardKey)
+    keyboardOrderBefore = keyboardOrder
+  }
+  Timer {
+    id: keyboardIdle
+    interval: root.cfg.notifyKeyboardIdle
+    onTriggered: root.stopKeyboard(true)
+  }
+  function startKeyboard() {
+    if (!notify || notify.rows.length === 0) return false
+    showPage("notifications")
+    pinned = true
+    keyboardMode = true
+    wantsKeyboard = true
+    if (keyboardOrder.indexOf(keyboardKey) < 0) keyboardKey = keyboardOrder.length > 0 ? keyboardOrder[0] : ""
+    keyboardIdle.restart()
+    return true
+  }
+  function stopKeyboard(close) {
+    keyboardIdle.stop()
+    keyboardMode = false
+    keyboardKey = ""
+    if (wantsKeyboard) wantsKeyboard = false
+    if (close) pinned = false
+  }
+  // A key from the island's window, by name (see NM.keyCommand).
+  function keyboardPress(name) {
+    if (!keyboardMode) return false
+    var c = NM.keyCommand(name)
+    if (!c) return false
+    keyboardIdle.restart()
+    if (c.command === "exit") { stopKeyboard(true); return true }
+    if (c.command === "prev" || c.command === "next") {
+      keyboardKey = NM.stepKey(keyboardOrder, keyboardKey, c.command === "next" ? 1 : -1)
+      return true
+    }
+    var key = keyboardKey
+    var row = key && notify ? notify.rowFor(key) : null
+    if (!row) return true
+    if (c.command === "activate") notify.activate(key)
+    else if (c.command === "dismiss") {
+      // A live one moves to Earlier: go on to its neighbour either way.
+      var next = NM.stepKey(keyboardOrder, key, 1)
+      if (next === key) next = NM.stepKey(keyboardOrder, key, -1)
+      if (notify.dismiss(key) && next !== key) keyboardKey = next
+    } else if (c.command === "copy") {
+      if (row.codes && row.codes.length > 0) notify.copyCode(key, row.codes[0])
+    } else if (c.command === "action") {
+      if (row.live && c.n <= row.actions.length && notify.invoke(key, row.actions[c.n - 1].id)) stopKeyboard(true)
+    }
+    return true
+  }
 
   // ------------------------------------------------------------- saving
 
@@ -907,7 +973,11 @@ Item {
 
   // The notifications page counts as read once it's on screen.
   function markSeen() { if (notify && isOpen && page === "notifications") notify.markAllRead() }
-  onPageChanged: markSeen()
+  onPageChanged: {
+    markSeen()
+    // Another page ends the keyboard mode, which only walks notifications.
+    if (keyboardMode && page !== "notifications") stopKeyboard(false)
+  }
 
   function notifyProbeOk() { _probeTries = 0 }
   // Retried twice by loading the server again; then the notifications go
@@ -992,12 +1062,11 @@ Item {
       return key && root.notify.activate(key) ? "ok" : "none"
     }
     function invokeAction(n: int): string { return root.notify && root.notify.invokeNth(n) ? "ok" : "none" }
-    // There's no deck to steer: the island opens on its notifications.
+    // The island opens on its notifications and takes the keyboard; again
+    // gives it back.
     function keyboard(): string {
-      if (!root.notify || root.notify.rows.length === 0) return "none"
-      root.showPage("notifications")
-      root.pinned = true
-      return "on"
+      if (root.keyboardMode) { root.stopKeyboard(true); return "off" }
+      return root.startKeyboard() ? "on" : "none"
     }
     function showHistory(): string { root.showPage("notifications"); root.pinned = true; return "ok" }
     function dismiss(summary: string): string {
@@ -1015,7 +1084,7 @@ Item {
       var n = root.notify
       return JSON.stringify({ server: "thealejandro.island", toasts: n ? n.liveCount : 0,
         doNotDisturb: !!n && n.doNotDisturb, expanded: root.pinned && root.page === "notifications",
-        keyboardMode: false, keyboardKey: "", unread: n ? n.unread : 0,
+        keyboardMode: root.keyboardMode, keyboardKey: root.keyboardKey, unread: n ? n.unread : 0,
         history: n ? n.historyRows.length : 0, bound: !!n && n.bound })
     }
   }

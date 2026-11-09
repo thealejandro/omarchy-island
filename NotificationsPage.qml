@@ -19,6 +19,13 @@ Column {
   // Groups folded by hand; big groups start folded.
   property var folds: ({})
   property real now: Date.now()
+  // The earlier ones shown; the rest stay in the history file until they
+  // age out.
+  readonly property int earlierShown: 30
+  // The cards top to bottom, for the keyboard mode.
+  readonly property var order: NM.keyboardOrder(groups, folds, earlier, earlierShown)
+  onOrderChanged: island.keyboardOrder = order
+  Component.onCompleted: island.keyboardOrder = order
 
   spacing: Style.spacing.lg
 
@@ -108,7 +115,7 @@ Column {
       group: modelData
       width: root.width
       now: root.now
-      folded: root.folds[modelData.key] !== undefined ? root.folds[modelData.key] : modelData.rows.length > 3
+      folded: NM.isFolded(root.folds, modelData)
       onFoldToggled: {
         var next = ({})
         for (var k in root.folds) next[k] = root.folds[k]
@@ -130,9 +137,8 @@ Column {
     font.letterSpacing: 0.6
   }
 
-  // The newest 30; the rest stay in the history file until they age out.
   Repeater {
-    model: root.earlier.slice(0, 30)
+    model: root.earlier.slice(0, root.earlierShown)
     NotificationCard {
       required property var modelData
       island: root.island

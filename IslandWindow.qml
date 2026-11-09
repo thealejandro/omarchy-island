@@ -268,6 +268,34 @@ PanelWindow {
     onTriggered: win.hovered = false
   }
 
+  // The keyboard mode (`notifications keyboard`): while it lasts the window
+  // has the keyboard (wantsKeyboard) and every key comes here, by name.
+  Item {
+    id: keyCatcher
+    readonly property bool active: win.island.keyboardMode && win.expanded
+    onActiveChanged: if (active) Qt.callLater(function() { if (keyCatcher.active) keyCatcher.forceActiveFocus() })
+    Keys.onPressed: (event) => {
+      var name = win.keyName(event)
+      if (name && win.island.keyboardPress(name)) event.accepted = true
+    }
+  }
+  function keyName(event) {
+    switch (event.key) {
+    case Qt.Key_Up: return "up"
+    case Qt.Key_Down: return "down"
+    case Qt.Key_Tab: return "tab"
+    case Qt.Key_Backtab: return "backtab"
+    case Qt.Key_Return:
+    case Qt.Key_Enter: return "enter"
+    case Qt.Key_Delete: return "delete"
+    case Qt.Key_Backspace: return "backspace"
+    case Qt.Key_Escape: return "escape"
+    }
+    // Letters and digits as typed, but not shortcuts.
+    if (event.modifiers & (Qt.ControlModifier | Qt.AltModifier | Qt.MetaModifier)) return ""
+    return event.text.length === 1 ? event.text : ""
+  }
+
   HoverHandler {
     id: hover
     onHoveredChanged: {
