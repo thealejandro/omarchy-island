@@ -237,6 +237,8 @@ the island's own keys and nothing else.
 | `agendaCommand` | shell command | `""` | Extra events from another calendar |
 | `osd` | `true`, `false` | `false` | Show Omarchy's OSD in the island |
 | `battery` | `true`, `false` | `true` | Charging and low-battery peeks |
+| `privacyDots` | `true`, `false` | `true` | Orange dot while an app uses the microphone, green while one uses the camera |
+| `privacyPeek` | `true`, `false` | `true` | A glance naming the app when it starts using them |
 | `notifications` | `off`, `island` | `off` | Show notifications in the island instead of Omarchy's cards |
 | `notifyBody` | `true`, `false` | `true` | The text in the glance (`false`: app and title only) |
 | `notifyPeekDuration` | 2000–15000 ms | `6000` | How long a notification glance stays |
@@ -407,6 +409,24 @@ set in Omarchy's weather widget (or by IP), refreshed every 20 minutes.
 **Open forecast** opens Omarchy's weather panel (when the widget is on the
 bar) and **Change location** its place picker, or the file it reads.
 
+## Microphone and camera
+
+While an app records from the microphone, an orange dot sits just past the
+bar beside the clock (and on the island's own bar button, if you use it);
+while one uses the camera, a green one. When an app starts, a glance names
+it: *Microphone in use · Firefox*. `omarchy-shell island state` lists them
+too (`mic`, `camera`).
+
+The microphone is read from PipeWire's own events, with no polling: capture
+streams count, level meters (Omarchy's audio panel, pavucontrol, cava…),
+muted streams and recordings of what's playing (a sink's monitor) don't.
+Cameras an app opens through PipeWire show up the same way; for one opened
+straight through `/dev/video*` the island asks `fuser` every 15 seconds
+(5 while it's in view), only on machines that have a camera. Processes of
+other users aren't visible without root. Themes can recolour the dots in
+`shell.toml`: `[island]` `mic`, `camera` (and `mic-alpha`, `camera-alpha`).
+`privacyDots: false` turns it all off and loads nothing.
+
 ## Performance
 
 The island runs inside `omarchy-shell`, so what it costs is what the shell
@@ -508,6 +528,8 @@ node --test 'test/*.test.mjs'
 | `IslandGeometry.js` | Bar edges, placement along the bar, finding the clock |
 | `IslandModel.js`   | Pure helpers: player choice, clock, strings, month grid, weather, world times |
 | `AgendaModel.js`   | Pure helpers for events: repeats, upcoming, reminders, external lines |
+| `IcsModel.js`, `scripts/ics-fetch.sh` | iCalendar calendars: parsing, repeats, time zones; fetching folders, files and links |
+| `PrivacyService.qml`, `PrivacyModel.js` | Who uses the microphone or the camera (PipeWire, fuser) |
 | `IslandWindow.qml` | Per-screen layer surface, input mask, hover, bar clicks, motion |
 | `IslandShape.qml`  | The silhouette with concave ears, turned to the bar's edge |
 | `PeekView.qml`     | The one-line glance: track, timer, OSD, battery, event or notification |

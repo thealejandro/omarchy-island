@@ -250,6 +250,8 @@ quita solo las claves propias de la isla.
 | `agendaCommand` | comando | `""` | Eventos extra de otro calendario |
 | `osd` | `true`, `false` | `false` | Mostrar el OSD de Omarchy en la isla |
 | `battery` | `true`, `false` | `true` | Vistazos de carga y batería baja |
+| `privacyDots` | `true`, `false` | `true` | Punto naranja mientras una app usa el micrófono, verde mientras una usa la cámara |
+| `privacyPeek` | `true`, `false` | `true` | Un vistazo con el nombre de la app cuando empieza a usarlos |
 | `notifications` | `off`, `island` | `off` | Mostrar las notificaciones en la isla en lugar de las tarjetas de Omarchy |
 | `notifyBody` | `true`, `false` | `true` | El texto en el vistazo (`false`: solo app y título) |
 | `notifyPeekDuration` | 2000–15000 ms | `6000` | Duración del vistazo de una notificación |
@@ -428,6 +430,25 @@ configurado en el widget de clima de Omarchy (o por IP), cada 20 minutos.
 en la barra) y **Cambiar ubicación** su selector de lugar, o el archivo que
 lee.
 
+## Micrófono y cámara
+
+Mientras una app graba del micrófono, aparece un punto naranja justo
+debajo de la barra, junto al reloj (y en el botón propio de la isla en la
+barra, si lo usas); mientras una usa la cámara, uno verde. Cuando una app
+empieza, un vistazo dice cuál: *Micrófono en uso · Firefox*. `omarchy-shell
+island state` también las lista (`mic`, `camera`).
+
+El micrófono se lee de los propios eventos de PipeWire, sin consultas
+periódicas: cuentan las capturas; los medidores de nivel (el panel de audio
+de Omarchy, pavucontrol, cava…), las capturas silenciadas y las
+grabaciones de lo que suena (el monitor de una salida) no. Las cámaras que
+una app abre a través de PipeWire aparecen igual; para una abierta
+directamente por `/dev/video*` la isla pregunta a `fuser` cada 15 segundos
+(5 mientras se ve), y solo en equipos con cámara. Los procesos de otros
+usuarios no se ven sin root. Los temas pueden cambiar el color de los
+puntos en `shell.toml`: `[island]` `mic`, `camera` (y `mic-alpha`,
+`camera-alpha`). `privacyDots: false` lo apaga todo y no carga nada.
+
 ## Rendimiento
 
 La isla corre dentro de `omarchy-shell`, así que lo que cuesta es lo que
@@ -529,6 +550,8 @@ node --test 'test/*.test.mjs'
 | `IslandGeometry.js` | Bordes de la barra, posición a lo largo de ella, búsqueda del reloj |
 | `IslandModel.js`   | Funciones puras: elegir reproductor, reloj, textos, mes, clima, horas del mundo |
 | `AgendaModel.js`   | Funciones puras de eventos: repeticiones, próximos, avisos, líneas externas |
+| `IcsModel.js`, `scripts/ics-fetch.sh` | Calendarios iCalendar: lectura, repeticiones, husos; descarga de carpetas, archivos y enlaces |
+| `PrivacyService.qml`, `PrivacyModel.js` | Quién usa el micrófono o la cámara (PipeWire, fuser) |
 | `IslandWindow.qml` | Capa por pantalla, máscara de entrada, hover, clics de la barra, animación |
 | `IslandShape.qml`  | La silueta con orejas cóncavas, girada al borde de la barra |
 | `PeekView.qml`     | El vistazo de una línea: canción, temporizador, OSD, batería, evento o notificación |

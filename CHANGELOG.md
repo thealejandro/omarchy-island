@@ -15,6 +15,12 @@ project follows [Semantic Versioning](https://semver.org/).
   all-day and multi-day events and time zones (also Outlook's own) are
   understood; links are fetched over HTTPS only, every `icsRefresh`
   minutes (15 by default). (#22)
+- Microphone and camera dots: orange just past the bar while an app records
+  from the microphone, green while one uses the camera, and a glance naming
+  the app when it starts. Read from PipeWire's events (level meters, muted
+  streams and sink monitors don't count), with `fuser` for cameras opened
+  directly, only when there's a camera. `privacyDots` and `privacyPeek` in
+  Settings › System. (#14)
 
 ## [0.7.0] - 2026-11-09
 
