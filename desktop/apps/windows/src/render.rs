@@ -42,6 +42,7 @@ use windows::Win32::Graphics::DirectWrite::{
     DWRITE_WORD_WRAPPING_NO_WRAP, DWRITE_WORD_WRAPPING_WRAP, DWriteCreateFactory, IDWriteFactory,
     IDWriteFontCollection, IDWriteTextFormat, IDWriteTextLayout,
 };
+use windows::Win32::Graphics::Dwm::DwmGetColorizationColor;
 use windows::Win32::Graphics::Dxgi::Common::{
     DXGI_ALPHA_MODE_PREMULTIPLIED, DXGI_FORMAT_B8G8R8A8_UNORM,
 };
@@ -133,6 +134,14 @@ pub struct Notice<'a> {
     pub title: &'a str,
     pub detail: &'a str,
     pub level: Option<f32>,
+    /// A notification: the app (`title`), its title (`detail`) and `body`
+    /// beside its logo, "now" (`when`) at the right, and a ring in the
+    /// logo's color around the island, as bright as `ring`.
+    pub toast: bool,
+    pub body: &'a str,
+    pub logo: Option<&'a std::sync::Arc<Vec<u8>>>,
+    pub when: &'a str,
+    pub ring: f32,
 }
 
 /// The focus page, ready to draw.
@@ -186,6 +195,26 @@ const CLOSED_W: f32 = 180.0;
 /// The note that stands in for a missing cover is laid out in a box this
 /// big (DIPs) and scaled to the cover's size.
 const NOTE_BOX: f32 = 44.0;
+/// A notification's logo, in DIPs (see `island_core::notifications`).
+const TOAST_LOGO: f32 = 44.0;
+/// A blue like the system's own, if Windows doesn't tell its accent.
+const DEFAULT_ACCENT: [f32; 3] = [0.3, 0.6, 1.0];
+
+/// The system's accent color, brightened for the black island the way a
+/// cover's is (see [`layout::accent`]).
+fn system_accent() -> [f32; 3] {
+    let (mut argb, mut opaque) = (0u32, BOOL(0));
+    if unsafe { DwmGetColorizationColor(&mut argb, &mut opaque) }.is_err() {
+        return DEFAULT_ACCENT;
+    }
+    let c = [argb >> 16, argb >> 8, argb].map(|v| (v & 0xFF) as f32 / 255.0);
+    let max = c[0].max(c[1]).max(c[2]);
+    if max - c[0].min(c[1]).min(c[2]) < 0.1 {
+        // A grey accent: the ring would read as nothing.
+        return DEFAULT_ACCENT;
+    }
+    c.map(|v| (v / max * 0.95) * 0.85 + 0.15)
+}
 
 struct Art {
     /// The `Arc` it was decoded from, by address.
@@ -218,6 +247,8 @@ struct Text {
     clock: IDWriteTextFormat,
     big: IDWriteTextFormat,
     next: IDWriteTextFormat,
+    /// A notification's title.
+    toast_title: IDWriteTextFormat,
 }
 
 /// One entry of the menu, as drawn.
@@ -263,6 +294,9 @@ pub struct Renderer {
     text: Text,
     wic: IWICImagingFactory,
     art: Option<Art>,
+    /// The logo of the app whose notification shows (cached apart from the
+    /// cover, so the two never evict each other).
+    logo: Option<(usize, f32, Option<Art>)>,
     /// The cover's color in this frame; `None` without a cover.
     accent: Option<[f32; 3]>,
     bars: Bars,
@@ -421,6 +455,7 @@ impl Text {
                 clock: format(ui, b, 12.0, DWRITE_TEXT_ALIGNMENT_TRAILING)?,
                 big: format(ui, b, 42.0, DWRITE_TEXT_ALIGNMENT_LEADING)?,
                 next: format(ui, n, 12.0, DWRITE_TEXT_ALIGNMENT_TRAILING)?,
+                toast_title: format(ui, b, 14.0, DWRITE_TEXT_ALIGNMENT_LEADING)?,
                 dw: dw.clone(),
             })
         }
@@ -465,6 +500,7 @@ impl Renderer {
                 text: Text::new()?,
                 wic: CoCreateInstance(&CLSID_WICImagingFactory, None, CLSCTX_INPROC_SERVER)?,
                 art: None,
+                logo: None,
                 accent: None,
             })
         }
@@ -559,6 +595,41 @@ impl Renderer {
                 });
         }
         self.art.as_ref()
+    }
+
+    /// The logo of the app whose notification shows, decoded once per
+    /// notification (a logo that can't be read isn't tried again).
+    fn logo(&mut self, bytes: &std::sync::Arc<Vec<u8>>, side: f32) -> Option<&Art> {
+        let key = std::sync::Arc::as_ptr(bytes) as usize;
+        if !self
+            .logo
+            .as_ref()
+            .is_some_and(|(k, s, _)| *k == key && *s == side)
+        {
+            let art = self
+                .decode(bytes, side)
+                .ok()
+                .map(|(brush, size, accent)| Art {
+                    key,
+                    brush,
+                    side,
+                    size,
+                    accent,
+                });
+            self.logo = Some((key, side, art));
+        }
+        self.logo.as_ref().and_then(|(_, _, a)| a.as_ref())
+    }
+
+    /// The color of a notification's ring: its logo's, or the system's
+    /// accent when the logo has none of its own (grey, or no logo).
+    fn toast_accent(&mut self, n: &Notice, scale: f32) -> [f32; 3] {
+        let side = (TOAST_LOGO * scale).ceil();
+        let logo = n.logo.and_then(|b| self.logo(b, side)).map(|a| a.accent);
+        match logo {
+            Some(a) if a != [0.85; 3] => a,
+            _ => system_accent(),
+        }
     }
 
     /// The cover's color, from an 8 x 8 thumbnail of it.
@@ -976,7 +1047,7 @@ impl Renderer {
         // The cover and bars stay put when only the line changes.
         let same_song = s.notice.is_none() && !matches!(before, Some(Before::Notice(_)));
         match before {
-            Some(Before::Notice(n)) => self.peek_notice(&n, s.size, dx, old_dy, old_a),
+            Some(Before::Notice(n)) => self.peek_notice(&n, s, dx, old_dy, old_a),
             Some(Before::Line(line)) if !same_song => {
                 self.peek_song(s, Some(line), dx, old_dy, old_a, old_a)
             }
@@ -993,7 +1064,7 @@ impl Renderer {
             None => {}
         }
         if let Some(n) = s.notice {
-            self.peek_notice(&n, s.size, dx, new_dy, new_a);
+            self.peek_notice(&n, s, dx, new_dy, new_a);
             return;
         }
         let current = s
@@ -1035,8 +1106,13 @@ impl Renderer {
         self.peek_text(&spans, dx, dy, alpha);
     }
 
-    fn peek_notice(&mut self, n: &Notice, size: (f32, f32), dx: f32, dy: f32, alpha: f32) {
+    fn peek_notice(&mut self, n: &Notice, s: &Scene, dx: f32, dy: f32, alpha: f32) {
+        let (size, scale) = (s.size, s.scale);
         if alpha <= 0.0 {
+            return;
+        }
+        if n.toast {
+            self.peek_toast(n, size, dy, alpha, scale);
             return;
         }
         let at = |r: Rect| lift(shift(r, dx), dy);
@@ -1076,6 +1152,62 @@ impl Renderer {
             self.tinted_rounded(done, bar.height / 2.0, n.tint, 0.95 * alpha);
         }
         self.tinted(n.detail, &self.text.clock, at(l.text), WHITE, 0.9 * alpha);
+    }
+
+    /// A notification, as on a phone: the app's logo; its name dim with
+    /// "now" at the right, the title bold and the body dim below. Laid out
+    /// at its full size, centered: the body uncovers it as it grows.
+    fn peek_toast(&mut self, n: &Notice, size: (f32, f32), dy: f32, alpha: f32, scale: f32) {
+        use island_core::notifications as toast;
+        let dx = (size.0 - toast::SIZE.0) / 2.0;
+        let l = toast::layout(toast::SIZE, !n.body.is_empty());
+        let at = |r: Rect| lift(shift(r, dx), dy);
+        let r = at(l.logo);
+        let rounded = D2D1_ROUNDED_RECT {
+            rect: rf(r),
+            radiusX: 11.0,
+            radiusY: 11.0,
+        };
+        let side = (TOAST_LOGO * scale).ceil();
+        let dc = self.dc.clone();
+        match n.logo.and_then(|b| self.logo(b, side)) {
+            Some(a) => unsafe {
+                let k = r.width / a.side;
+                let (cx, cy) = ((a.size.0 - a.side) / 2.0, (a.size.1 - a.side) / 2.0);
+                a.brush.SetTransform(&affine(k, r.x - cx * k, r.y - cy * k));
+                a.brush.SetOpacity(alpha);
+                dc.FillRoundedRectangle(&rounded, &a.brush);
+            },
+            // No logo: the bell, on a square in the ring's color.
+            None => {
+                let accent = self.toast_accent(n, scale);
+                self.tinted_rounded(r, 11.0, accent, 0.28 * alpha);
+                self.tinted(n.icon, &self.text.icon, r, WHITE, alpha);
+            }
+        }
+        self.tinted(n.title, &self.text.menu, at(l.app), WHITE, 0.6 * alpha);
+        self.tinted(n.when, &self.text.next, at(l.when), WHITE, 0.45 * alpha);
+        let title = if n.detail.is_empty() {
+            n.title
+        } else {
+            n.detail
+        };
+        self.text(title, &self.text.toast_title, at(l.title), 0.97 * alpha);
+        if !n.body.is_empty() {
+            self.tinted(n.body, &self.text.artist, at(l.body), WHITE, 0.62 * alpha);
+        }
+    }
+
+    /// A notification's ring: the outline in its color, a fine line over a
+    /// soft wide one, as bright as `a` (px, from the body's top-left).
+    fn ring(&self, geo: &ID2D1PathGeometry, color: [f32; 3], a: f32, scale: f32) {
+        let [r, g, b] = color;
+        unsafe {
+            for (width, k) in [(6.0, 0.18), (1.6, 1.0)] {
+                self.ink.SetColor(&D2D1_COLOR_F { r, g, b, a: a * k });
+                self.dc.DrawGeometry(geo, &self.ink, width * scale, None);
+            }
+        }
     }
 
     fn draw_closed(&mut self, s: &Scene, dx: f32, alpha: f32) {
@@ -1137,7 +1269,7 @@ impl Renderer {
 
     /// The cover's color rising from the bottom of the body (px, from the
     /// body's top-left).
-    fn glow(&self, geo: &ID2D1PathGeometry, height: f32, accent: [f32; 3]) -> Result<()> {
+    fn glow(&self, geo: &ID2D1PathGeometry, height: f32, accent: [f32; 3], k: f32) -> Result<()> {
         let [r, g, b] = accent;
         let at = |position, a| D2D1_GRADIENT_STOP {
             position,
@@ -1146,7 +1278,7 @@ impl Renderer {
         unsafe {
             let stops = ID2D1RenderTarget::CreateGradientStopCollection(
                 &self.dc,
-                &[at(0.0, 0.0), at(1.0, 0.32)],
+                &[at(0.0, 0.0), at(1.0, 0.32 * k)],
                 D2D1_GAMMA_2_2,
                 D2D1_EXTEND_MODE_CLAMP,
             )?;
@@ -1177,12 +1309,19 @@ impl Renderer {
             .and_then(|t| t.art.as_ref())
             .and_then(|b| self.art(b, side))
             .map(|a| a.accent);
+        // A notification on screen: its color, ring and how visible it is.
+        let toast = match s.notice {
+            Some(n) if n.toast && s.alpha[1] > 0.0 => {
+                Some((self.toast_accent(&n, s.scale), n.ring, s.alpha[1]))
+            }
+            _ => None,
+        };
         let (sw, sh) = (s.width.max(1) as i32, s.height.max(1) as i32);
         let now = RECT {
-            left: (s.body.x.floor() as i32 - 1).clamp(0, sw - 1),
-            top: (s.body.y.floor() as i32 - 1).clamp(0, sh - 1),
-            right: ((s.body.x + s.body.width).ceil() as i32 + 1).clamp(1, sw),
-            bottom: ((s.body.y + s.body.height).ceil() as i32 + 1).clamp(1, sh),
+            left: (s.body.x.floor() as i32 - 4).clamp(0, sw - 1),
+            top: (s.body.y.floor() as i32 - 4).clamp(0, sh - 1),
+            right: ((s.body.x + s.body.width).ceil() as i32 + 4).clamp(1, sw),
+            bottom: ((s.body.y + s.body.height).ceil() as i32 + 4).clamp(1, sh),
         };
         let dirty = match self.drawn {
             Some(d) => RECT {
@@ -1233,8 +1372,15 @@ impl Renderer {
                 let (bx, by) = (ox + s.body.x, oy + s.body.y);
                 self.dc.SetTransform(&Matrix3x2::translation(bx, by));
                 self.dc.FillGeometry(&geo, &self.fill, None::<&ID2D1Brush>);
+                // A notification takes the glow over in its own color, with
+                // its ring; the cover's gives way as it comes in.
+                let shown = toast.map_or(0.0, |(_, _, a)| a);
                 if let Some(accent) = self.accent {
-                    self.glow(&geo, s.body.height, accent)?;
+                    self.glow(&geo, s.body.height, accent, 1.0 - shown)?;
+                }
+                if let Some((color, ring, a)) = toast {
+                    self.glow(&geo, s.body.height, color, a)?;
+                    self.ring(&geo, color, ring * a, s.scale);
                 }
 
                 // The content, in DIPs, clipped to the body.

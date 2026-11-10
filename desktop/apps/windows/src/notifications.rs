@@ -14,6 +14,8 @@ use std::sync::atomic::{AtomicIsize, Ordering};
 use std::sync::{Arc, Mutex};
 
 use island_core::notifications::{Seen, Toast};
+use windows::Foundation::Size;
+use windows::Storage::Streams::DataReader;
 use windows::UI::Notifications::Management::{
     UserNotificationListener, UserNotificationListenerAccessStatus,
 };
@@ -88,20 +90,58 @@ fn toast(n: &UserNotification, fallback: &str) -> Result<Toast> {
         .and_then(|d| d.DisplayName())
         .map(|s| Toast::line(&s.to_string()))
         .unwrap_or_default();
-    let title = n
+    let texts = n
         .Notification()
         .and_then(|n| n.Visual())
         .and_then(|v| v.GetBinding(&KnownNotificationBindings::ToastGeneric()?))
-        .and_then(|b| b.GetTextElements())
-        .and_then(|t| t.GetAt(0))
-        .and_then(|t| t.Text())
-        .map(|s| Toast::line(&s.to_string()))
-        .unwrap_or_default();
+        .and_then(|b| b.GetTextElements());
+    let line = |i: u32| {
+        texts
+            .as_ref()
+            .ok()
+            .and_then(|t| t.GetAt(i).and_then(|t| t.Text()).ok())
+            .map(|s| Toast::line(&s.to_string()))
+            .unwrap_or_default()
+    };
     Ok(Toast {
         id: n.Id()?,
         app: if app.is_empty() { fallback.into() } else { app },
-        title,
+        title: line(0),
+        body: line(1),
     })
+}
+
+/// The app's logo as the system keeps it (PNG bytes), for the one glanced
+/// at only; `None` if it has none.
+fn logo(l: &UserNotificationListener, id: u32) -> Option<Vec<u8>> {
+    let r = l
+        .GetNotification(id)
+        .and_then(|n| n.AppInfo())
+        .and_then(|a| a.DisplayInfo())
+        .and_then(|d| {
+            d.GetLogo(Size {
+                Width: 64.0,
+                Height: 64.0,
+            })
+        })
+        .ok()?;
+    let stream = r.OpenReadAsync().ok()?.join().ok()?;
+    let size = u32::try_from(stream.Size().ok()?).ok()?;
+    // A logo is a few KB: anything huge is not one.
+    if size == 0 || size > 4 << 20 {
+        return None;
+    }
+    let reader = DataReader::CreateDataReader(&stream).ok()?;
+    reader.LoadAsync(size).ok()?.join().ok()?;
+    let mut bytes = vec![0u8; size as usize];
+    reader.ReadBytes(&mut bytes).ok()?;
+    Some(bytes)
+}
+
+/// A notification that showed, with its app's logo.
+pub struct Arrived {
+    pub toast: Toast,
+    pub logo: Option<Arc<Vec<u8>>>,
 }
 
 fn read(l: &UserNotificationListener, fallback: &str) -> Result<Vec<Toast>> {
@@ -129,7 +169,7 @@ pub struct Notifications {
     stop: isize,
     wake: isize,
     thread: Option<std::thread::JoinHandle<()>>,
-    new: Arc<Mutex<Vec<Toast>>>,
+    new: Arc<Mutex<Vec<Arrived>>>,
 }
 
 impl Notifications {
@@ -178,7 +218,7 @@ impl Notifications {
     }
 
     /// The notifications that showed since the last call, oldest first.
-    pub fn take(&self) -> Vec<Toast> {
+    pub fn take(&self) -> Vec<Arrived> {
         self.new
             .lock()
             .map(|mut n| std::mem::take(&mut *n))
@@ -191,7 +231,7 @@ fn watch(
     msg: u32,
     stop: isize,
     wake: isize,
-    new: Arc<Mutex<Vec<Toast>>>,
+    new: Arc<Mutex<Vec<Arrived>>>,
     fallback: &str,
 ) {
     unsafe {
@@ -230,8 +270,17 @@ fn watch(
                 continue;
             }
         }
+        // Only the newest is glanced at: only its logo is read.
+        let last = fresh.len() - 1;
+        let arrived = fresh.into_iter().enumerate().map(|(i, toast)| Arrived {
+            logo: (i == last)
+                .then(|| logo(&l, toast.id))
+                .flatten()
+                .map(Arc::new),
+            toast,
+        });
         if let Ok(mut n) = new.lock() {
-            n.extend(fresh);
+            n.extend(arrived);
         }
         unsafe {
             let _ = PostMessageW(Some(HWND(hwnd as *mut _)), msg, WPARAM(0), LPARAM(0));

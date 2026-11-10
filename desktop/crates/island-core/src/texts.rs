@@ -39,6 +39,8 @@ pub struct Texts {
     pub disconnected: &'static str,
     /// A notification whose app has no name.
     pub notification: &'static str,
+    /// When a notification arrived: just now.
+    pub now: &'static str,
 }
 
 pub const EN: Texts = Texts {
@@ -69,6 +71,7 @@ pub const EN: Texts = Texts {
     connected: "Connected",
     disconnected: "Disconnected",
     notification: "Notification",
+    now: "now",
 };
 
 pub const ES: Texts = Texts {
@@ -99,6 +102,7 @@ pub const ES: Texts = Texts {
     connected: "Conectado",
     disconnected: "Desconectado",
     notification: "Notificación",
+    now: "ahora",
 };
 
 /// `text` with each `{}` replaced by the next of `args`.

@@ -103,8 +103,12 @@ their own). Only paired devices are watched, so it never scans for new
 ones. `bluetoothGlance: false` turns it
 off.
 
-When a notification pops up, the island glances at it with the app's name
-and the notification's title. It reads them with Windows' own listener
+When a notification pops up, the island grows into a glance of its own,
+taller than the song's so the two never pass for each other: the app's
+logo, its name and "now", the title in bold and the next line dim. A ring
+in the logo's color (the system's accent when the logo has none) beats
+around the island three times and then glows softly until the glance ends,
+5 seconds later. It reads them with Windows' own listener
 (allowed under Privacy, "Notification access") and looks only when the
 shell shows one, so nothing runs in between. When Windows doesn't pop a
 notification up (Do Not Disturb, or an app in full screen), there is no

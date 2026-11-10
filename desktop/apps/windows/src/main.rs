@@ -114,14 +114,23 @@ enum Before {
 }
 
 /// A glance's content, kept until it ends.
-#[derive(Clone)]
+#[derive(Clone, Default)]
 struct Notice {
     icon: &'static str,
     tint: [f32; 3],
     title: std::borrow::Cow<'static, str>,
     detail: String,
     level: Option<f32>,
+    /// A notification's: its own, bigger glance with the app's logo, a
+    /// second line and a ring in the logo's color.
+    toast: bool,
+    body: String,
+    logo: Option<std::sync::Arc<Vec<u8>>>,
 }
+
+/// How long a notification's glance stays: a touch longer than the others,
+/// it has more to read.
+const TOAST_MS: u32 = 5000;
 /// Reads the settings once an editor has finished saving them.
 const SETTINGS_TIMER: usize = 6;
 const SETTINGS_WAIT_MS: u32 = 150;
@@ -243,6 +252,8 @@ struct App {
     notifications: Option<notifications::Notifications>,
     /// The glance's content being left in place, and since when.
     swap: Option<(Before, Instant)>,
+    /// When the last notification arrived: its ring beats for a moment.
+    pulse: Option<Instant>,
 }
 
 thread_local! {
@@ -439,28 +450,36 @@ impl App {
             running: tm.running(),
             resting: tm.phase != Phase::Focus,
         };
-        let scene = render::Scene {
-            page: self.page,
-            tabs_clock: &clock,
-            tabs_timer: tm.running(),
-            focus: focus_view,
-            notice: self.notice.as_ref().map(|n| render::Notice {
+        let ring = island_core::notifications::ring(
+            self.pulse
+                .map_or(f32::MAX, |t| t.elapsed().as_secs_f32() * 1000.0),
+        );
+        fn shown<'a>(n: &'a Notice, when: &'a str, ring: f32) -> render::Notice<'a> {
+            render::Notice {
                 icon: n.icon,
                 tint: n.tint,
                 title: &n.title,
                 detail: &n.detail,
                 level: n.level,
-            }),
+                toast: n.toast,
+                body: &n.body,
+                logo: n.logo.as_ref(),
+                when,
+                ring,
+            }
+        }
+        let when = self.texts.now;
+        let view = |n| shown(n, when, ring);
+        let scene = render::Scene {
+            page: self.page,
+            tabs_clock: &clock,
+            tabs_timer: tm.running(),
+            focus: focus_view,
+            notice: self.notice.as_ref().map(view),
             closed_timer: (active && self.track.is_none()).then_some(left.as_str()),
             swap: self.swap.as_ref().map(|(b, at)| render::Swap {
                 before: match b {
-                    Before::Notice(n) => render::Before::Notice(render::Notice {
-                        icon: n.icon,
-                        tint: n.tint,
-                        title: &n.title,
-                        detail: &n.detail,
-                        level: n.level,
-                    }),
+                    Before::Notice(n) => render::Before::Notice(view(n)),
                     Before::Line(l) => render::Before::Line(l),
                     Before::Song => render::Before::Song,
                 },
@@ -566,6 +585,7 @@ impl App {
                     title: title.into(),
                     detail,
                     level: None,
+                    ..Default::default()
                 },
                 PEEK_MS,
             );
@@ -641,6 +661,7 @@ impl App {
                 format!("{} %", glance::percent(level))
             },
             level: Some(if muted { 0.0 } else { level }),
+            ..Default::default()
         };
         self.notify(n, glance::LEVEL_MS);
     }
@@ -668,23 +689,29 @@ impl App {
             title: title.into(),
             detail: name,
             level: None,
+            ..Default::default()
         };
         self.notify(n, PEEK_MS);
     }
 
     /// Notifications showed: a glance for the last one (a burst ends on
-    /// the newest), its app and title.
+    /// the newest): its app, title, body and logo, and a ring that beats.
     fn notified(&mut self) {
         let Some(n) = &self.notifications else { return };
-        let Some(t) = n.take().pop() else { return };
+        let Some(a) = n.take().pop() else { return };
+        let t = a.toast;
         let n = Notice {
             icon: island_core::notifications::ICON,
             tint: render::WHITE,
             title: t.app.into(),
             detail: t.title,
-            level: None,
+            toast: true,
+            body: t.body,
+            logo: a.logo,
+            ..Default::default()
         };
-        self.notify(n, PEEK_MS);
+        self.pulse = Some(Instant::now());
+        self.notify(n, TOAST_MS);
     }
 
     /// Who uses `Device::ALL[i]` may have changed: a glance if an app
@@ -707,6 +734,7 @@ impl App {
                 .into(),
                 detail: app.to_string(),
                 level: None,
+                ..Default::default()
             },
             Some(Change::Off) => Notice {
                 icon: d.icon(),
@@ -719,6 +747,7 @@ impl App {
                 .into(),
                 detail: String::new(),
                 level: None,
+                ..Default::default()
             },
             None => {
                 self.users[i] = now;
@@ -845,8 +874,12 @@ impl App {
         let leaving = (1.0 - open * pace).clamp(0.0, 1.0);
         if self.peek_view {
             let peek_h = self.peek_size().1;
-            // One gives way to the other halfway, so they never overlap.
-            let grown = ((h - CLOSED.1) / (peek_h - CLOSED.1)).clamp(0.0, 1.0);
+            // One gives way to the other halfway, so they never overlap. A
+            // taller glance (a notification's) is fully there by the song's
+            // glance's height, so growing from that one never shows the
+            // closed island in between; the body uncovers the rest.
+            let small_h = peek_h.min(layout::PEEK.1);
+            let grown = ((h - CLOSED.1) / (small_h - CLOSED.1)).clamp(0.0, 1.0);
             let peek = ((grown - 0.5) * 2.0).clamp(0.0, 1.0);
             let closed = ((0.5 - grown) * 2.0).clamp(0.0, 1.0);
             // It leaves as the body grows past its own height, not the
@@ -896,7 +929,9 @@ impl App {
     /// closed island; over the lyrics' glance it takes that one's size.
     fn peek_size(&self) -> (f32, f32) {
         let level = self.notice.as_ref().is_some_and(|n| n.level.is_some());
-        if level && !self.glance() {
+        if self.notice.as_ref().is_some_and(|n| n.toast) {
+            island_core::notifications::SIZE
+        } else if level && !self.glance() {
             glance::LEVEL
         } else {
             layout::PEEK
@@ -1048,6 +1083,14 @@ impl App {
                 moving = true;
             } else {
                 self.swap = None;
+            }
+        }
+        if let Some(at) = self.pulse {
+            let toast = self.notice.as_ref().is_some_and(|n| n.toast);
+            if toast && at.elapsed().as_secs_f32() * 1000.0 < island_core::notifications::PULSE_MS {
+                moving = true;
+            } else {
+                self.pulse = None;
             }
         }
         if self.lyric_moved.is_some() {
@@ -1772,6 +1815,7 @@ fn main() -> Result<()> {
             bluetooth: None,
             notifications: None,
             swap: None,
+            pulse: None,
         };
         APP.with_borrow_mut(|a| *a = Some(app));
         // A file with a typo at start: the defaults until it is fixed.
