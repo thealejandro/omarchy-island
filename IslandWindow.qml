@@ -5,6 +5,7 @@ import qs.Commons
 import qs.Commons as Commons
 import "IslandGeometry.js" as IslandGeometry
 import "IslandIdle.js" as IslandIdle
+import "MediaModel.js" as MediaModel
 
 // One strip per screen along the bar's edge, just deep enough for the open
 // island. The surface itself is transparent and its input region is only a
@@ -42,7 +43,9 @@ PanelWindow {
   readonly property color shellStroke: Commons.Color.composed("island.border", "island.border-alpha",
     Commons.Color.bar.text, Commons.Color.bar.background.hslLightness > 0.5 ? 0.16 : 0.08)
   readonly property real shellStrokeWidth: Number(Commons.Color.pick("island.border-width", "1"))
-  readonly property int openWidth: Style.space(island.openWidth)
+  readonly property int openWidth: MediaModel.fitWidth(island.openWidth,
+    screen ? screen.width - (vertical ? barSize : 0) : 1920, Style.space(100) / 100,
+    ear + Style.space(8))
   // How far into the screen the window reaches; the open island is capped
   // to it.
   readonly property int maxDepth: vertical ? openWidth + Style.space(24)
@@ -516,7 +519,7 @@ PanelWindow {
     // touch softer than height so the body stretches before it widens.
     readonly property bool closing: win.mode === "closed"
     Behavior on bodyWidth {
-      enabled: win.island.animate
+      enabled: win.island.animate && Style.duration(1) > 0
       SpringAnimation {
         spring: body.closing ? 6.5 : 3.8
         damping: body.closing ? 0.6 : 0.36
@@ -525,7 +528,7 @@ PanelWindow {
       }
     }
     Behavior on bodyHeight {
-      enabled: win.island.animate
+      enabled: win.island.animate && Style.duration(1) > 0
       SpringAnimation {
         spring: body.closing ? 7.5 : 4.4
         damping: body.closing ? 0.65 : 0.38
@@ -605,7 +608,7 @@ PanelWindow {
               island: win.island
               x: win.pad
               y: win.edge === "bottom" ? inner.height - win.targetHeight + win.pad : win.pad
-              width: win.openWidth - 2 * win.pad
+              width: Math.max(0, win.openWidth - 2 * win.pad)
               maxHeight: (win.vertical ? win.height - Style.space(40) : win.maxDepth) - 2 * win.pad
               // Sections come in one after another once the body is about half
               // grown, and everything goes at once on the way out.

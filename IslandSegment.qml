@@ -12,6 +12,8 @@ Rectangle {
   property var options: []
   property var value: null
   property string label: ""
+  property real maxWidth: 10000
+  property int revision: 0
   signal picked(var value)
 
   function step(delta) {
@@ -26,25 +28,40 @@ Rectangle {
   Accessible.name: label
   Accessible.focusable: true
 
-  implicitWidth: row.implicitWidth + 2 * Style.space(2)
-  implicitHeight: Style.space(24)
+  readonly property real naturalWidth: {
+    revision
+    var total = 2 * Style.space(2)
+    for (var i = 0; i < choices.count; i++) {
+      var chip = choices.itemAt(i)
+      if (chip) total += chip.implicitWidth + (i > 0 ? row.spacing : 0)
+    }
+    return total
+  }
+  implicitWidth: Math.min(maxWidth, naturalWidth)
+  implicitHeight: row.implicitHeight + 2 * Style.space(2)
   radius: Style.space(8)
   color: Util.alpha(Commons.Color.bar.text, 0.07)
 
-  Row {
+  Flow {
     id: row
-    anchors.centerIn: parent
+    x: Style.space(2)
+    y: Style.space(2)
+    width: Math.max(0, root.width - 2 * x)
     spacing: Style.space(2)
 
     Repeater {
+      id: choices
+      onItemAdded: root.revision++
+      onItemRemoved: root.revision++
       model: root.options
 
       Rectangle {
         id: chip
         required property var modelData
         readonly property bool active: JSON.stringify(modelData.value) === JSON.stringify(root.value)
-        width: label.implicitWidth + 2 * Style.spacing.lg
-        height: root.height - 2 * Style.space(2)
+        implicitWidth: label.implicitWidth + 2 * Style.spacing.lg
+        width: Math.min(implicitWidth, row.width)
+        height: Style.space(20)
         radius: Style.space(6)
         color: active ? Util.alpha(Commons.Color.accent, 0.22)
           : Util.alpha(Commons.Color.bar.text, mouse.containsMouse ? 0.08 : 0)
@@ -59,6 +76,9 @@ Rectangle {
           id: label
           anchors.centerIn: parent
           text: chip.modelData.label
+          width: Math.max(0, chip.width - 2 * Style.spacing.lg)
+          horizontalAlignment: Text.AlignHCenter
+          elide: Text.ElideRight
           color: chip.active ? Commons.Color.accent : Commons.Color.bar.text
           opacity: chip.active || mouse.containsMouse ? 1 : 0.78
           font.family: Style.font.family

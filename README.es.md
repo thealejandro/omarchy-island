@@ -39,6 +39,24 @@ nada de Omarchy. Si lo quitas, tu escritorio queda exactamente como estaba.
 
 ## Funciones
 
+- **Novedades del escritorio en Omarchy**: columna de letra junto al
+  reproductor, con líneas cercanas, pausas y desplazamiento suave. Con
+  `lyrics: true`, `openLyrics` controla la letra en la isla abierta;
+  `lyricsPeek` sigue controlando la letra bajo el reloj. La agenda pasa
+  debajo de la música; en una isla estrecha se conserva la letra en línea.
+  `songText` (`title-artist`, `artist-title`, `title`, `artist`) y `textAlign`
+  (`center`, `left`) configuran el texto de los vistazos musicales. El ancho
+  llega a 960 px en pasos de 10, se adapta a cada pantalla y mantiene los
+  valores existentes desde 420 px.
+- **Página Enfoque**: rondas, saltar fase y descansos largos. En Ajustes ›
+  Enfoque se guardan `focusMinutes` (25), `breakMinutes` (5),
+  `longBreakMinutes` (15) y `longBreakEvery` (4). La rueda de Inicio también
+  guarda la duración. Los cambios respetan la fase en curso; reiniciar
+  aplica los valores actuales. El descanso arranca al terminar un enfoque
+  en marcha; el siguiente enfoque espera un clic. Saltar conserva el estado
+  en marcha o en pausa. `defaultPage: focus` abre esa página. Reiniciar el
+  shell reinicia la sesión del temporizador, pero conserva los ajustes.
+
 - **Vistazo**: cuando cambia la canción, termina el temporizador, conectas o
   desconectas el portátil, o la batería baja (20 % y 10 %), una línea baja de
   la barra unos segundos.
@@ -62,8 +80,8 @@ nada de Omarchy. Si lo quitas, tu escritorio queda exactamente como estaba.
   un atajo), y se abre la isla: portada,
   reproductor, título, artista, barra de progreso que puedes pulsar o
   arrastrar, anterior / reproducir / siguiente.
-- **Páginas**: la isla abierta tiene cinco, en las pestañas de su esquina:
-  Inicio, Calendario, Mundo, Notificaciones y Ajustes.
+- **Páginas**: la isla abierta tiene seis, en las pestañas de su esquina:
+  Inicio, Enfoque, Calendario, Mundo, Notificaciones y Ajustes.
 - **Inicio**: lo que suena junto a lo próximo (los tres siguientes eventos
   de tu agenda, con un botón para añadir uno), las últimas notificaciones
   cuando la isla las tiene, el temporizador y el dock.
@@ -243,17 +261,21 @@ quita solo las claves propias de la isla.
 | Clave | Valores | Por defecto | Qué hace |
 |-------|---------|-------------|----------|
 | `language` | `en`, `es`, `pt` | según `LANG` | Idioma de la isla |
-| `defaultPage` | `home`, `calendar`, `world` | `home` | Página con la que se abre |
+| `defaultPage` | `home`, `focus`, `calendar`, `world` | `home` | Página con la que se abre |
 | `calendarFirst` | `true`, `false` | `false` | Lo próximo a la izquierda en Inicio |
 | `showMedia`, `showTimer`, `showDock` | `true`, `false` | `true` | Partes de la página Inicio |
 | `lyrics` | `true`, `false` | `false` | Letra sincronizada en la tarjeta de reproducción, de lrclib.net (necesita `showMedia`); ver [Letra](#letra) |
 | `lyricsPeek` | `true`, `false` | `false` | La línea actual se queda bajo el reloj, como vistazo, con la isla cerrada mientras suena una canción (necesita `lyrics`) |
+| `openLyrics` | `true`, `false` | `true` | Mostrar letra en la isla abierta (necesita `lyrics`) |
+| `textAlign` | `center`, `left` | `center` | Alineación del texto en los vistazos musicales |
+| `songText` | `title-artist`, `artist-title`, `title`, `artist` | `title-artist` | Texto de los vistazos musicales |
+| `focusMinutes`, `breakMinutes`, `longBreakMinutes`, `longBreakEvery` | 5–120, 1–30, 5–60 min; 2–8 rondas | 25, 5, 15, 4 | Duraciones guardadas y frecuencia del descanso largo |
 | `animations` | `true`, `false` | `true` | Muelle y movimiento de páginas y vistazos |
 | `idleNotch` | `off`, `notch`, `icon`, `hour`, `day`, `battery` | `notch` | Con la isla cerrada: nada, una ceja de la barra bajo el reloj, una muesca más alta con un icono pequeño (`idleIcon`), o la ceja y una línea fina que se llena con la hora, el día (de 15 en 15 minutos) o el nivel de batería (roja con 20% o menos sin cargar; ceja normal sin batería). El icono no cede ante los puntos; cuelgan debajo |
 | `idleIcon` | `glasses`, `isle`, `prompt`, `capsule`, `braces`, `mark`, `archipelago`, `swell`, `channel`, `fold`, o un nombre de archivo | `glasses` | El icono de `idleNotch: icon` (hay diez incluidos; `glasses`, el predeterminado, sale del logo del autor; los seis primeros tienen una pieza propia que se mueve). El tuyo: pon un `.svg` o `.png` (hasta 256 KiB, PNG hasta 1024 px) en `~/.config/omarchy/island/icons` y escribe su nombre, por ejemplo `rocket.svg`. Si no sirve, se ve la muesca normal |
 | `idleIconTint` | `auto`, `on`, `off` | `auto` | Pinta el icono con el color de acento a través de su forma. `auto`: los iconos incluidos, los SVG de un solo color y los archivos `…-symbolic`; los PNG se ven tal cual |
 | `idleMotion` | `true`, `false` | `true` | De vez en cuando (cada 20 a 45 s, o cuando llega algo nuevo) el icono mira a un lado. Entre medias no corre nada, y con `animations` apagado tampoco |
-| `openWidth` | 420–800 | `560` | Ancho de la isla abierta |
+| `openWidth` | 420–960, paso 10 | `560` | Ancho de la isla abierta |
 | `blur` | `true`, `false` | `true` | Desenfoque detrás de la isla con la barra de cristal |
 | `clock` | `true`, `false` | `true` | Abrir al pasar sobre el reloj (`false`: solo la franja del borde) |
 | `clockClick` | `pin`, `calendar`, `omarchy` | `calendar` | Clic en el reloj: fijar la isla, abrirla en el calendario o el calendario de Omarchy |
@@ -465,8 +487,10 @@ lee.
 ## Letra
 
 Desactivada por defecto. Con `lyrics: true` (Ajustes › General › Letra
-sincronizada), la tarjeta de reproducción muestra la línea que suena y la
-siguiente, al compás de la canción. Con `lyricsPeek: true` la línea actual
+sincronizada), una columna junto al reproductor muestra la línea que suena
+y las cercanas, al compás de la canción. En una isla estrecha se muestran
+la línea actual y la siguiente bajo el reproductor. `openLyrics: false`
+oculta ambas vistas abiertas. Con `lyricsPeek: true` la línea actual
 también se queda bajo el reloj, como un vistazo, mientras suena una canción
 y la isla está cerrada (cualquier otro vistazo pasa por delante y la letra
 vuelve después).

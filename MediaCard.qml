@@ -9,12 +9,14 @@ Column {
   id: root
 
   required property var island
+  property bool inlineLyrics: true
 
   readonly property color textColor: Commons.Color.bar.text
   readonly property color dimColor: Util.alpha(Commons.Color.bar.text, 0.72)
   readonly property int artSize: Style.space(64)
 
   spacing: Style.spacing.xl
+  function motion(ms) { return island.animate ? Style.duration(ms) : 0 }
 
   // A new track nudges the cover and slides the titles in.
   readonly property string trackKey: island.title + "\u0000" + island.artist + "\u0000" + island.artUrl
@@ -22,9 +24,9 @@ Column {
 
   ParallelAnimation {
     id: trackIn
-    NumberAnimation { target: art; property: "scale"; from: 0.88; to: 1; duration: 420; easing.type: Easing.OutBack; easing.overshoot: 1.6 }
-    NumberAnimation { target: info; property: "opacity"; from: 0; to: 1; duration: 260; easing.type: Easing.OutCubic }
-    NumberAnimation { target: infoShift; property: "x"; from: Style.space(10); to: 0; duration: 360; easing.type: Easing.OutCubic }
+    NumberAnimation { target: art; property: "scale"; from: 0.96; to: 1; duration: root.motion(240); easing.type: Easing.OutCubic }
+    NumberAnimation { target: info; property: "opacity"; from: 0; to: 1; duration: root.motion(180); easing.type: Easing.OutCubic }
+    NumberAnimation { target: infoShift; property: "x"; from: Style.space(6); to: 0; duration: root.motion(240); easing.type: Easing.OutCubic }
   }
 
   Row {
@@ -51,8 +53,8 @@ Column {
         onStatusChanged: if (status === Image.Ready) coverIn.restart()
         ParallelAnimation {
           id: coverIn
-          NumberAnimation { target: cover; property: "opacity"; from: 0; to: 1; duration: 320; easing.type: Easing.OutCubic }
-          NumberAnimation { target: cover; property: "scale"; from: 1.12; to: 1; duration: 480; easing.type: Easing.OutCubic }
+          NumberAnimation { target: cover; property: "opacity"; from: 0; to: 1; duration: root.motion(180); easing.type: Easing.OutCubic }
+          NumberAnimation { target: cover; property: "scale"; from: 1.04; to: 1; duration: root.motion(240); easing.type: Easing.OutCubic }
         }
       }
       Text {
@@ -78,6 +80,7 @@ Column {
         Equalizer {
           anchors.verticalCenter: parent.verticalCenter
           playing: root.island.playing
+          animate: root.island.animate
           barHeight: Style.space(9)
         }
         Text {
@@ -120,7 +123,7 @@ Column {
     id: lyric
     width: parent.width
     height: lyricLines.implicitHeight
-    visible: root.island.hasMedia && root.island.lyricsState === "synced"
+    visible: root.inlineLyrics && root.island.cfg.openLyrics && root.island.hasMedia && root.island.lyricsState === "synced"
     clip: true
     Accessible.role: Accessible.StaticText
     Accessible.name: root.island.tr("a11y_lyric", root.island.lyricLine)
@@ -132,8 +135,8 @@ Column {
     }
     ParallelAnimation {
       id: lineIn
-      NumberAnimation { target: line; property: "opacity"; from: 0.35; to: 1; duration: 160; easing.type: Easing.OutCubic }
-      NumberAnimation { target: lineShift; property: "y"; from: Style.space(4); to: 0; duration: 160; easing.type: Easing.OutCubic }
+      NumberAnimation { target: line; property: "opacity"; from: 0.35; to: 1; duration: root.motion(160); easing.type: Easing.OutCubic }
+      NumberAnimation { target: lineShift; property: "y"; from: Style.space(4); to: 0; duration: root.motion(160); easing.type: Easing.OutCubic }
     }
 
     Column {
@@ -177,8 +180,8 @@ Column {
     // to the pointer.
     property real smooth: progress
     Behavior on smooth {
-      enabled: !seek.pressed && !seek.settling
-      NumberAnimation { duration: 1000 }
+      enabled: root.island.animate && !seek.pressed && !seek.settling
+      NumberAnimation { duration: Style.duration(1000) }
     }
     // After a seek, hold the dropped spot until the player reports it.
     onProgressChanged: if (seek.settling) Qt.callLater(() => seek.settling = false)
@@ -222,7 +225,7 @@ Column {
         anchors.verticalCenter: parent.verticalCenter
         color: Commons.Color.accent
         scale: seek.pressed ? 1.25 : (seek.containsMouse ? 1 : 0)
-        Behavior on scale { NumberAnimation { duration: 200; easing.type: Easing.OutBack; easing.overshoot: 2 } }
+        Behavior on scale { NumberAnimation { duration: root.motion(160); easing.type: Easing.OutCubic } }
       }
       MouseArea {
         id: seek

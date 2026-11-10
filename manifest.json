@@ -66,7 +66,14 @@
       "notifyHistory": true,
       "notifyHistoryLimit": 100,
       "notifyBadge": true,
-      "notifyKeyboardIdle": 10000
+      "notifyKeyboardIdle": 10000,
+      "openLyrics": true,
+      "textAlign": "center",
+      "songText": "title-artist",
+      "focusMinutes": 25,
+      "breakMinutes": 5,
+      "longBreakMinutes": 15,
+      "longBreakEvery": 4
     },
     "schema": [
       {
@@ -85,6 +92,7 @@
         "label": "Opens on",
         "options": [
           "home",
+          "focus",
           "calendar",
           "world"
         ],
@@ -131,8 +139,8 @@
         "type": "integer",
         "label": "Width",
         "min": 420,
-        "max": 800,
-        "step": 20,
+        "max": 960,
+        "step": 10,
         "defaultValue": 560
       },
       {
@@ -218,7 +226,14 @@
         "key": "idleNotch",
         "type": "enum",
         "label": "Closed island",
-        "options": ["off", "notch", "icon", "hour", "day", "battery"],
+        "options": [
+          "off",
+          "notch",
+          "icon",
+          "hour",
+          "day",
+          "battery"
+        ],
         "defaultValue": "notch"
       },
       {
@@ -231,7 +246,11 @@
         "key": "idleIconTint",
         "type": "enum",
         "label": "Tint the icon",
-        "options": ["auto", "on", "off"],
+        "options": [
+          "auto",
+          "on",
+          "off"
+        ],
         "defaultValue": "auto"
       },
       {
@@ -254,7 +273,7 @@
       {
         "key": "barClicks",
         "type": "boolean",
-        "label": "Clock, world clock and weather open the island",
+        "label": "World clock and weather open the island",
         "defaultValue": true
       },
       {
@@ -389,7 +408,7 @@
       {
         "key": "notifications",
         "type": "enum",
-        "label": "Notifications",
+        "label": "Show notifications in the island",
         "options": [
           "off",
           "island"
@@ -399,13 +418,13 @@
       {
         "key": "notifyBody",
         "type": "boolean",
-        "label": "Notification text in the glance",
+        "label": "Show the text in the glance",
         "defaultValue": true
       },
       {
         "key": "notifyPeekDuration",
         "type": "integer",
-        "label": "Notification glance duration",
+        "label": "Notification glance",
         "min": 2000,
         "max": 15000,
         "step": 500,
@@ -414,7 +433,7 @@
       {
         "key": "notifyHistory",
         "type": "boolean",
-        "label": "Keep notification history",
+        "label": "Keep a history",
         "defaultValue": true
       },
       {
@@ -440,6 +459,70 @@
         "max": 30000,
         "step": 1000,
         "defaultValue": 10000
+      },
+      {
+        "key": "openLyrics",
+        "type": "boolean",
+        "label": "Lyrics in the open island",
+        "defaultValue": true
+      },
+      {
+        "key": "textAlign",
+        "type": "enum",
+        "label": "Song text alignment",
+        "options": [
+          "center",
+          "left"
+        ],
+        "defaultValue": "center"
+      },
+      {
+        "key": "songText",
+        "type": "enum",
+        "label": "Song line",
+        "options": [
+          "title-artist",
+          "artist-title",
+          "title",
+          "artist"
+        ],
+        "defaultValue": "title-artist"
+      },
+      {
+        "key": "focusMinutes",
+        "type": "integer",
+        "label": "Focus duration",
+        "min": 5,
+        "max": 120,
+        "step": 5,
+        "defaultValue": 25
+      },
+      {
+        "key": "breakMinutes",
+        "type": "integer",
+        "label": "Short break",
+        "min": 1,
+        "max": 30,
+        "step": 1,
+        "defaultValue": 5
+      },
+      {
+        "key": "longBreakMinutes",
+        "type": "integer",
+        "label": "Long break",
+        "min": 5,
+        "max": 60,
+        "step": 5,
+        "defaultValue": 15
+      },
+      {
+        "key": "longBreakEvery",
+        "type": "integer",
+        "label": "Rounds before a long break",
+        "min": 2,
+        "max": 8,
+        "step": 1,
+        "defaultValue": 4
       }
     ]
   }

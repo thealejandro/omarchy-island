@@ -18,6 +18,8 @@ function clock(seconds) {
   var s = Math.max(0, Math.floor(seconds || 0))
   var m = Math.floor(s / 60)
   var r = s % 60
+  if (s >= 3600) return Math.floor(s / 3600) + ":" + (m % 60 < 10 ? "0" : "") + m % 60
+    + ":" + (r < 10 ? "0" : "") + r
   return m + ":" + (r < 10 ? "0" : "") + r
 }
 
@@ -25,6 +27,26 @@ function clock(seconds) {
 
 var STRINGS = {
   en: {
+    "page_focus": "Focus",
+    "sec_focus": "Focus",
+    "longBreak": "Long break",
+    "focusRound": "Round %1",
+    "a11y_skipFocus": "Skip phase",
+    "lyricsLoading": "Loading lyrics",
+    "lyricsUnavailable": "No synced lyrics",
+    "set_openLyrics": "Lyrics in the open island",
+    "hint_openLyrics": "A scrolling column beside the player; off keeps lyrics only in the glance",
+    "set_textAlign": "Song text alignment",
+    "set_songText": "Song line",
+    "opt_left": "Left",
+    "opt_title-artist": "Title and artist",
+    "opt_artist-title": "Artist and title",
+    "opt_title": "Title",
+    "opt_artist": "Artist",
+    "set_focusMinutes": "Focus duration",
+    "set_breakMinutes": "Short break",
+    "set_longBreakMinutes": "Long break",
+    "set_longBreakEvery": "Rounds before a long break",
     nothingPlaying: "Nothing playing",
     nothingPlayingHint: "Play something in Spotify, a browser or mpv",
     focus: "Focus",
@@ -131,6 +153,7 @@ var STRINGS = {
     agentError: "%1 failed",
     opt_auto: "Auto",
     opt_home: "Home",
+    opt_focus: "Focus",
     opt_calendar: "Calendar",
     opt_world: "World",
     opt_pin: "Pin island",
@@ -260,6 +283,26 @@ var STRINGS = {
     credit: "%1 · by thealejandro"
   },
   es: {
+    "page_focus": "Enfoque",
+    "sec_focus": "Enfoque",
+    "longBreak": "Descanso largo",
+    "focusRound": "Ronda %1",
+    "a11y_skipFocus": "Saltar fase",
+    "lyricsLoading": "Cargando letra",
+    "lyricsUnavailable": "Sin letra sincronizada",
+    "set_openLyrics": "Letra en la isla abierta",
+    "hint_openLyrics": "Una columna junto al reproductor; desactívala para dejar la letra solo en el vistazo",
+    "set_textAlign": "Alineación de la canción",
+    "set_songText": "Texto de la canción",
+    "opt_left": "Izquierda",
+    "opt_title-artist": "Título y artista",
+    "opt_artist-title": "Artista y título",
+    "opt_title": "Título",
+    "opt_artist": "Artista",
+    "set_focusMinutes": "Duración del enfoque",
+    "set_breakMinutes": "Descanso corto",
+    "set_longBreakMinutes": "Descanso largo",
+    "set_longBreakEvery": "Rondas antes del descanso largo",
     nothingPlaying: "Nada sonando",
     nothingPlayingHint: "Pon algo en Spotify, el navegador o mpv",
     focus: "Enfoque",
@@ -366,6 +409,7 @@ var STRINGS = {
     agentError: "%1 ha fallado",
     opt_auto: "Auto",
     opt_home: "Inicio",
+    opt_focus: "Enfoque",
     opt_calendar: "Calendario",
     opt_world: "Mundo",
     opt_pin: "Fijar isla",
@@ -495,6 +539,26 @@ var STRINGS = {
     credit: "%1 · por thealejandro"
   },
   pt: {
+    "page_focus": "Foco",
+    "sec_focus": "Foco",
+    "longBreak": "Pausa longa",
+    "focusRound": "Rodada %1",
+    "a11y_skipFocus": "Pular fase",
+    "lyricsLoading": "Carregando letra",
+    "lyricsUnavailable": "Sem letra sincronizada",
+    "set_openLyrics": "Letra na ilha aberta",
+    "hint_openLyrics": "Uma coluna ao lado do player; desative para deixar a letra apenas na prévia",
+    "set_textAlign": "Alinhamento da música",
+    "set_songText": "Texto da música",
+    "opt_left": "Esquerda",
+    "opt_title-artist": "Título e artista",
+    "opt_artist-title": "Artista e título",
+    "opt_title": "Título",
+    "opt_artist": "Artista",
+    "set_focusMinutes": "Duração do foco",
+    "set_breakMinutes": "Pausa curta",
+    "set_longBreakMinutes": "Pausa longa",
+    "set_longBreakEvery": "Rodadas antes da pausa longa",
     nothingPlaying: "Nada tocando",
     nothingPlayingHint: "Toque algo no Spotify, no navegador ou no mpv",
     focus: "Foco",
@@ -601,6 +665,7 @@ var STRINGS = {
     agentError: "%1 falhou",
     opt_auto: "Auto",
     opt_home: "Início",
+    opt_focus: "Foco",
     opt_calendar: "Calendário",
     opt_world: "Mundo",
     opt_pin: "Fixar ilha",

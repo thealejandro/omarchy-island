@@ -17,6 +17,7 @@ Column {
   readonly property color textColor: Commons.Color.bar.text
   readonly property color dimColor: Util.alpha(Commons.Color.bar.text, 0.72)
   readonly property var sources: ({
+    focus: "FocusPage.qml",
     calendar: "CalendarPage.qml",
     world: "WorldPage.qml",
     notifications: "NotificationsPage.qml",
@@ -94,19 +95,21 @@ Column {
       Loader {
         id: loader
         width: parent.width
-        active: !root.onHome
         // Opening straight onto a page (the clock's calendar, the weather's
         // world) builds it over a few frames while the island grows, not
         // in the frame the click lands; a tab change while open is at once.
         asynchronous: !root.shown
         visible: !root.onHome && status === Loader.Ready
         function load() {
-          if (!active || !root.sources[root.page]) return
-          var url = Qt.resolvedUrl(root.sources[root.page])
+          var file = root.sources[root.page]
+          if (!file) { setSource(""); return }
+          var url = Qt.resolvedUrl(file)
           if (String(source) === String(url)) return
           setSource(String(url), { "island": root.island })
         }
-        onActiveChanged: load()
+        // Own the source lifecycle instead of toggling active: an automatic
+        // reactivation can construct a page without its required host.
+        Component.onCompleted: load()
         onLoaded: item.width = Qt.binding(function() { return loader.width })
       }
 

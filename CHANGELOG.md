@@ -8,6 +8,17 @@ project follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Omarchy: a scrolling column of synced lyrics beside the player, with
+  pauses and surrounding lines. The agenda moves below it; narrow islands
+  retain inline lyrics. `openLyrics` controls the open view independently
+  of `lyricsPeek`; `songText` and `textAlign` style media glances. (#81)
+- Open width up to 960 px in steps of 10, fitted to each screen including
+  scaling and side bars. Existing settings down to 420 px are preserved. (#81)
+- Focus page with rounds, skip, short and long breaks, and saved durations
+  (`focusMinutes`, `breakMinutes`, `longBreakMinutes`, `longBreakEvery`).
+  A single deadline alarm completes each phase; display updates run only
+  while visible. A running focus starts its break automatically; the next
+  focus waits for a click. (#81)
 - Settings › World: the city list is edited as rows, with buttons to move
   and remove each city, and a zone field that searches the time zones
   (`timedatectl list-timezones`, read once when the field is first used).
@@ -18,6 +29,8 @@ project follows [Semantic Versioning](https://semver.org/).
 
 ### Fixed
 
+- Choice controls wrap within the settings page. Media transitions are
+  shorter and media/spring animations respect reduced motion. (#81)
 - Settings: a row whose control is too wide (Closed island, with six
   choices) now puts the label on top instead of cutting it to a couple
   of letters, and the icon picker wraps from the last icon to the first

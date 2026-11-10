@@ -17,3 +17,17 @@ jobs:
         with:
           node-version: 22
       - run: node --test 'test/*.test.mjs'
+
+  qml:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: jurplel/install-qt-action@v4
+        with:
+          version: '6.8.3'
+          cache: true
+          install-deps: false
+      - run: qmltestrunner -input test/qml/tst_focus.qml
+        env:
+          QT_QPA_PLATFORM: offscreen
+          QT_QUICK_BACKEND: software
