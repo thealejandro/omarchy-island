@@ -224,6 +224,19 @@ const DEFAULT_ACCENT: [f32; 3] = [0.3, 0.6, 1.0];
 /// background: the palette's lighter shade (`AccentPalette`, the second of
 /// its eight colors), else the accent itself (`AccentColorMenu`, ABGR).
 fn windows_accent() -> [f32; 3] {
+    let mut kept = ACCENT.lock().unwrap_or_else(|e| e.into_inner());
+    *kept.get_or_insert_with(read_accent)
+}
+
+/// The accent as last read, until Windows says it changed.
+static ACCENT: std::sync::Mutex<Option<[f32; 3]>> = std::sync::Mutex::new(None);
+
+/// Windows changed its colors: the accent is read again when next drawn.
+pub fn forget_accent() {
+    *ACCENT.lock().unwrap_or_else(|e| e.into_inner()) = None;
+}
+
+fn read_accent() -> [f32; 3] {
     use windows::Win32::System::Registry::{
         HKEY_CURRENT_USER, RRF_RT_REG_BINARY, RRF_RT_REG_DWORD, RegGetValueW,
     };
