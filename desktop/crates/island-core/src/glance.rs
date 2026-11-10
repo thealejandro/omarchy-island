@@ -2,26 +2,52 @@
 //! of the song: an icon, a title, a detail and, for a level, a bar. Sizes
 //! in DIPs, in the glance's own space (see [`crate::media::PEEK`]).
 
-use crate::media::PEEK_TEXT;
+use crate::media::CLOSED_MEDIA_WIDTH;
 use crate::shape::Rect;
 
 /// How long a level's glance stays after its last change: short, it
 /// follows the keys or the wheel.
 pub const LEVEL_MS: u32 = 1500;
 
-/// Beside a level's bar, the title and detail take this much.
-pub const LEVEL_TEXT: Rect = Rect {
-    width: 190.0,
-    ..PEEK_TEXT
-};
+/// A level's glance on its own: as wide as the closed island with a song
+/// and only a touch taller, enough to catch the eye. Over the lyrics'
+/// glance it takes that one's size instead.
+pub const LEVEL: (f32, f32) = (CLOSED_MEDIA_WIDTH, 36.0);
 
-/// The level's bar, at the glance's right.
-pub const LEVEL_BAR: Rect = Rect {
-    x: 256.0,
-    y: 20.0,
-    width: 126.0,
-    height: 4.0,
-};
+/// Where a level's glance puts things, at `size`: the icon at the left,
+/// the bar filling the middle and the percentage at the right.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct LevelLayout {
+    pub icon: Rect,
+    pub bar: Rect,
+    /// The percentage, right-aligned (or, muted, the word in the bar's place).
+    pub text: Rect,
+}
+
+pub fn level_layout((w, h): (f32, f32)) -> LevelLayout {
+    let side = (h - 12.0).clamp(20.0, 28.0);
+    let pad = 14.0;
+    let icon = Rect {
+        x: pad,
+        y: (h - side) / 2.0,
+        width: side,
+        height: side,
+    };
+    let text = Rect {
+        x: w - pad - 40.0,
+        y: 0.0,
+        width: 40.0,
+        height: h,
+    };
+    let x = icon.x + icon.width + 12.0;
+    let bar = Rect {
+        x,
+        y: (h - 4.0) / 2.0,
+        width: text.x - 10.0 - x,
+        height: 4.0,
+    };
+    LevelLayout { icon, bar, text }
+}
 
 /// The volume as a whole percentage, as the system's own flyout shows it.
 pub fn percent(level: f32) -> u32 {
@@ -72,11 +98,17 @@ mod tests {
     }
 
     #[test]
-    fn the_bar_sits_right_of_the_text_inside_the_glance() {
-        const {
-            assert!(LEVEL_TEXT.x + LEVEL_TEXT.width < LEVEL_BAR.x);
-            assert!(LEVEL_BAR.x + LEVEL_BAR.width <= PEEK.0 - 14.0);
-            assert!(LEVEL_BAR.y + LEVEL_BAR.height < PEEK.1);
+    fn icon_bar_and_percent_fill_the_glance_in_order() {
+        for size in [LEVEL, PEEK] {
+            let l = level_layout(size);
+            assert!(l.icon.x + l.icon.width < l.bar.x);
+            assert!(l.bar.x + l.bar.width < l.text.x);
+            assert!(l.text.x + l.text.width <= size.0 - 14.0);
+            assert!(l.icon.y >= 0.0 && l.icon.y + l.icon.height <= size.1);
+            // Most of the width is the bar.
+            assert!(l.bar.width > size.0 * 0.5);
         }
+        // Barely taller than the closed island.
+        const { assert!(LEVEL.1 - crate::media::CLOSED_TEXT.height <= 4.0) };
     }
 }

@@ -584,7 +584,8 @@ impl App {
     fn swap_from(&mut self, before: Before) {
         let at_rest = !self.open
             && self.peek_view
-            && (self.height.value - layout::PEEK.1).abs() < 0.5
+            && self.height.target > CLOSED.1
+            && (self.height.value - self.height.target).abs() < 0.5
             && self.alphas()[1] > 0.99;
         if !at_rest {
             return;
@@ -817,13 +818,14 @@ impl App {
         let pace = if self.shrinking { 1.4 } else { 3.0 };
         let leaving = (1.0 - open * pace).clamp(0.0, 1.0);
         if self.peek_view {
+            let peek_h = self.peek_size().1;
             // One gives way to the other halfway, so they never overlap.
-            let grown = ((h - CLOSED.1) / (layout::PEEK.1 - CLOSED.1)).clamp(0.0, 1.0);
+            let grown = ((h - CLOSED.1) / (peek_h - CLOSED.1)).clamp(0.0, 1.0);
             let peek = ((grown - 0.5) * 2.0).clamp(0.0, 1.0);
             let closed = ((0.5 - grown) * 2.0).clamp(0.0, 1.0);
             // It leaves as the body grows past its own height, not the
             // closed one: at rest it is fully visible.
-            let past = ((h - layout::PEEK.1) / (OPEN.1 - layout::PEEK.1)).clamp(0.0, 1.0);
+            let past = ((h - peek_h) / (OPEN.1 - peek_h)).clamp(0.0, 1.0);
             let leaving = (1.0 - past * pace).clamp(0.0, 1.0);
             [closed, peek * leaving, open_a]
         } else {
@@ -862,6 +864,17 @@ impl App {
         self.lyrics.is_some()
             && !self.lines.is_empty()
             && self.track.as_ref().is_some_and(|t| t.playing)
+    }
+
+    /// The glance's size: a level on its own is barely bigger than the
+    /// closed island; over the lyrics' glance it takes that one's size.
+    fn peek_size(&self) -> (f32, f32) {
+        let level = self.notice.as_ref().is_some_and(|n| n.level.is_some());
+        if level && !self.glance() {
+            glance::LEVEL
+        } else {
+            layout::PEEK
+        }
     }
 
     fn peeking(&self) -> bool {
@@ -970,7 +983,7 @@ impl App {
         let (w, h) = if self.open {
             self.open_size()
         } else if self.peeking() {
-            layout::PEEK
+            self.peek_size()
         } else if self.track.is_some() {
             // Wide enough for the song's name.
             (layout::CLOSED_MEDIA_WIDTH, CLOSED.1)
@@ -1023,6 +1036,9 @@ impl App {
             // Nothing runs while the island is still.
             if self.open || !peeking {
                 self.peek_view = false;
+            }
+            if !self.peek {
+                self.notice = None;
             }
             self.last_frame = None;
             self.pacer.stop();
@@ -1381,7 +1397,11 @@ impl App {
                     let b = self.showing();
                     self.swap_from(b);
                 }
-                self.notice = None;
+                // Otherwise it stays while the island shrinks back (so it
+                // keeps its size and its look on the way) and goes once still.
+                if self.glance() {
+                    self.notice = None;
+                }
                 self.set_peek(false);
             }
             WM_TIMER if wp.0 == FOCUS_TIMER => self.focus_ended(),

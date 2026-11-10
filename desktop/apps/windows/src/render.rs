@@ -976,7 +976,7 @@ impl Renderer {
         // The cover and bars stay put when only the line changes.
         let same_song = s.notice.is_none() && !matches!(before, Some(Before::Notice(_)));
         match before {
-            Some(Before::Notice(n)) => self.peek_notice(&n, dx, old_dy, old_a),
+            Some(Before::Notice(n)) => self.peek_notice(&n, s.size, dx, old_dy, old_a),
             Some(Before::Line(line)) if !same_song => {
                 self.peek_song(s, Some(line), dx, old_dy, old_a, old_a)
             }
@@ -993,7 +993,7 @@ impl Renderer {
             None => {}
         }
         if let Some(n) = s.notice {
-            self.peek_notice(&n, dx, new_dy, new_a);
+            self.peek_notice(&n, s.size, dx, new_dy, new_a);
             return;
         }
         let current = s
@@ -1035,33 +1035,47 @@ impl Renderer {
         self.peek_text(&spans, dx, dy, alpha);
     }
 
-    fn peek_notice(&mut self, n: &Notice, dx: f32, dy: f32, alpha: f32) {
+    fn peek_notice(&mut self, n: &Notice, size: (f32, f32), dx: f32, dy: f32, alpha: f32) {
         if alpha <= 0.0 {
             return;
         }
-        let icon = lift(shift(layout::PEEK_ART, dx), dy);
-        self.tinted(n.icon, &self.text.icon, icon, n.tint, alpha);
-        let mut spans = vec![(n.title.to_string(), false)];
-        if !n.detail.is_empty() {
-            spans.push((format!("  {}", n.detail), true));
-        }
-        let text = if n.level.is_some() {
-            glance::LEVEL_TEXT
-        } else {
-            layout::PEEK_TEXT
-        };
-        self.song(&spans, &self.text.peek, lift(shift(text, dx), dy), alpha);
-        if let Some(level) = n.level {
-            let bar = lift(shift(glance::LEVEL_BAR, dx), dy);
-            self.rounded(bar, bar.height / 2.0, 0.2 * alpha);
-            let done = Rect {
-                width: bar.width * level.clamp(0.0, 1.0),
-                ..bar
-            };
-            if done.width > 0.0 {
-                self.tinted_rounded(done, bar.height / 2.0, n.tint, 0.95 * alpha);
+        let at = |r: Rect| lift(shift(r, dx), dy);
+        let Some(level) = n.level else {
+            // (A level is laid out at the body's own size, without `dx`.)
+            self.tinted(n.icon, &self.text.icon, at(layout::PEEK_ART), n.tint, alpha);
+            let mut spans = vec![(n.title.to_string(), false)];
+            if !n.detail.is_empty() {
+                spans.push((format!("  {}", n.detail), true));
             }
+            self.song(&spans, &self.text.peek, at(layout::PEEK_TEXT), alpha);
+            return;
+        };
+        // A level: the icon, the bar and the number, nothing else; muted,
+        // the word stands where the bar was.
+        let at = |r: Rect| lift(r, dy);
+        let l = glance::level_layout(size);
+        self.tinted(n.icon, &self.text.icon, at(l.icon), n.tint, alpha);
+        if n.detail.is_empty() {
+            let word = Rect {
+                x: l.bar.x,
+                y: 0.0,
+                width: l.text.x + l.text.width - l.bar.x,
+                height: size.1,
+            };
+            let spans = [(n.title.to_string(), true)];
+            self.song(&spans, &self.text.peek, at(word), alpha);
+            return;
         }
+        let bar = at(l.bar);
+        self.rounded(bar, bar.height / 2.0, 0.2 * alpha);
+        let done = Rect {
+            width: bar.width * level.clamp(0.0, 1.0),
+            ..bar
+        };
+        if done.width > 0.0 {
+            self.tinted_rounded(done, bar.height / 2.0, n.tint, 0.95 * alpha);
+        }
+        self.tinted(n.detail, &self.text.clock, at(l.text), WHITE, 0.9 * alpha);
     }
 
     fn draw_closed(&mut self, s: &Scene, dx: f32, alpha: f32) {
