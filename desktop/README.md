@@ -54,7 +54,8 @@ that isn't valid JSON is ignored until it is fixed.
 While music plays (any app in Windows' media controls), the closed island
 shows the cover, the song and bars that move with the music; a new song
 peeks for a few seconds, and the open island has the progress and the
-controls, in the cover's color (the progress, the play button, the tab
+controls, in the cover's color (the progress, the play button, the tab,
+the halo and light behind the cover, the lyrics around the sung line
 and the glow; white for a gray cover). When an unplugged screen was chosen, the island goes to the
 primary until it is back.
 
@@ -89,7 +90,7 @@ page last chosen.
 
 When the volume changes (keys, taskbar or any app), the closed island
 glances at it for a moment: the speaker, the percentage and a bar in
-Windows' accent color, or
+the light shade of Windows' accent (as its own volume flyout), or
 "Muted". It follows the default speakers when they change, and nothing
 runs while the volume stays put. `volumeGlance: false` turns it off.
 

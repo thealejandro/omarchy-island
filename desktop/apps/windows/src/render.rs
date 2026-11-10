@@ -31,7 +31,7 @@ use windows::Win32::Graphics::Direct2D::{
 };
 use windows::Win32::Graphics::Direct2D::{
     D2D1_ANTIALIAS_MODE_PER_PRIMITIVE, D2D1_LAYER_OPTIONS1_NONE, D2D1_LAYER_PARAMETERS1,
-    ID2D1Geometry, ID2D1Layer,
+    D2D1_RADIAL_GRADIENT_BRUSH_PROPERTIES, ID2D1Geometry, ID2D1Layer,
 };
 use windows::Win32::Graphics::Direct3D::{D3D_DRIVER_TYPE_HARDWARE, D3D_DRIVER_TYPE_WARP};
 use windows::Win32::Graphics::Direct3D11::{
@@ -211,6 +211,50 @@ const NOTE_BOX: f32 = 44.0;
 const TOAST_LOGO: f32 = 44.0;
 /// A blue like the system's own, if Windows doesn't tell its accent.
 const DEFAULT_ACCENT: [f32; 3] = [0.3, 0.6, 1.0];
+
+/// Windows' accent exactly as its own volume flyout shows it on a dark
+/// background: the palette's lighter shade (`AccentPalette`, the second of
+/// its eight colors), else the accent itself (`AccentColorMenu`, ABGR).
+fn windows_accent() -> [f32; 3] {
+    use windows::Win32::System::Registry::{
+        HKEY_CURRENT_USER, RRF_RT_REG_BINARY, RRF_RT_REG_DWORD, RegGetValueW,
+    };
+    use windows::core::w;
+    const KEY: windows::core::PCWSTR =
+        w!("Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Accent");
+    let mut palette = [0u8; 32];
+    let mut size = palette.len() as u32;
+    let read = unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            KEY,
+            w!("AccentPalette"),
+            RRF_RT_REG_BINARY,
+            None,
+            Some(palette.as_mut_ptr().cast()),
+            Some(&mut size),
+        )
+    };
+    if read.is_ok() && size >= 8 {
+        return [palette[4], palette[5], palette[6]].map(|v| v as f32 / 255.0);
+    }
+    let (mut abgr, mut size) = (0u32, 4u32);
+    let read = unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            KEY,
+            w!("AccentColorMenu"),
+            RRF_RT_REG_DWORD,
+            None,
+            Some((&mut abgr as *mut u32).cast()),
+            Some(&mut size),
+        )
+    };
+    if read.is_ok() {
+        return [abgr, abgr >> 8, abgr >> 16].map(|v| (v & 0xFF) as f32 / 255.0);
+    }
+    system_accent()
+}
 
 /// The system's accent color, brightened for the black island the way a
 /// cover's is (see [`layout::accent`]).
@@ -1000,7 +1044,22 @@ impl Renderer {
             return;
         };
         let p = layout::player(s.open);
-        self.draw_art(t, shift(layout::ART, dx), 10.0, alpha, s.scale);
+        let art = shift(layout::ART, dx);
+        if self.accent.is_some() {
+            // A halo of the cover's color around it, soft at its edge.
+            let theme = self.theme();
+            for i in 1..=6 {
+                let g = i as f32 * 2.0;
+                let r = Rect {
+                    x: art.x - g,
+                    y: art.y - g + 2.0,
+                    width: art.width + 2.0 * g,
+                    height: art.height + 2.0 * g,
+                };
+                self.tinted_rounded(r, 10.0 + g, theme, 0.035 * alpha);
+            }
+        }
+        self.draw_art(t, art, 10.0, alpha, s.scale);
         self.text(&t.title, &self.text.title, shift(p.title, dx), alpha);
         let artist = if t.artist.is_empty() {
             &t.album
@@ -1128,7 +1187,11 @@ impl Renderer {
                 if a <= 0.01 {
                     continue;
                 }
-                self.ink.SetColor(&white(a));
+                // The sung line white; the others a little of the cover's
+                // color, so the column belongs to the song.
+                let k = (i as f32 - focus).abs().min(1.0);
+                let [r, g, b] = color::toward_white(self.theme(), 1.0 - 0.4 * k);
+                self.ink.SetColor(&D2D1_COLOR_F { r, g, b, a });
                 self.dc.DrawTextLayout(
                     v(Point {
                         x: col.x,
@@ -1237,7 +1300,7 @@ impl Renderer {
         let l = glance::level_layout(size);
         // A level with no color of its own takes the system's accent.
         let tint = if n.tint == WHITE {
-            color::vivid(system_accent())
+            windows_accent()
         } else {
             n.tint
         };
@@ -1478,6 +1541,47 @@ impl Renderer {
         Ok(())
     }
 
+    /// The cover's color, open: a light from where the cover is (the left
+    /// third) that fades out toward the lyrics (px, from the body's
+    /// top-left).
+    fn cover_light(
+        &self,
+        geo: &ID2D1PathGeometry,
+        width: f32,
+        height: f32,
+        accent: [f32; 3],
+        k: f32,
+    ) -> Result<()> {
+        let [r, g, b] = accent;
+        let at = |position, a| D2D1_GRADIENT_STOP {
+            position,
+            color: D2D1_COLOR_F { r, g, b, a },
+        };
+        unsafe {
+            let stops = ID2D1RenderTarget::CreateGradientStopCollection(
+                &self.dc,
+                &[at(0.0, 0.34 * k), at(0.45, 0.12 * k), at(1.0, 0.0)],
+                D2D1_GAMMA_2_2,
+                D2D1_EXTEND_MODE_CLAMP,
+            )?;
+            let brush = self.dc.CreateRadialGradientBrush(
+                &D2D1_RADIAL_GRADIENT_BRUSH_PROPERTIES {
+                    center: Vector2 {
+                        X: width * 0.2,
+                        Y: height * 0.6,
+                    },
+                    gradientOriginOffset: Vector2::default(),
+                    radiusX: width * 0.62,
+                    radiusY: height * 0.9,
+                },
+                None,
+                &stops,
+            )?;
+            self.dc.FillGeometry(geo, &brush, None::<&ID2D1Brush>);
+        }
+        Ok(())
+    }
+
     /// Redraws the whole window: the island's outline at its body, its
     /// content on top, on a transparent background.
     pub fn draw(&mut self, s: &Scene) -> Result<()> {
@@ -1559,6 +1663,11 @@ impl Renderer {
                 let shown = toast.map_or(0.0, |(_, _, a, _)| a);
                 if let Some(accent) = self.accent {
                     self.glow(&geo, s.body.height, accent, 1.0 - shown)?;
+                    // Open, the color also spreads from behind the cover.
+                    let open = s.alpha[2] * (1.0 - shown);
+                    if open > 0.0 && s.track.is_some() {
+                        self.cover_light(&geo, s.body.width, s.body.height, accent, open)?;
+                    }
                 }
                 if let Some((color, ring, a, orbit)) = toast {
                     self.glow(&geo, s.body.height, color, a)?;
