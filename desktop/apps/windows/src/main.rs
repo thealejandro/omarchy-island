@@ -110,8 +110,10 @@ struct App {
     /// The open island shows the lyrics in a column beside the player (on
     /// by default); off, it is just the player.
     lyrics_column: bool,
-    /// The open island's width (DIPs, steps of 10): 720 by default with
-    /// the column, 560 without.
+    /// The open island's width setting (DIPs, steps of 10): 720 by default
+    /// with the column, 560 without.
+    open_width_setting: f32,
+    /// That width as it fits the screen now ([`layout::fit_open_width`]).
     open_width: f32,
 }
 
@@ -192,6 +194,14 @@ impl App {
     fn layout(&mut self) {
         let (mon, scale) = screen(self.monitor);
         self.scale = scale;
+        // Small or scaled-up screens get a narrower open island.
+        let fit = layout::fit_open_width(self.open_width_setting, mon.width / scale);
+        if fit != self.open_width {
+            self.open_width = fit;
+            if self.open {
+                self.retarget();
+            }
+        }
         let s = self.scale;
         let r = shape::window_rect(
             self.placement,
@@ -730,6 +740,13 @@ fn main() -> Result<()> {
         )?;
         let lyrics_on = std::env::args().any(|a| a == "--lyrics");
         let lyrics_column = arg("--open-lyrics").is_none_or(|s| s != "off");
+        let open_width_setting = arg("--open-width")
+            .and_then(|s| layout::parse_open_width(&s))
+            .unwrap_or(if lyrics_on && lyrics_column {
+                layout::OPEN_LYRICS_WIDTH
+            } else {
+                layout::OPEN_WIDTH
+            });
         let app = App {
             hwnd,
             placement: arg("--placement")
@@ -764,13 +781,9 @@ fn main() -> Result<()> {
             lyric_index: None,
             lyric_moved: None,
             lyrics_column,
-            open_width: arg("--open-width")
-                .and_then(|s| layout::parse_open_width(&s))
-                .unwrap_or(if lyrics_on && lyrics_column {
-                    layout::OPEN_LYRICS_WIDTH
-                } else {
-                    layout::OPEN_WIDTH
-                }),
+            open_width_setting,
+            // Fitted to the screen by the first layout.
+            open_width: open_width_setting,
         };
         if let Some(r) = &app.renderer {
             r.align_song(

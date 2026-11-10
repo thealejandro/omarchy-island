@@ -178,6 +178,18 @@ pub fn parse_open_width(s: &str) -> Option<f32> {
     Some(w.clamp(OPEN_WIDTH_MIN, OPEN_WIDTH_MAX))
 }
 
+/// The most of a screen's width the open island takes.
+const SCREEN_SHARE: f32 = 0.6;
+
+/// The open island's width on a screen `screen` DIPs wide: the setting, but
+/// at most a share of the screen (in steps of 10), so it stays a bar at the
+/// top on a 1280 x 1024 monitor or a laptop at 150 % too. Never below the
+/// smallest width unless the screen itself is narrower.
+pub fn fit_open_width(setting: f32, screen: f32) -> f32 {
+    let most = (screen * SCREEN_SHARE / OPEN_WIDTH_STEP).floor() * OPEN_WIDTH_STEP;
+    setting.min(most.max(OPEN_WIDTH_MIN)).min(screen.max(0.0))
+}
+
 /// How the open island is laid out: its width, and whether the lyrics
 /// take a column of it. The island keeps its width with or without lines,
 /// so it doesn't jump when they arrive; the player fills what's left.
@@ -402,6 +414,26 @@ mod tests {
         assert_eq!(parse_open_width("ancho"), None);
         assert_eq!(parse_open_width("NaN"), None);
         assert_eq!(parse_open_width("inf"), None);
+    }
+
+    #[test]
+    fn open_width_fits_small_screens() {
+        // A 2560 screen at 100 %: the setting as it is.
+        assert_eq!(fit_open_width(960.0, 2560.0), 960.0);
+        assert_eq!(fit_open_width(720.0, 1920.0), 720.0);
+        // A square 17" (1280 x 1024) still fits the default.
+        assert_eq!(fit_open_width(720.0, 1280.0), 720.0);
+        assert_eq!(fit_open_width(960.0, 1280.0), 760.0);
+        // 1366 at 125 % (1093 DIPs) and 1024 x 768.
+        assert_eq!(fit_open_width(720.0, 1092.8), 650.0);
+        assert_eq!(fit_open_width(720.0, 1024.0), 610.0);
+        // Smaller still: the smallest width, never past the screen.
+        assert_eq!(fit_open_width(720.0, 800.0), OPEN_WIDTH_MIN);
+        assert_eq!(fit_open_width(720.0, 400.0), 400.0);
+        // A narrower setting is kept.
+        assert_eq!(fit_open_width(540.0, 1024.0), 540.0);
+        // At the width a 1024 screen gets, there is still a lyrics column.
+        assert!(Open::new(610.0, true).lyrics_rect().is_some());
     }
 
     #[test]

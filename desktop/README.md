@@ -38,7 +38,9 @@ open island as just the player, the lyrics only in the closed one.
 `--open-width` sets the open island's width, from 480 to 960 in steps of
 10 (720 by default with the lyrics column, 560 without). The column takes
 a share of it; below about 600 there is no room for one and only the
-player shows. Answers
+player shows. On small or scaled-up screens the island takes at most 60 %
+of the screen's width (610 on a 1024-wide one, 760 on a 1280 x 1024
+square monitor), down to 480. Answers
 are cached in `%LOCALAPPDATA%\island\lyrics` (the last 400 songs).
 
 CI builds with the MSVC toolchain. Without the Visual Studio Build Tools,
