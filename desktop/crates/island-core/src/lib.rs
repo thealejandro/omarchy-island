@@ -8,8 +8,10 @@
 pub mod lyrics;
 pub mod media;
 pub mod monitor;
+pub mod settings;
 pub mod shape;
 pub mod spring;
+pub mod texts;
 
 /// Version of the desktop apps, from the workspace.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
