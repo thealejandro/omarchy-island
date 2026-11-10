@@ -37,6 +37,11 @@ Rectangle {
     // The layer gets keyboard focus a moment after asking for it.
     Qt.callLater(function() { input.forceActiveFocus(); input.selectAll() })
   }
+  // Sets the text from outside (a searcher's pick), even mid-editing.
+  function put(t) {
+    root.text = t
+    input.text = t
+  }
   function finish(commit) {
     var typed = input.text
     if (!commit) input.text = root.text
