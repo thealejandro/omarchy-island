@@ -95,24 +95,21 @@ Column {
       Loader {
         id: loader
         width: parent.width
-        active: !root.onHome
         // Opening straight onto a page (the clock's calendar, the weather's
         // world) builds it over a few frames while the island grows, not
         // in the frame the click lands; a tab change while open is at once.
         asynchronous: !root.shown
         visible: !root.onHome && status === Loader.Ready
         function load() {
-          if (!active || !root.sources[root.page]) return
-          var url = Qt.resolvedUrl(root.sources[root.page])
+          var file = root.sources[root.page]
+          if (!file) { setSource(""); return }
+          var url = Qt.resolvedUrl(file)
           if (String(source) === String(url)) return
           setSource(String(url), { "island": root.island })
         }
-        // Unload the URL too. Otherwise reactivating a previously visited
-        // page can construct it before setSource supplies its required host.
-        onActiveChanged: {
-          if (active) load()
-          else setSource("")
-        }
+        // Own the source lifecycle instead of toggling active: an automatic
+        // reactivation can construct a page without its required host.
+        Component.onCompleted: load()
         onLoaded: item.width = Qt.binding(function() { return loader.width })
       }
 
