@@ -45,6 +45,7 @@ that isn't valid JSON is ignored until it is fixed.
 | `longBreakMinutes` | 5 to 60 | `15` |
 | `longBreakEvery` | 2 to 8 (rounds of focus) | `4` |
 | `volumeGlance` | `true`, `false` | `true` |
+| `privacyGlance` | `true`, `false` | `true` |
 
 While music plays (any app in Windows' media controls), the closed island
 shows the cover, the song and bars that move with the music; a new song
@@ -79,6 +80,12 @@ When the volume changes (keys, taskbar or any app), the closed island
 glances at it for a moment: the speaker, the percentage and a bar, or
 "Muted". It follows the default speakers when they change, and nothing
 runs while the volume stays put. `volumeGlance: false` turns it off.
+
+When an app starts using the microphone or the camera, the island glances
+at it with the app's name (orange for the microphone, green for the
+camera), and again when the last one stops. It reads what Windows' privacy
+settings keep and waits on the registry's own notice of a change.
+`privacyGlance: false` turns it off.
 
 For trying things out, the command line wins over the file:
 `--placement`, `--monitor`, `--text-align`, `--song-text`, `--lyrics`,
