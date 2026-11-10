@@ -226,6 +226,9 @@ struct App {
     /// told (a change is told only if it differs).
     volume: Option<volume::Volume>,
     last_volume: Option<(f32, bool)>,
+    /// The default speakers are Bluetooth ones: read again on a new song or
+    /// a change of speakers, for the lyrics' "auto" delay.
+    on_bluetooth: bool,
     /// The watch on the microphone and camera, while that glance is on,
     /// and the apps last seen using each (`Device::ALL`'s order).
     privacy: Option<privacy::Privacy>,
@@ -921,7 +924,7 @@ impl App {
         // The sound comes out later than the player's position says.
         let pos = t
             .position_now()
-            .saturating_sub(u64::from(self.settings.lyrics_delay));
+            .saturating_sub(u64::from(self.settings.lyrics_delay(self.on_bluetooth)));
         let w = island_core::lyrics::window(&self.lines, pos);
         let index = w.index;
         let next_at = w.next_at;
@@ -1415,6 +1418,8 @@ impl App {
                     v.follow();
                     self.last_volume = v.now();
                 }
+                self.on_bluetooth = volume::on_bluetooth();
+                self.follow_lyrics();
             }
             WM_MOUSEWHEEL => {
                 let (x, y) = (lp.0 as i16 as i32, (lp.0 >> 16) as i16 as i32);
@@ -1430,6 +1435,7 @@ impl App {
                 if song.is_some() && song != self.song {
                     let first = self.song.is_none();
                     self.song = song;
+                    self.on_bluetooth = volume::on_bluetooth();
                     if !first {
                         self.notice = None;
                         self.set_peek(true);
@@ -1724,6 +1730,7 @@ fn main() -> Result<()> {
             // Started by the settings (on by default).
             volume: None,
             last_volume: None,
+            on_bluetooth: false,
             privacy: None,
             users: Default::default(),
             bluetooth: None,

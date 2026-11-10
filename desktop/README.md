@@ -47,7 +47,7 @@ that isn't valid JSON is ignored until it is fixed.
 | `volumeGlance` | `true`, `false` | `true` |
 | `privacyGlance` | `true`, `false` | `true` |
 | `bluetoothGlance` | `true`, `false` | `true` |
-| `lyricsDelay` | 0 to 2000 (ms) | `200` |
+| `lyricsDelay` | `auto`, or 0 to 2000 (ms) | `auto` |
 
 While music plays (any app in Windows' media controls), the closed island
 shows the cover, the song and bars that move with the music; a new song
@@ -62,9 +62,12 @@ player: the sung line bright, the ones around it fading, scrolling up as
 the song goes (pauses show as `• • •`). `openLyrics: false` leaves the
 open island as just the player, the lyrics only in the closed one. Answers
 are cached in `%LOCALAPPDATA%\island\lyrics` (the last 400 songs).
-The sound comes out a little after the position the player tells (more
-over Bluetooth), so the lines follow `lyricsDelay` ms later; raise it if
-they still come early, lower it if late.
+Over Bluetooth the sound comes out a little after the position the player
+tells, so the lines follow later: with `lyricsDelay: "auto"`, 200 ms when
+the default speakers are Bluetooth ones and none when they are wired,
+looked at again on each song and change of speakers. A number of ms is
+used instead whatever the speakers; raise it if the lines still come
+early, lower it if late.
 
 `openWidth` is the open island's width (`auto`: 560, with the lyrics
 column or without). The column takes a share of it, or on a narrow island

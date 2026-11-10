@@ -14,7 +14,7 @@ use windows::Win32::Media::Audio::{
     AUDIO_VOLUME_NOTIFICATION_DATA, DEVICE_STATE, EDataFlow, ERole, IMMDeviceEnumerator,
     IMMNotificationClient, IMMNotificationClient_Impl, MMDeviceEnumerator, eConsole, eRender,
 };
-use windows::Win32::System::Com::{CLSCTX_ALL, CLSCTX_INPROC_SERVER, CoCreateInstance};
+use windows::Win32::System::Com::{CLSCTX_ALL, CLSCTX_INPROC_SERVER, CoCreateInstance, STGM_READ};
 use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
 use windows::core::{PCWSTR, Result, implement};
 
@@ -75,6 +75,30 @@ impl IMMNotificationClient_Impl for OnDevice_Impl {
     fn OnPropertyValueChanged(&self, _: &PCWSTR, _: &PROPERTYKEY) -> Result<()> {
         Ok(())
     }
+}
+
+/// The device's enumerator (`PKEY_Device_EnumeratorName`): `BTHENUM` or
+/// `BTHLEDEVICE` for Bluetooth, `USB`, `HDAUDIO`… for the rest.
+const ENUMERATOR: PROPERTYKEY = PROPERTYKEY {
+    fmtid: windows::core::GUID::from_u128(0xa45c254e_df1c_4efd_8020_67d146a850e0),
+    pid: 24,
+};
+
+/// Whether the default speakers are Bluetooth ones (their sound comes out
+/// later than the player's position says). Read once per change of them.
+pub fn on_bluetooth() -> bool {
+    let read = || -> Result<bool> {
+        unsafe {
+            let devices: IMMDeviceEnumerator =
+                CoCreateInstance(&MMDeviceEnumerator, None, CLSCTX_INPROC_SERVER)?;
+            let store = devices
+                .GetDefaultAudioEndpoint(eRender, eConsole)?
+                .OpenPropertyStore(STGM_READ)?;
+            let v = store.GetValue(&ENUMERATOR)?;
+            Ok(v.to_string().to_ascii_uppercase().starts_with("BTH"))
+        }
+    };
+    read().unwrap_or(false)
 }
 
 /// A volume message's level (0 to 1) and mute.
