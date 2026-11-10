@@ -158,7 +158,8 @@ pub const ART: Rect = rect(24.0, 24.0, 88.0, 88.0);
 const TEXT_X: f32 = 128.0;
 const MARGIN: f32 = 24.0;
 const BUTTON: f32 = 40.0;
-const BUTTONS_Y: f32 = 128.0;
+const BAR_Y: f32 = 124.0;
+const BUTTONS_Y: f32 = 132.0;
 const BUTTONS_GAP: f32 = 64.0;
 
 // With synced lyrics the open island is not taller: the lines run in a
@@ -250,13 +251,17 @@ pub struct Player {
 
 pub fn player(open: Open) -> Player {
     let w = open.text_width();
+    // The song beside the cover, centered on it; the bar under both, from
+    // the cover's edge to the text's, with the controls below its middle and
+    // the times at its ends, level with them.
+    let (left, right) = (ART.x, TEXT_X + w);
+    let bar_w = right - left;
     Player {
-        title: rect(TEXT_X, 26.0, w, 26.0),
-        artist: rect(TEXT_X, 54.0, w, 22.0),
-        bar: rect(TEXT_X, 96.0, w, 4.0),
-        times: rect(TEXT_X, 104.0, w, 16.0),
-        // The controls sit under the bar's middle.
-        buttons_center: TEXT_X + w / 2.0,
+        title: rect(TEXT_X, 42.0, w, 26.0),
+        artist: rect(TEXT_X, 70.0, w, 22.0),
+        bar: rect(left, BAR_Y, bar_w, 4.0),
+        times: rect(left, BUTTONS_Y + (BUTTON - 16.0) / 2.0, bar_w, 16.0),
+        buttons_center: left + bar_w / 2.0,
     }
 }
 /// Where the line being sung starts, from the column's top: room for the
@@ -406,8 +411,8 @@ mod tests {
         // The default with lyrics: as wide as without, the column beside.
         let o = Open::new(OPEN_LYRICS_WIDTH, true);
         assert_eq!(o.lyrics_rect().map(|l| l.width), Some(200.0));
-        assert_eq!(player(o).bar.width, 192.0);
-        assert_eq!(player(Open::new(OPEN_WIDTH, false)).bar.width, 408.0);
+        assert_eq!(player(o).bar.width, 296.0);
+        assert_eq!(player(Open::new(OPEN_WIDTH, false)).bar.width, 512.0);
         // Wide: a share of the room.
         assert_eq!(
             Open::new(720.0, true).lyrics_rect().map(|l| l.width),
@@ -582,16 +587,16 @@ mod tests {
     #[test]
     fn buttons_are_hit_inside_and_missed_between() {
         let alone = Open::new(OPEN_WIDTH, false);
-        assert_eq!(hit(332.0, 148.0, alone), Some(Button::PlayPause));
-        assert_eq!(hit(268.0, 148.0, alone), Some(Button::Prev));
-        assert_eq!(hit(396.0, 148.0, alone), Some(Button::Next));
-        assert_eq!(hit(300.0, 148.0, alone), None);
-        assert_eq!(hit(332.0, 60.0, alone), None);
+        assert_eq!(hit(280.0, 152.0, alone), Some(Button::PlayPause));
+        assert_eq!(hit(216.0, 152.0, alone), Some(Button::Prev));
+        assert_eq!(hit(344.0, 152.0, alone), Some(Button::Next));
+        assert_eq!(hit(248.0, 152.0, alone), None);
+        assert_eq!(hit(280.0, 60.0, alone), None);
         // Beside lyrics, they follow the narrower bar's middle.
         let beside = Open::new(OPEN_LYRICS_WIDTH, true);
-        assert_eq!(hit(224.0, 148.0, beside), Some(Button::PlayPause));
-        assert_eq!(hit(288.0, 148.0, beside), Some(Button::Next));
-        assert_eq!(hit(396.0, 148.0, beside), None);
+        assert_eq!(hit(172.0, 152.0, beside), Some(Button::PlayPause));
+        assert_eq!(hit(236.0, 152.0, beside), Some(Button::Next));
+        assert_eq!(hit(344.0, 152.0, beside), None);
         // They fit in the open island, left of the lyrics, at any width.
         let mut w = OPEN_WIDTH_MIN;
         while w <= OPEN_WIDTH_MAX {
@@ -601,7 +606,10 @@ mod tests {
                 assert!(next.y + next.height <= 180.0);
                 let end = o.lyrics_rect().map_or(w, |l| l.x);
                 assert!(next.x + next.width <= end, "{w}");
-                assert!(button(Button::Prev, o).x >= ART.x + ART.width, "{w}");
+                // Under the cover now, clear of the times at the bar's ends.
+                let bar = player(o).bar;
+                assert!(button(Button::Prev, o).x >= bar.x + 44.0, "{w}");
+                assert!(next.x + next.width <= bar.x + bar.width - 44.0, "{w}");
             }
             w += 10.0;
         }
