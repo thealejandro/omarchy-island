@@ -87,7 +87,7 @@ Column {
       Text {
         anchors.centerIn: parent
         width: parent.width
-        visible: root.island.lyricsState !== "synced"
+        visible: root.island.hasMedia && root.island.lyricsState !== "synced"
         text: root.island.tr(root.island.lyricsState === "loading" ? "lyricsLoading" : "lyricsUnavailable")
         textFormat: Text.PlainText
         wrapMode: Text.WordWrap
