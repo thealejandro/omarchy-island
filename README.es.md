@@ -98,7 +98,7 @@ nada de Omarchy. Si lo quitas, tu escritorio queda exactamente como estaba.
 - **Sin toggles duplicados**: con la isla en la barra (ver abajo), pasar el
   ratón por el centro de la barra ya no muestra los indicadores inactivos de
   Omarchy; la barra deja solo los que están activos. Configurable.
-- **Español e inglés**: sigue `LANG`, o elígelo en `shell.json`.
+- **Español, inglés y portugués**: sigue `LANG`, o elígelo en `shell.json`.
 - **Sigue tu tema**: cambia en vivo con `omarchy theme set` (colores, fuente
   y acento). La isla tiene esquinas redondeadas con "orejas" cóncavas que se
   funden con la barra, y un contorno muy sutil (algo más marcado en temas
@@ -242,7 +242,7 @@ quita solo las claves propias de la isla.
 
 | Clave | Valores | Por defecto | Qué hace |
 |-------|---------|-------------|----------|
-| `language` | `en`, `es` | según `LANG` | Idioma de la isla |
+| `language` | `en`, `es`, `pt` | según `LANG` | Idioma de la isla |
 | `defaultPage` | `home`, `calendar`, `world` | `home` | Página con la que se abre |
 | `calendarFirst` | `true`, `false` | `false` | Lo próximo a la izquierda en Inicio |
 | `showMedia`, `showTimer`, `showDock` | `true`, `false` | `true` | Partes de la página Inicio |

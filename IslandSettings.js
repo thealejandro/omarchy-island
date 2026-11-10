@@ -11,7 +11,7 @@
 var SECTIONS = ["general", "look", "open", "bar", "world", "agenda", "notify", "system"]
 
 var SCHEMA = [
-  { key: "language", type: "enum", options: ["", "en", "es"], def: "", section: "general" },
+  { key: "language", type: "enum", options: ["", "en", "es", "pt"], def: "", section: "general" },
   { key: "defaultPage", type: "enum", options: ["home", "calendar", "world"], def: "home", section: "general" },
   { key: "calendarFirst", type: "bool", def: false, section: "general" },
   { key: "showMedia", type: "bool", def: true, section: "general" },

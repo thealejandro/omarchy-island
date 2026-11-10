@@ -95,7 +95,7 @@ as it was.
 - **No duplicate toggles**: with the island on the bar (see below), hovering
   the bar's center no longer reveals Omarchy's inactive indicators; the bar
   keeps only the ones that are on. Configurable.
-- **English and Spanish**: follows `LANG`, or set it in `shell.json`.
+- **English, Spanish and Portuguese**: follows `LANG`, or set it in `shell.json`.
 - **Theme-aware**: follows `omarchy theme set` live: colors, font and accent.
   The island keeps rounded corners with concave "ears" that melt into the
   bar, and a very subtle outline (a little stronger on light themes). A theme
@@ -228,7 +228,7 @@ the island's own keys and nothing else.
 
 | Key | Values | Default | What it does |
 |-----|--------|---------|--------------|
-| `language` | `en`, `es` | from `LANG` | Island language |
+| `language` | `en`, `es`, `pt` | from `LANG` | Island language |
 | `defaultPage` | `home`, `calendar`, `world` | `home` | Page the island opens on |
 | `calendarFirst` | `true`, `false` | `false` | What's next on the left on Home |
 | `showMedia`, `showTimer`, `showDock` | `true`, `false` | `true` | Parts of the Home page |

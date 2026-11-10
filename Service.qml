@@ -54,7 +54,7 @@ Item {
   function isOnBar(id) { return onBar.indexOf(id) !== -1 }
 
   readonly property string lang: IslandModel.language(cfg.language || Quickshell.env("LANG"))
-  readonly property var locale: Qt.locale(lang === "es" ? "es_ES" : "en_US")
+  readonly property var locale: Qt.locale(lang === "pt" ? "pt_BR" : (lang === "es" ? "es_ES" : "en_US"))
   // The island sits over the bar's clock by default: hovering it opens the
   // island and a left click pins it, instead of Omarchy's calendar popup.
   readonly property bool overClock: cfg.clock

@@ -8,6 +8,7 @@ project follows [Semantic Versioning](https://semver.org/).
 
 ### Added
 
+- Brazilian Portuguese interface, including settings and calendar dates. (#26)
 - The island's own bar button (`widgetIcon`) shows the Silence glyph
   while Silence is on and the island holds the notifications. (#37)
 
