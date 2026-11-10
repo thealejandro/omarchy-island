@@ -13,9 +13,11 @@ mod tray;
 use std::cell::RefCell;
 use std::time::Instant;
 
+use island_core::focus::{self, Ended, Lengths, Phase};
 use island_core::media as layout;
 use island_core::menu::{self, Kind as MenuKind};
 use island_core::monitor::{self, Monitor, MonitorChoice};
+use island_core::pages::{self, FocusButton, Page};
 use island_core::settings::Settings;
 use island_core::shape::{self, Placement, Rect};
 use island_core::spring::{self, Spring};
@@ -24,13 +26,14 @@ use serde_json::Value;
 use windows::Win32::Foundation::{
     ERROR_ALREADY_EXISTS, GetLastError, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM,
 };
-use windows::Win32::Globalization::GetUserDefaultLocaleName;
+use windows::Win32::Globalization::{GetTimeFormatEx, GetUserDefaultLocaleName, TIME_NOSECONDS};
 use windows::Win32::Graphics::Gdi::{
     CreateRectRgn, EnumDisplayMonitors, GetMonitorInfoW, HDC, HMONITOR, MONITOR_DEFAULTTONEAREST,
-    MONITORINFO, MonitorFromPoint, SetWindowRgn,
+    MONITORINFO, MonitorFromPoint, ScreenToClient, SetWindowRgn,
 };
 use windows::Win32::System::Com::{COINIT_APARTMENTTHREADED, CoInitializeEx};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::System::SystemInformation::GetLocalTime;
 use windows::Win32::System::Threading::CreateMutexW;
 use windows::Win32::UI::HiDpi::{
     DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, GetDpiForMonitor, MDT_EFFECTIVE_DPI,
@@ -46,9 +49,9 @@ use windows::Win32::UI::WindowsAndMessaging::{
     PostMessageW, PostQuitMessage, RegisterClassW, RegisterWindowMessageW, SW_SHOW,
     SW_SHOWNOACTIVATE, SW_SHOWNORMAL, SWP_NOACTIVATE, SetForegroundWindow, SetTimer, SetWindowPos,
     ShowWindow, TranslateMessage, WM_ACTIVATE, WM_APP, WM_CLOSE, WM_DESTROY, WM_DISPLAYCHANGE,
-    WM_DPICHANGED, WM_KEYDOWN, WM_LBUTTONUP, WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_RBUTTONUP,
-    WM_TIMER, WNDCLASSW, WS_EX_NOACTIVATE, WS_EX_NOREDIRECTIONBITMAP, WS_EX_TOOLWINDOW,
-    WS_EX_TOPMOST, WS_POPUP,
+    WM_DPICHANGED, WM_KEYDOWN, WM_LBUTTONUP, WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_MOUSEWHEEL,
+    WM_RBUTTONUP, WM_TIMER, WNDCLASSW, WS_EX_NOACTIVATE, WS_EX_NOREDIRECTIONBITMAP,
+    WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
 };
 use windows::core::BOOL;
 use windows::core::{Error, HSTRING, PCWSTR, Result, w};
@@ -56,7 +59,7 @@ use windows::core::{Error, HSTRING, PCWSTR, Result, w};
 // Sizes in DIPs (1/96 inch); the springs run in DIPs too, so a DPI change
 // doesn't jolt the motion.
 const CLOSED: (f32, f32) = (180.0, 32.0);
-const OPEN: (f32, f32) = (layout::OPEN_WIDTH, 180.0);
+const OPEN: (f32, f32) = (layout::OPEN_WIDTH, pages::OPEN_HEIGHT);
 const RADIUS: f32 = 18.0;
 const EAR: f32 = 10.0;
 const MARGIN: f32 = 8.0;
@@ -85,6 +88,10 @@ const WM_APP_TRAY: u32 = WM_APP + 6;
 /// Reads the settings once an editor has finished saving them.
 const SETTINGS_TIMER: usize = 6;
 const SETTINGS_WAIT_MS: u32 = 150;
+/// When the focus timer's phase ends (one shot, set again each time).
+const FOCUS_TIMER: usize = 7;
+/// The wheel changes the focus length by this many minutes.
+const WHEEL_MINUTES: i32 = 5;
 // The menu's items.
 const MENU_LYRICS: u32 = 1;
 const MENU_OPEN_LYRICS: u32 = 2;
@@ -172,6 +179,13 @@ struct App {
     open_width_setting: f32,
     /// That width as it fits the screen now ([`layout::fit_open_width`]).
     open_width: f32,
+    /// The open island's page: the one last chosen (while the app runs).
+    page: Page,
+    timer: focus::Timer,
+    /// The steady clock the timer counts on.
+    start: Instant,
+    /// What the glance tells instead of the song (the timer's end).
+    notice: Option<(&'static str, String)>,
 }
 
 thread_local! {
@@ -333,7 +347,48 @@ impl App {
             index: self.lyric_index,
             scroll,
         });
+        // The focus timer's words, for this frame.
+        let now = self.now_ms();
+        let (t, tm, l) = (self.texts, &self.timer, &self.settings.focus);
+        let left = focus::clock(tm.left_ms(now));
+        let active = tm.active(l);
+        let (phase, round) = match tm.phase {
+            Phase::Focus => (t.focus, (tm.rounds + 1).min(l.every)),
+            Phase::Break => (t.short_break, tm.rounds),
+            Phase::LongBreak => (t.long_break, l.every),
+        };
+        let label = format!("{phase} · {}", texts::fill(t.round, &[round, l.every]));
+        let next = if !active {
+            t.wheel_hint.to_string()
+        } else if tm.phase == Phase::Focus {
+            let long = tm.rounds + 1 >= l.every;
+            let minutes = if long { l.long } else { l.short };
+            texts::fill(t.then_break, &[minutes])
+        } else {
+            t.then_focus.to_string()
+        };
+        let clock = if tm.running() {
+            left.clone()
+        } else {
+            time_of_day()
+        };
+        let focus_view = render::FocusView {
+            label: &label,
+            time: &left,
+            next: &next,
+            progress: tm.progress(now, l),
+            rounds: tm.rounds,
+            every: l.every,
+            running: tm.running(),
+            resting: tm.phase != Phase::Focus,
+        };
         let scene = render::Scene {
+            page: self.page,
+            tabs_clock: &clock,
+            tabs_timer: tm.running(),
+            focus: focus_view,
+            notice: self.notice.as_ref().map(|(a, b)| (*a, b.as_str())),
+            closed_timer: (active && self.track.is_none()).then_some(left.as_str()),
             width: self.window.width as u32,
             height: self.window.height as u32,
             body,
@@ -363,25 +418,81 @@ impl App {
         }
     }
 
-    /// Wakes up when the shown second changes, only while that is on screen.
+    /// Wakes up when what is shown changes, only while it is on screen: the
+    /// song's second (open, on Home), the focus timer's second, or the
+    /// minute of the clock on the tabs.
     fn tick(&self) {
         unsafe {
             let _ = KillTimer(Some(self.hwnd), TICK_TIMER);
         }
+        let mut wait: Option<u32> = None;
+        let mut sooner = |ms: u32| wait = Some(wait.map_or(ms, |w| w.min(ms)));
         if let Some(t) = &self.track
             && self.open
+            && self.page == Page::Home
             && t.playing
             && t.duration_ms > 0
         {
-            let ms = 1000 - (t.position_now() % 1000) as u32 + 15;
-            unsafe { SetTimer(Some(self.hwnd), TICK_TIMER, ms, None) };
+            sooner(1000 - (t.position_now() % 1000) as u32 + 15);
+        }
+        let shown = self.open || self.track.is_none();
+        if self.timer.running() && shown {
+            // It shows the second rounded up: it changes on a whole one.
+            let left = self.timer.left_ms(self.now_ms());
+            sooner((left % 1000) as u32 + 15);
+        } else if self.open {
+            let t = unsafe { GetLocalTime() };
+            let into = u32::from(t.wSecond) * 1000 + u32::from(t.wMilliseconds);
+            sooner(60_000u32.saturating_sub(into) + 15);
+        }
+        if let Some(ms) = wait {
+            unsafe { SetTimer(Some(self.hwnd), TICK_TIMER, ms.max(16), None) };
         }
     }
 
-    fn click(&self, x: f32, y: f32) {
-        if !self.open || self.track.is_none() {
-            return;
+    /// Milliseconds on the steady clock, for the focus timer.
+    fn now_ms(&self) -> u64 {
+        self.start.elapsed().as_millis() as u64
+    }
+
+    /// One timer for when the focus phase ends, while it runs.
+    fn arm_focus(&self) {
+        unsafe {
+            let _ = KillTimer(Some(self.hwnd), FOCUS_TIMER);
+            if let Some(at) = self.timer.ends_at() {
+                let ms = at.saturating_sub(self.now_ms()).min(u32::MAX as u64 / 2) as u32;
+                SetTimer(Some(self.hwnd), FOCUS_TIMER, ms + 5, None);
+            }
         }
+    }
+
+    /// The phase is over: a glance tells it, and the next one is set.
+    fn focus_ended(&mut self) {
+        let (now, l) = (self.now_ms(), self.settings.focus);
+        if let Some(ended) = self.timer.finish(now, &l) {
+            let t = self.texts;
+            self.notice = Some(match ended {
+                Ended::Focus { break_minutes, .. } => {
+                    (t.focus_done, texts::fill(t.take_break, &[break_minutes]))
+                }
+                Ended::Break => (t.break_over, t.ready.to_string()),
+            });
+            self.set_peek(true);
+        }
+        self.arm_focus();
+        self.redraw();
+    }
+
+    fn redraw(&mut self) {
+        if self.last_frame.is_none() {
+            self.draw();
+        }
+        self.tick();
+    }
+
+    /// From window px to the open layout's DIPs: it is centered in the
+    /// body; y from the island's top.
+    fn to_open(&self, x: f32, y: f32) -> (f32, f32) {
         let s = self.scale;
         let body = shape::body_rect(
             self.placement,
@@ -390,17 +501,81 @@ impl App {
             self.height.value * s,
             EAR * s,
         );
-        // To the open layout's DIPs: it is centered in the body.
         let lx = (x - body.x - shape::ear_room(self.placement, EAR * s)) / s
             - (self.width.value - self.open_size().0) / 2.0;
-        let ly = (y - body.y) / s;
-        let cmd = match layout::hit(lx, ly, self.open_layout()) {
-            Some(layout::Button::Prev) => media::Command::Prev,
-            Some(layout::Button::PlayPause) => media::Command::PlayPause,
-            Some(layout::Button::Next) => media::Command::Next,
-            None => return,
+        (lx, (y - body.y) / s)
+    }
+
+    fn click(&mut self, x: f32, y: f32) {
+        if !self.open {
+            return;
+        }
+        let (lx, ly) = self.to_open(x, y);
+        if let Some(page) = pages::hit_tab(lx, ly) {
+            if page != self.page {
+                self.page = page;
+                self.redraw();
+            }
+            return;
+        }
+        // The page is laid out from its own top.
+        let py = ly - pages::PAGE_Y;
+        match self.page {
+            Page::Home => {
+                if self.track.is_none() {
+                    return;
+                }
+                let cmd = match layout::hit(lx, py, self.open_layout()) {
+                    Some(layout::Button::Prev) => media::Command::Prev,
+                    Some(layout::Button::PlayPause) => media::Command::PlayPause,
+                    Some(layout::Button::Next) => media::Command::Next,
+                    None => return,
+                };
+                self.media.send(cmd);
+            }
+            Page::Focus => {
+                let (now, l) = (self.now_ms(), self.settings.focus);
+                match pages::hit_focus(lx, py, self.open_width) {
+                    Some(FocusButton::PlayPause) => self.timer.toggle(now),
+                    Some(FocusButton::Reset) => self.timer.reset(&l),
+                    Some(FocusButton::Skip) => {
+                        self.timer.skip(now, &l);
+                    }
+                    None => return,
+                }
+                self.arm_focus();
+                self.redraw();
+            }
+        }
+    }
+
+    /// The wheel over the focus time, before a session starts: its length,
+    /// kept in `settings.json`.
+    fn wheel(&mut self, x: i32, y: i32, delta: i16) {
+        if !self.open || self.page != Page::Focus || self.timer.active(&self.settings.focus) {
+            return;
+        }
+        let mut p = POINT { x, y };
+        unsafe {
+            let _ = ScreenToClient(self.hwnd, &mut p);
+        }
+        let (lx, ly) = self.to_open(p.x as f32, p.y as f32);
+        if !pages::over_time(lx, ly - pages::PAGE_Y, self.open_width) {
+            return;
+        }
+        let step = if delta > 0 {
+            WHEEL_MINUTES
+        } else {
+            -WHEEL_MINUTES
         };
-        self.media.send(cmd);
+        let minutes = focus::step(self.settings.focus.focus, step, Lengths::FOCUS);
+        if minutes == self.settings.focus.focus {
+            return;
+        }
+        let mut file = self.file;
+        file.focus.focus = minutes;
+        let _ = settings_file::set("focusMinutes", Value::from(minutes));
+        self.apply(file);
     }
 
     /// How visible the closed, glance and open contents are, from the
@@ -625,6 +800,10 @@ impl App {
     fn apply(&mut self, file: Settings) {
         self.file = file;
         let s = self.args.over(file);
+        if s.default_page != self.settings.default_page {
+            self.page = s.default_page;
+        }
+        self.timer.set_lengths(&self.settings.focus, &s.focus);
         self.settings = s;
         self.texts = texts::texts(s.language, &self.locale);
         self.placement = s.placement;
@@ -941,7 +1120,15 @@ impl App {
                 }
                 self.tick();
             }
-            WM_TIMER if wp.0 == PEEK_TIMER => self.set_peek(false),
+            WM_TIMER if wp.0 == PEEK_TIMER => {
+                self.notice = None;
+                self.set_peek(false);
+            }
+            WM_TIMER if wp.0 == FOCUS_TIMER => self.focus_ended(),
+            WM_MOUSEWHEEL => {
+                let (x, y) = (lp.0 as i16 as i32, (lp.0 >> 16) as i16 as i32);
+                self.wheel(x, y, (wp.0 >> 16) as i16);
+            }
             WM_APP_MEDIA => {
                 self.track = self.media.latest();
                 // A new song gets a glance; the one playing at start doesn't.
@@ -953,6 +1140,7 @@ impl App {
                     let first = self.song.is_none();
                     self.song = song;
                     if !first {
+                        self.notice = None;
                         self.set_peek(true);
                     }
                 }
@@ -1086,6 +1274,21 @@ fn locale() -> String {
     String::from_utf16_lossy(&name[..(n.max(1) - 1) as usize])
 }
 
+/// The time of day as the user's locale writes it, without seconds.
+fn time_of_day() -> String {
+    let mut buf = [0u16; 32];
+    let n = unsafe {
+        GetTimeFormatEx(
+            PCWSTR::null(),
+            TIME_NOSECONDS,
+            None,
+            PCWSTR::null(),
+            Some(&mut buf),
+        )
+    };
+    String::from_utf16_lossy(&buf[..(n.max(1) - 1) as usize])
+}
+
 /// The value after `--name` on the command line.
 fn arg(name: &str) -> Option<String> {
     std::env::args().skip_while(|a| a != name).nth(1)
@@ -1102,6 +1305,7 @@ struct Overrides {
     lyrics: bool,
     open_lyrics: Option<bool>,
     open_width: Option<f32>,
+    page: Option<Page>,
 }
 
 impl Overrides {
@@ -1114,6 +1318,7 @@ impl Overrides {
             lyrics: std::env::args().any(|a| a == "--lyrics"),
             open_lyrics: arg("--open-lyrics").map(|s| s != "off"),
             open_width: arg("--open-width").and_then(|s| layout::parse_open_width(&s)),
+            page: arg("--page").and_then(|s| Page::parse(&s)),
         }
     }
 
@@ -1125,6 +1330,7 @@ impl Overrides {
         s.lyrics |= self.lyrics;
         s.open_lyrics = self.open_lyrics.unwrap_or(s.open_lyrics);
         s.open_width = self.open_width.or(s.open_width);
+        s.default_page = self.page.unwrap_or(s.default_page);
         s
     }
 }
@@ -1219,6 +1425,10 @@ fn main() -> Result<()> {
             open_width_setting: defaults.open_width(),
             // Fitted to the screen by the first layout.
             open_width: defaults.open_width(),
+            page: defaults.default_page,
+            timer: focus::Timer::new(&defaults.focus),
+            start: Instant::now(),
+            notice: None,
         };
         APP.with_borrow_mut(|a| *a = Some(app));
         // A file with a typo at start: the defaults until it is fixed.

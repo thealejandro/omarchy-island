@@ -5,6 +5,7 @@
 use island_core::lyrics::Line;
 use island_core::media::{self as layout, Button, SongText, TextAlign, fmt_time};
 use island_core::menu;
+use island_core::pages::{self, FocusButton, Page};
 use island_core::shape::{Outline, Point, Rect, Segment};
 use windows::Win32::Foundation::{E_FAIL, HMODULE, HWND, POINT, RECT};
 use windows::Win32::Graphics::Direct2D::Common::{
@@ -82,7 +83,43 @@ pub struct Scene<'a> {
     pub open: layout::Open,
     /// The glance shows the line being sung instead of the song.
     pub glance: bool,
+    /// The open island's page, and the tabs' right end: the time of day,
+    /// or the focus timer while it runs.
+    pub page: Page,
+    pub tabs_clock: &'a str,
+    pub tabs_timer: bool,
+    pub focus: FocusView<'a>,
+    /// A glance that tells something (the focus timer's end) instead of
+    /// the song: its title and what follows.
+    pub notice: Option<(&'a str, &'a str)>,
+    /// With nothing playing, the closed island shows the focus timer.
+    pub closed_timer: Option<&'a str>,
 }
+
+/// The focus page, ready to draw.
+#[derive(Clone, Copy)]
+pub struct FocusView<'a> {
+    /// "Focus · round 2 of 4".
+    pub label: &'a str,
+    pub time: &'a str,
+    pub next: &'a str,
+    pub progress: f32,
+    pub rounds: u32,
+    pub every: u32,
+    pub running: bool,
+    /// A break (drawn green; focus is warm).
+    pub resting: bool,
+}
+
+impl FocusView<'_> {
+    fn tint(&self) -> [f32; 3] {
+        if self.resting { BREAK_TINT } else { FOCUS_TINT }
+    }
+}
+
+/// The focus timer's colors.
+const FOCUS_TINT: [f32; 3] = [1.0, 0.62, 0.32];
+const BREAK_TINT: [f32; 3] = [0.42, 0.86, 0.6];
 
 #[derive(Clone, Copy)]
 pub struct LyricsView<'a> {
@@ -136,6 +173,10 @@ struct Text {
     note: IDWriteTextFormat,
     menu: IDWriteTextFormat,
     menu_head: IDWriteTextFormat,
+    tab: IDWriteTextFormat,
+    clock: IDWriteTextFormat,
+    big: IDWriteTextFormat,
+    next: IDWriteTextFormat,
 }
 
 /// One entry of the menu, as drawn.
@@ -335,6 +376,10 @@ impl Text {
                 note: format(icons, n, 22.0, DWRITE_TEXT_ALIGNMENT_CENTER)?,
                 menu: format(ui, n, 12.0, DWRITE_TEXT_ALIGNMENT_LEADING)?,
                 menu_head: format(ui, b, 12.0, DWRITE_TEXT_ALIGNMENT_LEADING)?,
+                tab: format(icons, n, 15.0, DWRITE_TEXT_ALIGNMENT_CENTER)?,
+                clock: format(ui, b, 12.0, DWRITE_TEXT_ALIGNMENT_TRAILING)?,
+                big: format(ui, b, 42.0, DWRITE_TEXT_ALIGNMENT_LEADING)?,
+                next: format(ui, n, 12.0, DWRITE_TEXT_ALIGNMENT_TRAILING)?,
                 dw: dw.clone(),
             })
         }
@@ -633,8 +678,12 @@ impl Renderer {
     }
 
     fn rounded(&self, r: Rect, radius: f32, alpha: f32) {
+        self.tinted_rounded(r, radius, [1.0; 3], alpha);
+    }
+
+    fn tinted_rounded(&self, r: Rect, radius: f32, [r_, g, b]: [f32; 3], a: f32) {
         unsafe {
-            self.ink.SetColor(&white(alpha));
+            self.ink.SetColor(&D2D1_COLOR_F { r: r_, g, b, a });
             self.dc.FillRoundedRectangle(
                 &D2D1_ROUNDED_RECT {
                     rect: rf(r),
@@ -646,13 +695,108 @@ impl Renderer {
         }
     }
 
+    fn tinted(&self, s: &str, format: &IDWriteTextFormat, at: Rect, [r, g, b]: [f32; 3], a: f32) {
+        unsafe {
+            self.ink.SetColor(&D2D1_COLOR_F { r, g, b, a });
+            self.dc.DrawText(
+                &utf16(s),
+                format,
+                &rf(at),
+                &self.ink,
+                D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT | D2D1_DRAW_TEXT_OPTIONS_CLIP,
+                DWRITE_MEASURING_MODE_NATURAL,
+            );
+        }
+    }
+
     fn draw_open(&mut self, s: &Scene, dx: f32, alpha: f32) {
+        self.draw_tabs(s, dx, alpha);
+        // The page under the tabs, laid out from its own top.
+        let mut m = Matrix3x2::default();
+        unsafe {
+            self.dc.GetTransform(&mut m);
+            self.dc
+                .SetTransform(&(Matrix3x2::translation(0.0, pages::PAGE_Y) * m));
+        }
+        match s.page {
+            Page::Home => self.draw_home(s, dx, alpha),
+            Page::Focus => self.draw_focus(&s.focus, s.open.width, dx, alpha),
+        }
+        unsafe {
+            self.dc.SetTransform(&m);
+        }
+    }
+
+    /// One icon per page, the one shown on a soft pill; the time of day
+    /// (or the focus timer, in its color) at the right.
+    fn draw_tabs(&self, s: &Scene, dx: f32, alpha: f32) {
+        for (i, page) in Page::ALL.into_iter().enumerate() {
+            let r = shift(pages::tab(i), dx);
+            let on = page == s.page;
+            if on {
+                self.rounded(r, r.height / 2.0, 0.14 * alpha);
+            }
+            let glyph = match page {
+                Page::Home => "\u{EC4F}",
+                Page::Focus => "\u{E916}",
+            };
+            let a = if on { 0.95 } else { 0.5 };
+            self.text(glyph, &self.text.tab, r, a * alpha);
+        }
+        let clock = shift(pages::clock(s.open.width), dx);
+        if s.tabs_timer {
+            self.tinted(s.tabs_clock, &self.text.clock, clock, s.focus.tint(), alpha);
+        } else {
+            self.text(s.tabs_clock, &self.text.clock, clock, 0.6 * alpha);
+        }
+    }
+
+    /// The focus page: the phase, the time left big, a bar in the phase's
+    /// color, a dot per round, and reset, play / pause and skip.
+    fn draw_focus(&self, f: &FocusView, width: f32, dx: f32, alpha: f32) {
+        let p = pages::focus_page(width);
+        self.text(f.label, &self.text.artist, shift(p.label, dx), 0.6 * alpha);
+        self.text(f.time, &self.text.big, shift(p.time, dx), 0.95 * alpha);
+        self.text(f.next, &self.text.next, shift(p.next, dx), 0.5 * alpha);
+        let bar = shift(p.bar, dx);
+        self.rounded(bar, 2.0, 0.16 * alpha);
+        if f.progress > 0.0 {
+            let done = Rect {
+                width: bar.width * f.progress.clamp(0.0, 1.0),
+                ..bar
+            };
+            self.tinted_rounded(done, 2.0, f.tint(), 0.95 * alpha);
+        }
+        for i in 0..f.every {
+            let d = Rect {
+                x: dx + p.dots.x + i as f32 * (pages::DOT + pages::DOT_GAP),
+                width: pages::DOT,
+                ..p.dots
+            };
+            if i < f.rounds {
+                self.tinted_rounded(d, pages::DOT / 2.0, FOCUS_TINT, 0.9 * alpha);
+            } else {
+                self.rounded(d, pages::DOT / 2.0, 0.2 * alpha);
+            }
+        }
+        let play = if f.running { "\u{E769}" } else { "\u{E768}" };
+        for (b, glyph) in [
+            (FocusButton::Reset, "\u{E72C}"),
+            (FocusButton::PlayPause, play),
+            (FocusButton::Skip, "\u{E893}"),
+        ] {
+            let r = shift(pages::focus_button(b, width), dx);
+            self.text(glyph, &self.text.icon, r, 0.95 * alpha);
+        }
+    }
+
+    fn draw_home(&mut self, s: &Scene, dx: f32, alpha: f32) {
         let Some(t) = s.track else {
             let all = Rect {
                 x: dx,
                 y: 0.0,
                 width: s.open.width,
-                height: s.size.1,
+                height: pages::PAGE_HEIGHT,
             };
             self.text(s.empty, &self.text.empty, all, 0.6 * alpha);
             return;
@@ -783,6 +927,13 @@ impl Renderer {
     }
 
     fn draw_peek(&mut self, s: &Scene, dx: f32, alpha: f32) {
+        if let Some((title, more)) = s.notice {
+            let icon = shift(layout::PEEK_ART, dx);
+            self.tinted("\u{E916}", &self.text.icon, icon, s.focus.tint(), alpha);
+            let spans = [(title.to_string(), false), (format!("  {more}"), true)];
+            self.song(&spans, &self.text.peek, shift(layout::PEEK_TEXT, dx), alpha);
+            return;
+        }
         let Some(t) = s.track else { return };
         self.draw_art(t, shift(layout::PEEK_ART, dx), 7.0, alpha, s.scale);
         let spans = match s.lyrics {
@@ -794,7 +945,27 @@ impl Renderer {
     }
 
     fn draw_closed(&mut self, s: &Scene, dx: f32, alpha: f32) {
-        let Some(t) = s.track else { return };
+        let Some(t) = s.track else {
+            // Nothing playing: the focus timer, while a session is on.
+            if let Some(time) = s.closed_timer {
+                let h = layout::CLOSED_TEXT.y * 2.0 + layout::CLOSED_TEXT.height;
+                let icon = Rect {
+                    x: dx + 18.0,
+                    y: 0.0,
+                    width: 20.0,
+                    height: h,
+                };
+                self.tinted("\u{E916}", &self.text.tab, icon, s.focus.tint(), alpha);
+                let text = Rect {
+                    x: dx + 44.0,
+                    y: 0.0,
+                    width: CLOSED_W - 62.0,
+                    height: h,
+                };
+                self.text(time, &self.text.closed, text, 0.95 * alpha);
+            }
+            return;
+        };
         self.draw_art(t, shift(layout::SMALL_ART, dx), 5.0, alpha, s.scale);
         let spans = s.song.spans(&t.title, &t.artist);
         let text = shift(layout::CLOSED_TEXT, dx);

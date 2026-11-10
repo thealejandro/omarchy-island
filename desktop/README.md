@@ -39,6 +39,11 @@ that isn't valid JSON is ignored until it is fixed.
 | `lyrics` | `true`, `false` | `false` |
 | `openLyrics` | `true`, `false` | `true` |
 | `openWidth` | 480 to 960, in steps of 10, or `auto` | `auto` |
+| `defaultPage` | `home`, `focus` | `home` |
+| `focusMinutes` | 5 to 120 | `25` |
+| `breakMinutes` | 1 to 30 | `5` |
+| `longBreakMinutes` | 5 to 60 | `15` |
+| `longBreakEvery` | 2 to 8 (rounds of focus) | `4` |
 
 While music plays (any app in Windows' media controls), the closed island
 shows the cover, the song and bars that move with the music; a new song
@@ -61,9 +66,17 @@ player shows. On small or scaled-up
 screens the island takes at most 60 % of the screen's width (610 on a
 1024-wide one, 760 on a 1280 x 1024 square monitor), down to 480.
 
+The open island has tabs on top, with the time at the right: Home (the
+player) and Focus, a Pomodoro timer. A break starts by itself when focus
+ends, a long one every `longBreakEvery` rounds; the next focus waits for a
+click. The glance tells when each ends, and with nothing playing the closed
+island shows the time left. Before starting, the wheel over the time
+changes `focusMinutes` by 5. The island opens on `defaultPage`, then on the
+page last chosen.
+
 For trying things out, the command line wins over the file:
 `--placement`, `--monitor`, `--text-align`, `--song-text`, `--lyrics`,
-`--open-lyrics on|off` and `--open-width`.
+`--open-lyrics on|off`, `--open-width` and `--page home|focus`.
 CI builds with the MSVC toolchain. Without the Visual Studio Build Tools,
 the `stable-x86_64-pc-windows-gnullvm` toolchain works too:
 `cargo +stable-x86_64-pc-windows-gnullvm build`.
