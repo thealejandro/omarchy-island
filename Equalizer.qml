@@ -7,6 +7,7 @@ Row {
   id: root
 
   property bool playing: false
+  property bool animate: true
   property int barHeight: Style.space(12)
 
   spacing: Style.space(2)
@@ -24,9 +25,9 @@ Row {
       height: root.barHeight * 0.25
 
       SequentialAnimation on height {
-        running: root.playing
+        running: root.playing && root.animate && Style.duration(1) > 0
         loops: Animation.Infinite
-        alwaysRunToEnd: true
+        alwaysRunToEnd: root.animate && Style.duration(1) > 0
         NumberAnimation { to: root.barHeight * modelData; duration: 260 + index * 70; easing.type: Easing.InOutSine }
         NumberAnimation { to: root.barHeight * 0.25; duration: 300 + index * 50; easing.type: Easing.InOutSine }
       }

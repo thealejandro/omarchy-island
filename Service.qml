@@ -476,7 +476,7 @@ Item {
 
   // Which page of the open island is showing. Goes back to the default one
   // every time the island closes.
-  readonly property var pages: ["home", "calendar", "world"]
+  readonly property var pages: ["home", "focus", "calendar", "world"]
     .concat(notificationsEnabled ? ["notifications"] : []).concat(["settings"])
   property string page: defaultPage
   onDefaultPageChanged: if (!isOpen) page = defaultPage
@@ -557,6 +557,8 @@ Item {
   readonly property string lyricsState: lyricsLoader.item ? lyricsLoader.item.status : "off"
   readonly property string lyricLine: lyricsLoader.item ? lyricsLoader.item.current : ""
   readonly property string lyricNext: lyricsLoader.item ? lyricsLoader.item.next : ""
+  readonly property var lyricLines: lyricsLoader.item ? lyricsLoader.item.lines : []
+  readonly property int lyricIndex: lyricsLoader.item ? lyricsLoader.item.index : -1
   Loader {
     id: lyricsLoader
     active: root.lyricsEnabled
@@ -567,49 +569,34 @@ Item {
 
   // ------------------------------------------------------------- focus timer
 
-  property int focusMinutes: 25
-  property int breakMinutes: 5
-  property string timerPhase: "focus"     // "focus" | "break"
-  property bool timerRunning: false
-  property int timerRemaining: focusMinutes * 60
-  readonly property int timerTotal: (timerPhase === "focus" ? focusMinutes : breakMinutes) * 60
-  readonly property bool timerActive: timerRunning || timerRemaining !== timerTotal
-
-  function toggleTimer() { timerRunning = !timerRunning }
-  function resetTimer() {
-    timerRunning = false
-    timerPhase = "focus"
-    timerRemaining = focusMinutes * 60
+  readonly property int focusMinutes: cfg.focusMinutes
+  readonly property int breakMinutes: cfg.breakMinutes
+  readonly property string timerPhase: focusTimer.phase
+  readonly property int timerRounds: focusTimer.rounds
+  readonly property bool timerRunning: focusTimer.running
+  readonly property int timerRemaining: focusTimer.remaining
+  readonly property int timerTotal: focusTimer.total
+  readonly property bool timerActive: focusTimer.active
+  FocusTimer {
+    id: focusTimer
+    configuration: root.cfg
+    displayActive: root.isOpen || (root.peeking && root.peekReason === "timer")
+    onPhaseEnded: (finished) => root.announceFocus(finished)
   }
-
-  // Only while idle, so a running session never changes length under you.
+  function toggleTimer() { focusTimer.toggle() }
+  function resetTimer() { focusTimer.reset() }
+  function skipTimer() { focusTimer.skip() }
+  function announceFocus(finished) {
+    Quickshell.execDetached(["notify-send", "-a", "Island",
+      finished === "focus" ? tr("focusDone") : tr("breakOver"),
+      finished === "focus" ? tr("takeBreak", Math.round(timerTotal / 60)) : tr("readyAgain")])
+    peek("timer")
+  }
   function setFocusMinutes(minutes) {
     if (timerActive) return false
-    focusMinutes = Math.max(5, Math.min(120, Math.round(minutes / 5) * 5))
-    timerRemaining = timerTotal
+    saveSetting("focusMinutes", Math.max(5, Math.min(120, Math.round(minutes / 5) * 5)))
     return true
   }
-
-  Timer {
-    interval: 1000
-    repeat: true
-    running: root.timerRunning
-    onTriggered: {
-      if (root.timerRemaining > 1) {
-        root.timerRemaining -= 1
-        return
-      }
-      var finished = root.timerPhase
-      root.timerPhase = finished === "focus" ? "break" : "focus"
-      root.timerRemaining = root.timerTotal
-      root.timerRunning = finished === "focus"
-      Quickshell.execDetached(["notify-send", "-a", "Island",
-        finished === "focus" ? root.tr("focusDone") : root.tr("breakOver"),
-        finished === "focus" ? root.tr("takeBreak", root.breakMinutes) : root.tr("readyAgain")])
-      root.peek("timer")
-    }
-  }
-
   // ------------------------------------------------------------- quick toggles
 
   // Omarchy only reveals its inactive bar indicators while the pointer is on
@@ -1521,7 +1508,8 @@ Item {
         idleNotch: root.idleNotch, idleIcon: root.cfg.idleIcon, idleMotion: root.cfg.idleMotion, hourMinute: root.hourMinute, dayMinute: root.dayMinute,
         idleFraction: Math.round(root.idleFraction * 1000) / 1000,
         title: root.title, position: Math.round(root.position), length: Math.round(root.length),
-        timerRunning: root.timerRunning, timerRemaining: root.timerRemaining,
+        timerRunning: root.timerRunning, timerRemaining: Math.ceil(focusTimer.remainingAt(Date.now()) / 1000),
+        timerPhase: root.timerPhase, timerRounds: root.timerRounds,
         focusMinutes: root.focusMinutes, lang: root.lang, page: root.page, osd: root.osdEnabled,
         battery: root.batteryLevel, charging: root.charging,
         notifications: root.notificationsLive ? "island" : (root.notificationsStandby ? "standby" : "off"),

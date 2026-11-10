@@ -11,7 +11,7 @@ Row {
   required property var island
 
   readonly property bool quiet: !!island.notify && island.notify.doNotDisturb
-  readonly property var glyphs: ({ home: "󰋜", calendar: "󰃭", world: "󰇧",
+  readonly property var glyphs: ({ home: "󰋜", focus: "󰔛", calendar: "󰃭", world: "󰇧",
     notifications: quiet ? "󰂛" : "󰂚", settings: "󰒓" })
 
   spacing: Style.spacing.xs

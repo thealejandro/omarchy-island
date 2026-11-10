@@ -40,6 +40,22 @@ as it was.
 
 ## Features
 
+- **Desktop additions on Omarchy**: a scrolling lyrics column beside the
+  player, with surrounding lines and pauses. With `lyrics` enabled,
+  `openLyrics` controls lyrics in the open island; `lyricsPeek` still
+  controls the glance. The agenda moves below the music; narrow islands
+  keep inline lyrics. `songText` (`title-artist`, `artist-title`, `title`,
+  `artist`) and `textAlign` (`center`, `left`) style the song in media
+  glances. Width reaches 960 px in steps of 10 and fits each screen,
+  preserving existing settings down to 420 px.
+- **Focus page**: rounds, skip and long breaks. Settings › Focus saves
+  `focusMinutes` (25), `breakMinutes` (5), `longBreakMinutes` (15) and
+  `longBreakEvery` (4). The wheel on Home saves focus duration too. Changes
+  preserve a phase underway; reset applies current settings. A running
+  focus starts its break automatically; the next focus waits for a click.
+  Skipping preserves running/paused state. `defaultPage: focus` opens that
+  page. Restarting the shell resets the timer session but keeps settings.
+
 - **Peek**: when the song changes, the timer ends, you plug in or unplug a
   laptop, or the battery runs low (20% and 10%), a one-line glance drops out
   of the bar for a few seconds.
@@ -61,8 +77,8 @@ as it was.
   the island: cover art, source player,
   title, artist, a progress bar you can click or drag, previous / play /
   next.
-- **Pages**: the open island has five, picked from the tabs in its top
-  corner: Home, Calendar, World, Notifications and Settings.
+- **Pages**: the open island has six, picked from the tabs in its top
+  corner: Home, Focus, Calendar, World, Notifications and Settings.
 - **Home**: what's playing next to **Next** (the next three events of
   your agenda, with a button to add one), the latest notifications when the
   island has them, the focus timer and the dock.
@@ -229,17 +245,21 @@ the island's own keys and nothing else.
 | Key | Values | Default | What it does |
 |-----|--------|---------|--------------|
 | `language` | `en`, `es`, `pt` | from `LANG` | Island language |
-| `defaultPage` | `home`, `calendar`, `world` | `home` | Page the island opens on |
+| `defaultPage` | `home`, `focus`, `calendar`, `world` | `home` | Page the island opens on |
 | `calendarFirst` | `true`, `false` | `false` | What's next on the left on Home |
 | `showMedia`, `showTimer`, `showDock` | `true`, `false` | `true` | Parts of the Home page |
 | `lyrics` | `true`, `false` | `false` | Synced lyrics on the now-playing card, from lrclib.net (needs `showMedia`); see [Lyrics](#lyrics) |
 | `lyricsPeek` | `true`, `false` | `false` | The current line stays under the clock, as a glance, while the island is closed and a song plays (needs `lyrics`) |
+| `openLyrics` | `true`, `false` | `true` | Show lyrics in the open island (needs `lyrics`) |
+| `textAlign` | `center`, `left` | `center` | Alignment of song text in media glances |
+| `songText` | `title-artist`, `artist-title`, `title`, `artist` | `title-artist` | Song text in media glances |
+| `focusMinutes`, `breakMinutes`, `longBreakMinutes`, `longBreakEvery` | 5–120, 1–30, 5–60 min; 2–8 rounds | 25, 5, 15, 4 | Saved Pomodoro durations and long-break cadence |
 | `animations` | `true`, `false` | `true` | Spring, page and glance motion |
 | `idleNotch` | `off`, `notch`, `icon`, `hour`, `day`, `battery` | `notch` | With the island closed: nothing, a sliver of the bar under the clock, a taller notch with a small icon in it (`idleIcon`), or the sliver plus a thin line that fills with the hour, the day (15-minute steps) or the battery level (red at 20% or less, not charging; plain notch without a battery). The icon does not give way to the dots; they hang below it |
 | `idleIcon` | `glasses`, `isle`, `prompt`, `capsule`, `braces`, `mark`, `archipelago`, `swell`, `channel`, `fold`, or a file name | `glasses` | The icon for `idleNotch: icon` (ten are built in; `glasses`, the default, comes from the author's logo; the first six have a small part of their own that moves). Your own: put an `.svg` or `.png` (up to 256 KiB, PNG up to 1024 px) in `~/.config/omarchy/island/icons` and give its name, for example `rocket.svg`. Anything unusable gives a plain notch |
 | `idleIconTint` | `auto`, `on`, `off` | `auto` | Paint the icon with the accent colour through its shape. `auto`: built-in icons, one-colour SVGs and files named `…-symbolic`; PNGs are shown as they are |
 | `idleMotion` | `true`, `false` | `true` | Now and then (every 20 to 45 s, or when something new arrives) the icon glances to the side. Nothing runs in between, and nothing at all with `animations` off |
-| `openWidth` | 420–800 | `560` | Width of the open island |
+| `openWidth` | 420–960, step 10 | `560` | Width of the open island |
 | `blur` | `true`, `false` | `true` | Blur behind the island with a glassy bar |
 | `clock` | `true`, `false` | `true` | Open by hovering the clock (`false`: only the edge strip) |
 | `clockClick` | `pin`, `calendar`, `omarchy` | `calendar` | Clock click: pin the island, open it on the calendar, or Omarchy's calendar |
@@ -443,8 +463,10 @@ bar) and **Change location** its place picker, or the file it reads.
 ## Lyrics
 
 Off by default. With `lyrics: true` (Settings › General › Synced lyrics),
-the now-playing card shows the line being sung and the next one, moving in
-time with the song. With `lyricsPeek: true` the current line also stays
+a column beside the player shows the sung line and surrounding lines in
+time with the song. Narrow islands show the current and next lines below
+the player instead. `openLyrics: false` hides both open views.
+With `lyricsPeek: true` the current line also stays
 under the clock, as a glance, while a song plays and the island is closed
 (any other glance takes its turn and the lyric comes back after it).
 

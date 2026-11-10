@@ -3,6 +3,7 @@ import qs.Commons
 import qs.Commons as Commons
 import "IslandModel.js" as IslandModel
 import "AgentModel.js" as AgentModel
+import "MediaModel.js" as MediaModel
 
 // The glance: one line saying what just changed. Media and the timer show
 // their track or countdown; Omarchy's OSD and the battery show an icon with
@@ -20,7 +21,7 @@ Row {
     : island.peekReason === "agenda" && island.agendaNote ? "agenda"
     : island.peekReason === "privacy" && island.privacyNote ? "privacy"
     : island.peekReason === "battery" && island.hasBattery ? "battery"
-    : island.peekReason === "lyrics" && island.lyricLine !== "" ? "lyrics"
+    : island.peekReason === "lyrics" && island.lyricsState === "synced" ? "lyrics"
     : island.peekReason === "timer" || (!island.hasMedia && island.timerActive) ? "timer"
     : "media"
   // Media and the lyrics glance both carry the cover and the equalizer.
@@ -118,7 +119,8 @@ Row {
 
   Text {
     anchors.verticalCenter: parent.verticalCenter
-    width: Math.min(implicitWidth, Style.space(root.kind === "notification" ? 360 : 320))
+    width: root.hasCover ? Style.space(300)
+      : Math.min(implicitWidth, Style.space(root.kind === "notification" ? 360 : 320))
     elide: Text.ElideRight
     textFormat: Text.PlainText
     text: root.kind === "notification" ? root.noteText
@@ -128,9 +130,10 @@ Row {
       : root.kind === "agent" ? root.island.agentLabel
       : root.kind === "agenda" ? root.island.agendaNote.title + "  ·  " + (root.island.agendaNote.minutes > 0
         ? root.island.tr("eventIn", root.island.agendaNote.minutes) : root.island.tr("eventNow"))
-      : root.kind === "lyrics" ? root.island.lyricLine
+      : root.kind === "lyrics" ? (root.island.lyricLine !== "" ? root.island.lyricLine : "• • •")
       : root.showTimer ? root.island.tr(root.island.timerPhase) + "  " + IslandModel.clock(root.island.timerRemaining)
-      : root.island.title + (root.island.artist ? "  ·  " + root.island.artist : "")
+      : MediaModel.songLine(root.island.title, root.island.artist, root.island.cfg.songText)
+    horizontalAlignment: root.hasCover && root.island.cfg.textAlign === "center" ? Text.AlignHCenter : Text.AlignLeft
     color: Commons.Color.bar.text
     font.family: Style.font.family
     font.pixelSize: Style.font.body
@@ -152,5 +155,6 @@ Row {
     anchors.verticalCenter: parent.verticalCenter
     visible: root.hasCover
     playing: root.island.playing
+    animate: root.island.animate
   }
 }

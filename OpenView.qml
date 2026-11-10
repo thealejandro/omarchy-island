@@ -17,6 +17,7 @@ Column {
   readonly property color textColor: Commons.Color.bar.text
   readonly property color dimColor: Util.alpha(Commons.Color.bar.text, 0.72)
   readonly property var sources: ({
+    focus: "FocusPage.qml",
     calendar: "CalendarPage.qml",
     world: "WorldPage.qml",
     notifications: "NotificationsPage.qml",

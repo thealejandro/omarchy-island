@@ -8,19 +8,22 @@
 // type: "bool" | "enum" | "int" | "string" | "tristate" (unset/true/false)
 //       | "weekday" (unset/1..7) | "cities" ([{name, zone}])
 
-var SECTIONS = ["general", "look", "open", "bar", "world", "agenda", "notify", "system"]
+var SECTIONS = ["general", "look", "open", "bar", "world", "agenda", "focus", "notify", "system"]
 
 var SCHEMA = [
   { key: "language", type: "enum", options: ["", "en", "es", "pt"], def: "", section: "general" },
-  { key: "defaultPage", type: "enum", options: ["home", "calendar", "world"], def: "home", section: "general" },
+  { key: "defaultPage", type: "enum", options: ["home", "focus", "calendar", "world"], def: "home", section: "general" },
   { key: "calendarFirst", type: "bool", def: false, section: "general" },
   { key: "showMedia", type: "bool", def: true, section: "general" },
   { key: "lyrics", type: "bool", def: false, section: "general" },
   { key: "lyricsPeek", type: "bool", def: false, section: "general" },
+  { key: "openLyrics", type: "bool", def: true, section: "general" },
+  { key: "textAlign", type: "enum", options: ["center", "left"], def: "center", section: "general" },
+  { key: "songText", type: "enum", options: ["title-artist", "artist-title", "title", "artist"], def: "title-artist", section: "general" },
   { key: "showTimer", type: "bool", def: true, section: "general" },
   { key: "showDock", type: "bool", def: true, section: "general" },
 
-  { key: "openWidth", type: "int", min: 420, max: 800, step: 20, def: 560, section: "look" },
+  { key: "openWidth", type: "int", min: 420, max: 960, step: 10, def: 560, section: "look" },
   { key: "blur", type: "bool", def: true, section: "look" },
   { key: "animations", type: "bool", def: true, section: "look" },
   { key: "idleNotch", type: "enum", options: ["off", "notch", "icon", "hour", "day", "battery"], def: "notch", section: "look" },
@@ -51,6 +54,11 @@ var SCHEMA = [
   { key: "icsSources", type: "string", def: "", section: "agenda" },
   { key: "icsRefresh", type: "int", min: 5, max: 240, step: 5, def: 15, section: "agenda" },
   { key: "agendaCommand", type: "string", def: "", section: "agenda" },
+
+  { key: "focusMinutes", type: "int", min: 5, max: 120, step: 5, def: 25, section: "focus" },
+  { key: "breakMinutes", type: "int", min: 1, max: 30, step: 1, def: 5, section: "focus" },
+  { key: "longBreakMinutes", type: "int", min: 5, max: 60, step: 5, def: 15, section: "focus" },
+  { key: "longBreakEvery", type: "int", min: 2, max: 8, step: 1, def: 4, section: "focus" },
 
   { key: "notifyBody", type: "bool", def: true, section: "notify" },
   { key: "notifyPeekDuration", type: "int", min: 2000, max: 15000, step: 500, def: 6000, section: "notify" },
@@ -128,6 +136,7 @@ function normalizeOne(s, v) {
     case "int": {
       var n = parseInt(v, 10)
       if (isNaN(n)) return s.def
+      if (s.key === "openWidth") n = Math.round(n / s.step) * s.step
       return Math.max(s.min, Math.min(s.max, n))
     }
     case "string":

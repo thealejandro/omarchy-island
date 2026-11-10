@@ -36,7 +36,8 @@ Column {
 
   function suffixFor(key) {
     if (key === "hoverDelay" || key === "peekDuration" || key === "notifyPeekDuration" || key === "agentPeekDuration" || key === "notifyKeyboardIdle") return " ms"
-    if (key === "notifyHistoryLimit") return ""
+    if (key === "notifyHistoryLimit" || key === "longBreakEvery") return ""
+    if (key === "focusMinutes" || key === "breakMinutes" || key === "longBreakMinutes") return " min"
     if (key === "reminderLead" || key === "icsRefresh" || key === "agentStale") return " min"
     return " px"
   }
@@ -266,6 +267,7 @@ Column {
         Component {
           id: segmentComp
           IslandSegment {
+            maxWidth: rows.width
             label: root.tr("set_" + row.key)
             options: root.optionsFor(row.modelData)
             value: row.value

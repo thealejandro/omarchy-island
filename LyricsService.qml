@@ -31,7 +31,7 @@ Item {
   // Only synced lyrics can be shown; plain ones are kept (cached) but give
   // no timing, so there is nothing to follow.
   readonly property bool wanted: island.cfg.lyrics && island.hasMedia && status === "synced"
-  readonly property bool shown: wanted && (island.isOpen
+  readonly property bool shown: wanted && ((island.isOpen && island.cfg.openLyrics)
     || (island.cfg.lyricsPeek && island.peeking && island.peekReason === "lyrics"))
   readonly property bool glance: island.cfg.lyricsPeek && wanted && island.playing
 
@@ -67,7 +67,7 @@ Item {
     if (status !== "idle" || fetch.running) return
     if (!island.cfg.lyrics || !island.hasMedia) return
     if (island.artist === "" || island.title === "") return
-    if (!island.isOpen && !island.cfg.lyricsPeek) return
+    if ((!island.isOpen || !island.cfg.openLyrics) && !island.cfg.lyricsPeek) return
     // lrclib takes 1-3600 s, and without a length the match isn't reliable.
     if (duration < 10 || duration > 3600) return
     var k = key
@@ -116,6 +116,8 @@ Item {
   onDurationChanged: ask.restart()
   readonly property bool glanceSetting: island.cfg.lyricsPeek
   onGlanceSettingChanged: ask.restart()
+  readonly property bool openSetting: island.cfg.openLyrics
+  onOpenSettingChanged: ask.restart()
 
   // ---- following the song
 

@@ -79,6 +79,12 @@ Item {
     }
     IslandButton {
       anchors.verticalCenter: parent.verticalCenter
+      glyph: "󰒭"
+      label: root.island.tr("a11y_skipFocus")
+      onClicked: root.island.skipTimer()
+    }
+    IslandButton {
+      anchors.verticalCenter: parent.verticalCenter
       glyph: root.island.timerRunning ? "󰏤" : "󰐊"
       label: root.island.tr(root.island.timerRunning ? "a11y_pause" : "a11y_play")
       filled: true
@@ -99,7 +105,7 @@ Item {
       radius: height / 2
       width: parent.width * root.progress
       color: Commons.Color.accent
-      Behavior on width { NumberAnimation { duration: 900 } }
+      Behavior on width { enabled: root.island.animate; NumberAnimation { duration: Style.duration(180) } }
     }
   }
 }

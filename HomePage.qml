@@ -2,6 +2,7 @@ import QtQuick
 import qs.Commons
 import qs.Commons as Commons
 import "AgentModel.js" as AgentModel
+import "MediaModel.js" as MediaModel
 
 // The island's first page, for a glance: now playing next to what's next
 // on the agenda, the newest notifications when the island shows them, the
@@ -18,11 +19,14 @@ Column {
   readonly property int calendarWidth: Style.space(196)
   readonly property color lineColor: Util.alpha(Commons.Color.bar.text, 0.2)
   readonly property int rise: Style.space(10)
+  readonly property real lyricsWidth: MediaModel.lyricsWidth(width, Style.spacing.xxl,
+    Style.space(180), Style.space(160))
+  readonly property bool lyricsBeside: cfg.showMedia && cfg.lyrics && cfg.openLyrics && lyricsWidth > 0
 
   // One clock for the whole entrance. Each section starts a little after the
   // one above it, so the content cascades down as the body settles.
   property real progress: shown ? 1 : 0
-  Behavior on progress { enabled: root.island.animate; NumberAnimation { duration: root.shown ? 560 : 120 } }
+  Behavior on progress { enabled: root.island.animate; NumberAnimation { duration: Style.duration(root.shown ? 240 : 120) } }
 
   function reveal(index) {
     var t = Math.max(0, Math.min(1, (progress - index * 0.12) / 0.64))
@@ -35,7 +39,7 @@ Column {
     id: top
     width: parent.width
     spacing: Style.spacing.xxl
-    layoutDirection: root.cfg.calendarFirst ? Qt.RightToLeft : Qt.LeftToRight
+    layoutDirection: !root.lyricsBeside && root.cfg.calendarFirst ? Qt.RightToLeft : Qt.LeftToRight
     opacity: root.reveal(0)
     transform: [
       Scale {
@@ -47,24 +51,59 @@ Column {
     ]
 
     MediaCard {
+      id: media
       visible: root.cfg.showMedia
       island: root.island
-      width: parent.width - root.calendarWidth - 2 * parent.spacing - 1
+      width: root.lyricsBeside ? parent.width - root.lyricsWidth - parent.spacing
+        : Math.max(0, parent.width - root.calendarWidth - 2 * parent.spacing - 1)
+      inlineLyrics: !root.lyricsBeside
       anchors.verticalCenter: parent.verticalCenter
     }
 
     Rectangle {
-      visible: root.cfg.showMedia
+      visible: root.cfg.showMedia && !root.lyricsBeside
       width: 1
       height: parent.height
       color: root.lineColor
     }
 
     TodayCard {
+      visible: !root.lyricsBeside
       island: root.island
       width: root.cfg.showMedia ? root.calendarWidth : top.width
       anchors.verticalCenter: parent.verticalCenter
     }
+
+    Item {
+      visible: root.lyricsBeside
+      width: root.lyricsWidth
+      height: Math.max(Style.space(152), media.height)
+      anchors.verticalCenter: parent.verticalCenter
+      LyricsColumn {
+        anchors.fill: parent
+        island: root.island
+        visible: root.island.lyricsState === "synced"
+      }
+      Text {
+        anchors.centerIn: parent
+        width: parent.width
+        visible: root.island.lyricsState !== "synced"
+        text: root.island.tr(root.island.lyricsState === "loading" ? "lyricsLoading" : "lyricsUnavailable")
+        textFormat: Text.PlainText
+        wrapMode: Text.WordWrap
+        horizontalAlignment: Text.AlignHCenter
+        color: Util.alpha(Commons.Color.bar.text, 0.5)
+        font.family: Style.font.family
+        font.pixelSize: Style.font.caption
+      }
+    }
+  }
+
+  TodayCard {
+    visible: root.lyricsBeside
+    island: root.island
+    width: parent.width
+    opacity: root.reveal(1)
   }
 
   // The newest notifications still open, when the island shows them. A
