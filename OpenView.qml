@@ -107,7 +107,12 @@ Column {
           if (String(source) === String(url)) return
           setSource(String(url), { "island": root.island })
         }
-        onActiveChanged: load()
+        // Unload the URL too. Otherwise reactivating a previously visited
+        // page can construct it before setSource supplies its required host.
+        onActiveChanged: {
+          if (active) load()
+          else setSource("")
+        }
         onLoaded: item.width = Qt.binding(function() { return loader.width })
       }
 
