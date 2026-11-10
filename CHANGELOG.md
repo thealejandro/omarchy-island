@@ -6,6 +6,11 @@ project follows [Semantic Versioning](https://semver.org/).
 
 ## [Unreleased]
 
+### Added
+
+- The island's own bar button (`widgetIcon`) shows the Silence glyph
+  while Silence is on and the island holds the notifications. (#37)
+
 ### Fixed
 
 - Settings: a row whose control is too wide (Closed island, with six
