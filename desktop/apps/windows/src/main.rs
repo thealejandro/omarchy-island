@@ -49,7 +49,7 @@ use windows::Win32::UI::HiDpi::{
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     TME_LEAVE, TRACKMOUSEEVENT, TrackMouseEvent, VK_ESCAPE,
 };
-use windows::Win32::UI::Shell::ShellExecuteW;
+use windows::Win32::UI::Shell::{SHQueryUserNotificationState, ShellExecuteW};
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetCursorPos, GetMessageW,
     HWND_TOPMOST, IDC_ARROW, KillTimer, LoadCursorW, MA_NOACTIVATE, MONITORINFOF_PRIMARY, MSG,
@@ -699,6 +699,13 @@ impl App {
     fn notified(&mut self) {
         let Some(n) = &self.notifications else { return };
         let Some(a) = n.take().pop() else { return };
+        // As the user is now: presenting, a game, Do Not Disturb.
+        let state = unsafe { SHQueryUserNotificationState() }.map_or(5, |s| s.0);
+        let moment = island_core::notifications::Moment::from_state(state);
+        let full_screen = self.settings.notifications_in_full_screen;
+        if !island_core::notifications::glances(moment, notifications::quiet(), full_screen) {
+            return;
+        }
         let t = a.toast;
         let n = Notice {
             icon: island_core::notifications::ICON,

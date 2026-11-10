@@ -48,6 +48,7 @@ that isn't valid JSON is ignored until it is fixed.
 | `privacyGlance` | `true`, `false` | `true` |
 | `bluetoothGlance` | `true`, `false` | `true` |
 | `notificationGlance` | `true`, `false` | `true` |
+| `notificationsInFullScreen` | `true`, `false` | `true` |
 | `lyricsDelay` | `auto`, or 0 to 2000 (ms) | `auto` |
 
 While music plays (any app in Windows' media controls), the closed island
@@ -110,9 +111,15 @@ in the logo's color (the system's accent when the logo has none) beats
 around the island three times and then glows softly until the glance ends,
 5 seconds later. It reads them with Windows' own listener
 (allowed under Privacy, "Notification access") and looks only when the
-shell shows one, so nothing runs in between. When Windows doesn't pop a
-notification up (Do Not Disturb, or an app in full screen), there is no
-glance either. `notificationGlance: false` turns it off.
+shell's count of notifications changes, so nothing runs in between.
+
+It doesn't need Windows' banner: to see notifications only in the island,
+turn off "Show notification banners" for those apps under Settings >
+System > Notifications (they still go to the notification center, and the
+island still shows them). With an app in full screen the glance shows too
+(`notificationsInFullScreen: false` keeps it away then); never while
+presenting, in a game in exclusive full screen or with Do Not Disturb.
+`notificationGlance: false` turns it off.
 
 The icons are filled ones from Microsoft's
 [Fluent UI System Icons](https://github.com/microsoft/fluentui-system-icons)

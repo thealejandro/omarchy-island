@@ -1,16 +1,23 @@
-//! Notifications as they show, read with the system's own listener. That
-//! listener tells of new ones only to packaged apps, so the cue is the one
-//! accessibility gives: the window of the shell that shows them becomes
-//! visible (uncloaked). That wakes a thread that reads the list and keeps
-//! the new ones (see `island_core::notifications`) for the window.
+//! Notifications as they arrive, read with the system's own listener. That
+//! listener tells of new ones only to packaged apps, so two cues wake a
+//! thread that reads the list and keeps the new ones (see
+//! `island_core::notifications`) for the window:
 //!
-//! The hook takes that one event only, out of context (nothing is loaded
-//! into other processes); between notifications nothing runs. If the shell
-//! changed and the cue never came, the glance would just not show: the
-//! system is never touched. With Do Not Disturb no notification shows, and
-//! no glance either.
+//! - The shell's count of notifications changes: a state the shell
+//!   publishes (WNF, `WNF_SHEL_NOTIFICATIONS`) that any process of the
+//!   user may follow. It changes with every new one, also when Windows
+//!   shows no banner for it (banners turned off, an app in full screen).
+//! - The window of the shell that shows a banner becomes visible
+//!   (uncloaked), through accessibility: in case a Windows update ever
+//!   stopped that state.
+//!
+//! Both only wait, out of process; between notifications nothing runs and
+//! the system is never touched. Do Not Disturb is followed the same way
+//! (`WNF_SHEL_QUIETHOURS_ACTIVE_PROFILE_CHANGED`) so the window can keep
+//! quiet with it.
 
-use std::sync::atomic::{AtomicIsize, Ordering};
+use std::ffi::c_void;
+use std::sync::atomic::{AtomicIsize, AtomicU32, Ordering};
 use std::sync::{Arc, Mutex};
 
 use island_core::notifications::{Seen, Toast};
@@ -21,6 +28,7 @@ use windows::UI::Notifications::Management::{
 };
 use windows::UI::Notifications::{KnownNotificationBindings, NotificationKinds, UserNotification};
 use windows::Win32::Foundation::{CloseHandle, HANDLE, HWND, LPARAM, WPARAM};
+use windows::Win32::System::LibraryLoader::{GetModuleHandleW, GetProcAddress};
 use windows::Win32::System::Threading::{
     CreateEventW, INFINITE, OpenProcess, PROCESS_NAME_WIN32, PROCESS_QUERY_LIMITED_INFORMATION,
     QueryFullProcessImageNameW, SetEvent, WaitForMultipleObjects,
@@ -31,14 +39,106 @@ use windows::Win32::UI::WindowsAndMessaging::{
     EVENT_OBJECT_UNCLOAKED, GetClassNameW, GetWindowThreadProcessId, OBJID_WINDOW, PostMessageW,
     WINEVENT_OUTOFCONTEXT, WINEVENT_SKIPOWNPROCESS,
 };
-use windows::core::{PWSTR, Result};
+use windows::core::{PWSTR, Result, s, w};
 
 /// The shell's processes that show notifications (by Windows version).
 const SHELLS: [&str; 2] = ["ShellExperienceHost.exe", "ShellHost.exe"];
 const WINDOW: &str = "Windows.UI.Core.CoreWindow";
 
-/// The event the hook sets for the reader (one watch at a time).
+/// The event the cues set for the reader (one watch at a time).
 static WAKE: AtomicIsize = AtomicIsize::new(0);
+/// Do Not Disturb's profile: 0 when off.
+static QUIET: AtomicU32 = AtomicU32::new(0);
+
+/// The shell's states followed (well-known WNF names).
+const COUNT: u64 = 0x0D83_063E_A3BC_1035;
+const QUIET_PROFILE: u64 = 0x0D83_063E_A3BF_1C75;
+
+type WnfCallback =
+    unsafe extern "system" fn(u64, u32, *const c_void, *const c_void, *const u8, u32) -> i32;
+type Subscribe = unsafe extern "system" fn(
+    *mut *mut c_void,
+    u64,
+    u32,
+    WnfCallback,
+    *const c_void,
+    *const c_void,
+    u32,
+    u32,
+) -> i32;
+type Unsubscribe = unsafe extern "system" fn(*mut c_void) -> i32;
+
+/// A state changed (also called once at start, with how it is).
+unsafe extern "system" fn changed(
+    name: u64,
+    _: u32,
+    _: *const c_void,
+    _: *const c_void,
+    data: *const u8,
+    size: u32,
+) -> i32 {
+    if name == QUIET_PROFILE {
+        let profile = if data.is_null() || size < 4 {
+            0
+        } else {
+            unsafe { data.cast::<u32>().read_unaligned() }
+        };
+        QUIET.store(profile, Ordering::Relaxed);
+    } else {
+        let wake = WAKE.load(Ordering::Relaxed);
+        if wake != 0 {
+            unsafe {
+                let _ = SetEvent(HANDLE(wake as *mut _));
+            }
+        }
+    }
+    0
+}
+
+/// ntdll's functions for following a state; `None` if this Windows has
+/// none.
+fn wnf() -> Option<(Subscribe, Unsubscribe)> {
+    unsafe {
+        let nt = GetModuleHandleW(w!("ntdll.dll")).ok()?;
+        let sub = GetProcAddress(nt, s!("RtlSubscribeWnfStateChangeNotification"))?;
+        let unsub = GetProcAddress(nt, s!("RtlUnsubscribeWnfStateChangeNotification"))?;
+        Some((
+            std::mem::transmute::<unsafe extern "system" fn() -> isize, Subscribe>(sub),
+            std::mem::transmute::<unsafe extern "system" fn() -> isize, Unsubscribe>(unsub),
+        ))
+    }
+}
+
+/// Follows `names`; the subscriptions to end later.
+fn follow(names: &[u64]) -> Vec<*mut c_void> {
+    let Some((subscribe, _)) = wnf() else {
+        return Vec::new();
+    };
+    names
+        .iter()
+        .filter_map(|&name| {
+            let mut sub = std::ptr::null_mut();
+            let r = unsafe {
+                subscribe(
+                    &mut sub,
+                    name,
+                    0,
+                    changed,
+                    std::ptr::null(),
+                    std::ptr::null(),
+                    0,
+                    0,
+                )
+            };
+            (r >= 0 && !sub.is_null()).then_some(sub)
+        })
+        .collect()
+}
+
+/// Whether Do Not Disturb is on.
+pub fn quiet() -> bool {
+    QUIET.load(Ordering::Relaxed) != 0
+}
 
 fn process_name(pid: u32) -> Option<String> {
     unsafe {
@@ -165,6 +265,8 @@ pub fn allowed() -> bool {
 
 pub struct Notifications {
     hook: HWINEVENTHOOK,
+    /// The shell's states followed (WNF subscriptions).
+    states: Vec<isize>,
     /// Set to end the thread; the other wakes it to read.
     stop: isize,
     wake: isize,
@@ -196,6 +298,10 @@ impl Notifications {
         );
         let thread = std::thread::spawn(move || watch(h, msg, s, w, n, fallback));
         WAKE.store(wake.0 as isize, Ordering::Relaxed);
+        let states = follow(&[COUNT, QUIET_PROFILE])
+            .into_iter()
+            .map(|s| s as isize)
+            .collect();
         let hook = unsafe {
             SetWinEventHook(
                 EVENT_OBJECT_UNCLOAKED,
@@ -209,12 +315,14 @@ impl Notifications {
         };
         let me = Self {
             hook,
+            states,
             stop: stop.0 as isize,
             wake: wake.0 as isize,
             thread: Some(thread),
             new,
         };
-        (!hook.is_invalid()).then_some(me)
+        // Either cue is enough.
+        (!hook.is_invalid() || !me.states.is_empty()).then_some(me)
     }
 
     /// The notifications that showed since the last call, oldest first.
@@ -292,6 +400,11 @@ impl Drop for Notifications {
     fn drop(&mut self) {
         unsafe {
             let _ = UnhookWinEvent(self.hook);
+            if let Some((_, unsubscribe)) = wnf() {
+                for &s in &self.states {
+                    unsubscribe(s as *mut c_void);
+                }
+            }
         }
         WAKE.store(0, Ordering::Relaxed);
         unsafe {

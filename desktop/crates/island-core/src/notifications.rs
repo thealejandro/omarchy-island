@@ -4,8 +4,54 @@
 
 use crate::shape::Rect;
 
-/// Segoe Fluent Icons (and MDL2): the notification bell.
+/// The notification bell.
 pub const ICON: crate::icons::Icon = crate::icons::Icon::Bell;
+
+/// What the user is doing, as Windows tells it (`QUERY_USER_NOTIFICATION_STATE`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Moment {
+    /// Nothing special: the desktop, or an app in a window.
+    Free,
+    /// An app in full screen (a video, a till, a browser).
+    FullScreen,
+    /// A game in exclusive full screen.
+    Game,
+    /// Presenting (slides, or "presentation mode").
+    Presenting,
+    /// Locked, the screen saver, or another user's session.
+    Away,
+    /// Windows' quiet time (as after setting up a new account).
+    Quiet,
+}
+
+impl Moment {
+    /// From `SHQueryUserNotificationState`'s value; one it doesn't know is
+    /// taken as free.
+    pub fn from_state(state: i32) -> Self {
+        match state {
+            1 => Moment::Away,
+            2 => Moment::FullScreen,
+            3 => Moment::Game,
+            4 => Moment::Presenting,
+            6 => Moment::Quiet,
+            _ => Moment::Free,
+        }
+    }
+}
+
+/// Whether a notification that just arrived gets a glance. Never while
+/// presenting, gaming, away or with Do Not Disturb (`quiet`); in full screen
+/// only if `in_full_screen` (the setting) allows. Windows' own banner plays
+/// no part: with an app's banners turned off, the island still shows its
+/// notifications.
+pub fn glances(moment: Moment, quiet: bool, in_full_screen: bool) -> bool {
+    !quiet
+        && match moment {
+            Moment::Free => true,
+            Moment::FullScreen => in_full_screen,
+            Moment::Game | Moment::Presenting | Moment::Away | Moment::Quiet => false,
+        }
+}
 
 /// A notification's glance: bigger than the song's, so it never passes for
 /// it, with room for the app's logo and two lines (DIPs).
@@ -151,6 +197,24 @@ mod tests {
         assert_eq!(s.new_ones(vec![t(2), t(3), t(4), t(5)]), vec![t(4), t(5)]);
         // A dismissed one is forgotten; its id coming back is new.
         assert_eq!(s.new_ones(vec![t(1)]), vec![t(1)]);
+    }
+
+    #[test]
+    fn full_screen_glances_but_presenting_gaming_and_quiet_never() {
+        use Moment::*;
+        assert!(glances(Free, false, false));
+        assert!(glances(FullScreen, false, true));
+        assert!(!glances(FullScreen, false, false));
+        for m in [Game, Presenting, Away, Quiet] {
+            assert!(!glances(m, false, true));
+        }
+        assert!(!glances(Free, true, true));
+        assert_eq!(Moment::from_state(2), FullScreen);
+        assert_eq!(Moment::from_state(3), Game);
+        assert_eq!(Moment::from_state(4), Presenting);
+        assert_eq!(Moment::from_state(6), Quiet);
+        assert_eq!(Moment::from_state(5), Free);
+        assert_eq!(Moment::from_state(42), Free);
     }
 
     #[test]
