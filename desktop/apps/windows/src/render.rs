@@ -33,8 +33,9 @@ use windows::Win32::Graphics::DirectWrite::{
     DWRITE_FONT_WEIGHT, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_WEIGHT_SEMI_BOLD,
     DWRITE_MEASURING_MODE_NATURAL, DWRITE_PARAGRAPH_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT,
     DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_LEADING, DWRITE_TEXT_ALIGNMENT_TRAILING,
-    DWRITE_TRIMMING, DWRITE_TRIMMING_GRANULARITY_CHARACTER, DWRITE_WORD_WRAPPING_NO_WRAP,
-    DWriteCreateFactory, IDWriteFactory, IDWriteFontCollection, IDWriteTextFormat,
+    DWRITE_TEXT_RANGE, DWRITE_TRIMMING, DWRITE_TRIMMING_GRANULARITY_CHARACTER,
+    DWRITE_WORD_WRAPPING_NO_WRAP, DWriteCreateFactory, IDWriteFactory, IDWriteFontCollection,
+    IDWriteTextFormat,
 };
 use windows::Win32::Graphics::Dxgi::Common::{
     DXGI_ALPHA_MODE_PREMULTIPLIED, DXGI_FORMAT_B8G8R8A8_UNORM,
@@ -72,6 +73,10 @@ pub struct Scene<'a> {
     pub empty: &'a str,
     /// What the song's line says (closed and peek).
     pub song: SongText,
+    /// With synced lyrics: the line being sung and the next one.
+    pub lyric: Option<(&'a str, &'a str)>,
+    /// The glance shows the line being sung instead of the song.
+    pub glance: bool,
 }
 
 /// The open and closed layouts are drawn at their full size, centered in
@@ -94,6 +99,8 @@ struct Art {
 }
 
 struct Text {
+    dw: IDWriteFactory,
+    lyric: IDWriteTextFormat,
     title: IDWriteTextFormat,
     artist: IDWriteTextFormat,
     time: IDWriteTextFormat,
@@ -115,6 +122,8 @@ pub struct Renderer {
     surface: Option<(IDCompositionSurface, u32, u32)>,
     fill: ID2D1SolidColorBrush,
     ink: ID2D1SolidColorBrush,
+    /// The artist next to the title.
+    dim: ID2D1SolidColorBrush,
     text: Text,
     wic: IWICImagingFactory,
     art: Option<Art>,
@@ -252,6 +261,8 @@ impl Text {
                 peek: format(ui, b, 13.0, DWRITE_TEXT_ALIGNMENT_LEADING)?,
                 closed: format(ui, b, 12.0, DWRITE_TEXT_ALIGNMENT_LEADING)?,
                 note: format(icons, n, 22.0, DWRITE_TEXT_ALIGNMENT_CENTER)?,
+                lyric: format(ui, b, 15.0, DWRITE_TEXT_ALIGNMENT_LEADING)?,
+                dw: dw.clone(),
             })
         }
     }
@@ -276,6 +287,7 @@ impl Renderer {
             };
             let fill = dc.CreateSolidColorBrush(&black, None)?;
             let ink = dc.CreateSolidColorBrush(&white(1.0), None)?;
+            let dim = dc.CreateSolidColorBrush(&white(0.55), None)?;
             let bars = Bars::new(&dcomp, &visual)?;
             Ok(Self {
                 bars,
@@ -288,6 +300,7 @@ impl Renderer {
                 surface: None,
                 fill,
                 ink,
+                dim,
                 text: Text::new()?,
                 wic: CoCreateInstance(&CLSID_WICImagingFactory, None, CLSCTX_INPROC_SERVER)?,
                 art: None,
@@ -506,6 +519,42 @@ impl Renderer {
         }
     }
 
+    /// The song's line: the dim pieces (the artist) at a lower opacity.
+    fn song(&self, spans: &[(String, bool)], format: &IDWriteTextFormat, r: Rect, alpha: f32) {
+        let text: Vec<u16> = spans.iter().flat_map(|s| s.0.encode_utf16()).collect();
+        unsafe {
+            let Ok(layout) = self
+                .text
+                .dw
+                .CreateTextLayout(&text, format, r.width, r.height)
+            else {
+                return;
+            };
+            self.ink.SetColor(&white(0.95 * alpha));
+            self.dim.SetColor(&white(0.55 * alpha));
+            let mut at = 0u32;
+            for (s, dim) in spans {
+                let n = s.encode_utf16().count() as u32;
+                if *dim {
+                    let _ = layout.SetDrawingEffect(
+                        &self.dim,
+                        DWRITE_TEXT_RANGE {
+                            startPosition: at,
+                            length: n,
+                        },
+                    );
+                }
+                at += n;
+            }
+            self.dc.DrawTextLayout(
+                v(Point { x: r.x, y: r.y }),
+                &layout,
+                &self.ink,
+                D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT | D2D1_DRAW_TEXT_OPTIONS_CLIP,
+            );
+        }
+    }
+
     fn rounded(&self, r: Rect, radius: f32, alpha: f32) {
         unsafe {
             self.ink.SetColor(&white(alpha));
@@ -579,22 +628,40 @@ impl Renderer {
             let a = if on { 0.95 } else { 0.3 } * alpha;
             self.text(glyph, &self.text.icon, shift(layout::button(b), dx), a);
         }
+        if let Some((line, next)) = s.lyric {
+            // Between verses, a quiet ellipsis keeps the place.
+            let (text, a) = if line.is_empty() {
+                ("…", 0.4)
+            } else {
+                (line, 0.95)
+            };
+            self.text(text, &self.text.lyric, shift(layout::LYRIC, dx), a * alpha);
+            self.text(
+                next,
+                &self.text.artist,
+                shift(layout::LYRIC_NEXT, dx),
+                0.45 * alpha,
+            );
+        }
     }
 
     fn draw_peek(&mut self, s: &Scene, dx: f32, alpha: f32) {
         let Some(t) = s.track else { return };
         self.draw_art(t, shift(layout::PEEK_ART, dx), 7.0, alpha, s.scale);
-        let line = s.song.line(&t.title, &t.artist);
-        self.text(&line, &self.text.peek, shift(layout::PEEK_TEXT, dx), alpha);
+        let spans = match s.lyric {
+            Some((line, _)) if s.glance => vec![(line.to_string(), false)],
+            _ => s.song.spans(&t.title, &t.artist),
+        };
+        self.song(&spans, &self.text.peek, shift(layout::PEEK_TEXT, dx), alpha);
         self.bars(t, shift(layout::PEEK_BARS, dx), alpha);
     }
 
     fn draw_closed(&mut self, s: &Scene, dx: f32, alpha: f32) {
         let Some(t) = s.track else { return };
         self.draw_art(t, shift(layout::SMALL_ART, dx), 5.0, alpha, s.scale);
-        let line = s.song.line(&t.title, &t.artist);
+        let spans = s.song.spans(&t.title, &t.artist);
         let text = shift(layout::CLOSED_TEXT, dx);
-        self.text(&line, &self.text.closed, text, 0.9 * alpha);
+        self.song(&spans, &self.text.closed, text, alpha);
         self.bars(t, shift(layout::BARS, dx), alpha);
     }
 

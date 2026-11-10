@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod bars;
+mod lyrics;
 mod media;
 mod render;
 
@@ -52,9 +53,13 @@ const TICK_TIMER: usize = 3;
 const PEEK_TIMER: usize = 4;
 /// How long that glance stays (`peekDuration` in the plugin).
 const PEEK_MS: u32 = 3500;
+/// Moves the lyrics to the next line, when it starts.
+const LYRIC_TIMER: usize = 5;
 const WM_APP_LAYOUT: u32 = WM_APP + 1;
 /// The media thread has a new snapshot.
 const WM_APP_MEDIA: u32 = WM_APP + 2;
+/// The lyrics thread has an answer.
+const WM_APP_LYRICS: u32 = WM_APP + 3;
 // windows-rs only has it under the (big) Win32_UI_Controls feature.
 const WM_MOUSELEAVE: u32 = 0x02A3;
 
@@ -86,6 +91,15 @@ struct App {
     track: Option<media::Track>,
     empty: &'static str,
     song_text: layout::SongText,
+    /// `None` while lyrics are off (the default: they send the song's name
+    /// to lrclib.net).
+    lyrics: Option<lyrics::Lyrics>,
+    /// The song the lyrics are for ([`island_core::lyrics::cache_key`]).
+    lyrics_key: String,
+    /// Its synced lines; empty without them.
+    lines: Vec<island_core::lyrics::Line>,
+    /// The line being sung and the next one.
+    lyric: (String, String),
 }
 
 thread_local! {
@@ -170,7 +184,7 @@ impl App {
             self.placement,
             mon,
             OPEN.0 * s,
-            OPEN.1 * s,
+            self.tallest() * s,
             EAR * s,
             MARGIN * s,
         );
@@ -246,6 +260,9 @@ impl App {
             position_ms: self.track.as_ref().map_or(0, |t| t.position_now()),
             empty: self.empty,
             song: self.song_text,
+            lyric: (!self.lines.is_empty())
+                .then_some((self.lyric.0.as_str(), self.lyric.1.as_str())),
+            glance: self.glance() && !self.lyric.0.is_empty(),
         };
         let drawn = match &mut self.renderer {
             Some(r) => r.draw(&scene),
@@ -314,9 +331,90 @@ impl App {
             let grown = ((h - CLOSED.1) / (layout::PEEK.1 - CLOSED.1)).clamp(0.0, 1.0);
             let peek = ((grown - 0.5) * 2.0).clamp(0.0, 1.0);
             let closed = ((0.5 - grown) * 2.0).clamp(0.0, 1.0);
+            // It leaves as the body grows past its own height, not the
+            // closed one: at rest it is fully visible.
+            let past = ((h - layout::PEEK.1) / (OPEN.1 - layout::PEEK.1)).clamp(0.0, 1.0);
+            let leaving = (1.0 - past * 3.0).clamp(0.0, 1.0);
             [closed, peek * leaving, open_a]
         } else {
             [leaving, 0.0, open_a]
+        }
+    }
+
+    /// The window is sized for the tallest the island gets.
+    fn tallest(&self) -> f32 {
+        if self.lyrics.is_some() {
+            layout::OPEN_LYRICS_HEIGHT
+        } else {
+            OPEN.1
+        }
+    }
+
+    /// The lyrics glance: while synced lyrics play, the closed island shows
+    /// the line being sung (`lyricsPeek` in the plugin).
+    fn glance(&self) -> bool {
+        self.lyrics.is_some()
+            && !self.lines.is_empty()
+            && self.track.as_ref().is_some_and(|t| t.playing)
+    }
+
+    fn peeking(&self) -> bool {
+        self.peek || self.glance()
+    }
+
+    /// Asks for the song's lyrics once it is known well enough: names and a
+    /// length lrclib.net takes (without one the match isn't reliable).
+    fn ask_lyrics(&mut self) {
+        let Some(lyr) = &self.lyrics else { return };
+        let Some(t) = &self.track else { return };
+        let duration = ((t.duration_ms + 500) / 1000) as u32;
+        let key = island_core::lyrics::cache_key(&t.artist, &t.title, &t.album, duration as f64);
+        if key == self.lyrics_key {
+            return;
+        }
+        self.lines.clear();
+        self.lyric = Default::default();
+        if t.artist.is_empty() || t.title.is_empty() || !(10..=3600).contains(&duration) {
+            return;
+        }
+        self.lyrics_key = key.clone();
+        lyr.ask(lyrics::Query {
+            key,
+            artist: t.artist.clone(),
+            title: t.title.clone(),
+            album: t.album.clone(),
+            duration,
+        });
+    }
+
+    /// The line for the position now, and a timer for the next one; only
+    /// while a line is on screen and the song plays. Never a poll: the
+    /// position is read again each time, so it can't drift.
+    fn follow_lyrics(&mut self) {
+        unsafe {
+            let _ = KillTimer(Some(self.hwnd), LYRIC_TIMER);
+        }
+        let Some(t) = &self.track else { return };
+        if self.lines.is_empty() {
+            return;
+        }
+        let pos = t.position_now();
+        let w = island_core::lyrics::window(&self.lines, pos);
+        let line = (w.current.to_string(), w.next.to_string());
+        let next_at = w.next_at;
+        let playing = t.playing;
+        if line != self.lyric {
+            self.lyric = line;
+            if self.last_frame.is_none() {
+                self.draw();
+            }
+        }
+        if playing
+            && (self.open || self.glance())
+            && let Some(at) = next_at
+        {
+            let ms = at.saturating_sub(pos).clamp(40, u32::MAX as u64) as u32;
+            unsafe { SetTimer(Some(self.hwnd), LYRIC_TIMER, ms, None) };
         }
     }
 
@@ -329,6 +427,7 @@ impl App {
             self.peek_view = false;
         }
         self.retarget();
+        self.follow_lyrics();
     }
 
     fn set_peek(&mut self, peek: bool) {
@@ -339,16 +438,18 @@ impl App {
             }
         }
         self.peek = peek;
-        if peek && !self.open {
-            self.peek_view = true;
-        }
         self.retarget();
     }
 
     fn retarget(&mut self) {
-        let (w, h) = if self.open {
+        if self.peeking() && !self.open {
+            self.peek_view = true;
+        }
+        let (w, h) = if self.open && !self.lines.is_empty() {
+            (OPEN.0, layout::OPEN_LYRICS_HEIGHT)
+        } else if self.open {
             OPEN
-        } else if self.peek {
+        } else if self.peeking() {
             layout::PEEK
         } else if self.track.is_some() {
             // Wide enough for the song's name.
@@ -371,7 +472,8 @@ impl App {
             .last_frame
             .map_or(16.0, |t| (now - t).as_secs_f32() * 1000.0);
         self.last_frame = Some(now);
-        let (pw, ph) = if self.open || self.peek {
+        let peeking = self.peeking();
+        let (pw, ph) = if self.open || peeking {
             (spring::OPEN_WIDTH, spring::OPEN_HEIGHT)
         } else {
             (spring::CLOSE_WIDTH, spring::CLOSE_HEIGHT)
@@ -380,7 +482,7 @@ impl App {
         self.draw();
         if !moving {
             // Nothing runs while the island is still.
-            if !self.open && !self.peek {
+            if !self.open && !peeking {
                 self.peek_view = false;
             }
             self.last_frame = None;
@@ -441,13 +543,37 @@ impl App {
                         self.set_peek(true);
                     }
                 }
+                self.ask_lyrics();
                 // Music starting or stopping widens or narrows the closed island.
                 self.retarget();
                 if self.last_frame.is_none() {
                     self.draw();
                 }
                 self.tick();
+                // A seek, a pause or a new song: the line again.
+                self.follow_lyrics();
             }
+            WM_APP_LYRICS => {
+                let answer = self.lyrics.as_ref().and_then(|l| l.latest());
+                if let Some((key, found)) = answer
+                    && key == self.lyrics_key
+                {
+                    // Only synced lyrics can be followed; plain ones give
+                    // no timing.
+                    self.lines = if found.kind == island_core::lyrics::Kind::Synced {
+                        found.lines
+                    } else {
+                        Vec::new()
+                    };
+                    self.lyric = Default::default();
+                    self.retarget();
+                    self.follow_lyrics();
+                    if self.last_frame.is_none() {
+                        self.draw();
+                    }
+                }
+            }
+            WM_TIMER if wp.0 == LYRIC_TIMER => self.follow_lyrics(),
             WM_LBUTTONUP => {
                 let (x, y) = (lp.0 as i16 as f32, (lp.0 >> 16) as i16 as f32);
                 self.click(x, y);
@@ -560,6 +686,12 @@ fn main() -> Result<()> {
             song_text: arg("--song-text")
                 .and_then(|s| layout::SongText::parse(&s))
                 .unwrap_or_default(),
+            lyrics: std::env::args()
+                .any(|a| a == "--lyrics")
+                .then(|| lyrics::Lyrics::start(hwnd, WM_APP_LYRICS)),
+            lyrics_key: String::new(),
+            lines: Vec::new(),
+            lyric: Default::default(),
         };
         if let Some(r) = &app.renderer {
             r.align_song(

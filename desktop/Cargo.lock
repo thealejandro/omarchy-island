@@ -15,6 +15,7 @@ name = "island-windows"
 version = "0.1.0"
 dependencies = [
  "island-core",
+ "serde_json",
  "windows",
  "windows-numerics",
 ]

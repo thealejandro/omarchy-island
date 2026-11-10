@@ -28,6 +28,11 @@ controls. `--text-align center|left` and
 `--song-text title-artist|artist-title|title|artist` style the song's line
 (they move to the settings in phase 5).
 
+`--lyrics` turns on synced lyrics from [lrclib.net](https://lrclib.net)
+(off by default: it sends the song's name there). The closed island then
+shows the line being sung, and the open one that line and the next. Answers
+are cached in `%LOCALAPPDATA%\island\lyrics` (the last 400 songs).
+
 CI builds with the MSVC toolchain. Without the Visual Studio Build Tools,
 the `stable-x86_64-pc-windows-gnullvm` toolchain works too:
 `cargo +stable-x86_64-pc-windows-gnullvm build`.
