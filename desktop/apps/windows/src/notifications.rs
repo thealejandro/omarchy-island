@@ -206,6 +206,11 @@ fn toast(n: &UserNotification, fallback: &str) -> Result<Toast> {
     Ok(Toast {
         id: n.Id()?,
         app: if app.is_empty() { fallback.into() } else { app },
+        app_id: n
+            .AppInfo()
+            .and_then(|a| a.AppUserModelId())
+            .map(|s| s.to_string())
+            .unwrap_or_default(),
         title: line(0),
         body: line(1),
     })

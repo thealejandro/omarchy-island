@@ -49,6 +49,7 @@ that isn't valid JSON is ignored until it is fixed.
 | `bluetoothGlance` | `true`, `false` | `true` |
 | `notificationGlance` | `true`, `false` | `true` |
 | `notificationsInFullScreen` | `true`, `false` | `true` |
+| `windowsBanners` | `true`, `false` | `true` |
 | `lyricsDelay` | `auto`, or 0 to 2000 (ms) | `auto` |
 
 While music plays (any app in Windows' media controls), the closed island
@@ -123,6 +124,12 @@ island still shows them). With an app in full screen the glance shows too
 (`notificationsInFullScreen: false` keeps it away then); never while
 presenting, in a game in exclusive full screen or with Do Not Disturb
 (except the one Windows 11 turns on by itself in full screen).
+A click on the glance opens the app that sent it (Windows lets no other app
+click the notification itself). `windowsBanners: false` lets the island
+tell notifications alone: it turns off Windows' banner for each app (as
+the switch in Settings would; Windows' own alerts keep theirs), notes the
+ones it turned off in `%LOCALAPPDATA%islandanners.txt`, and turns
+those back on when the island quits or the setting goes back to `true`.
 `notificationGlance: false` turns it off.
 
 The icons are filled ones from Microsoft's

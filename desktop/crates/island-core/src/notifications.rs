@@ -155,6 +155,9 @@ pub struct Toast {
     pub id: u32,
     /// The app that sent it.
     pub app: String,
+    /// That app's id in the shell (its AppUserModelID), to open it with a
+    /// click; empty if Windows doesn't tell.
+    pub app_id: String,
     /// Its title (its first line of text).
     pub title: String,
     /// Its second line, if any.
@@ -201,6 +204,7 @@ mod tests {
         Toast {
             id,
             app: "Mail".into(),
+            app_id: String::new(),
             title: format!("n{id}"),
             body: String::new(),
         }

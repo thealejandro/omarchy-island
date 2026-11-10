@@ -74,6 +74,9 @@ pub struct Settings {
     /// Those glances while an app is in full screen too (never while
     /// presenting or in a game).
     pub notifications_in_full_screen: bool,
+    /// Windows' own banners for notifications: off, the island tells them
+    /// alone (each app's banner turned off, and back on when this is).
+    pub windows_banners: bool,
     /// How late the lyrics follow the position the player tells, in ms:
     /// the sound comes out later than that (more so over Bluetooth).
     /// `None` ("auto"): by the speakers in use, see [`Settings::lyrics_delay`].
@@ -104,6 +107,7 @@ impl Default for Settings {
             bluetooth_glance: true,
             notification_glance: true,
             notifications_in_full_screen: true,
+            windows_banners: true,
             lyrics_delay: None,
         }
     }
@@ -130,6 +134,7 @@ pub const TEMPLATE: &str = r#"{
   "bluetoothGlance": true,
   "notificationGlance": true,
   "notificationsInFullScreen": true,
+  "windowsBanners": true,
   "lyricsDelay": "auto"
 }
 "#;
@@ -204,6 +209,7 @@ impl Settings {
                 "notificationsInFullScreen",
                 d.notifications_in_full_screen,
             ),
+            windows_banners: flag("windowsBanners", d.windows_banners),
             // A number in range; "auto" or anything else: by the speakers.
             lyrics_delay: o
                 .get("lyricsDelay")
@@ -322,6 +328,8 @@ mod tests {
         assert!(!parse(r#"{"bluetoothGlance": false}"#).bluetooth_glance);
         assert!(!parse(r#"{"notificationGlance": false}"#).notification_glance);
         assert!(!parse(r#"{"notificationsInFullScreen": false}"#).notifications_in_full_screen);
+        assert!(!parse(r#"{"windowsBanners": false}"#).windows_banners);
+        assert!(Settings::default().windows_banners);
         // The lyrics' delay: a number wins over the speakers; else by them.
         let s = parse(r#"{"lyricsDelay": 350}"#);
         assert_eq!((s.lyrics_delay(true), s.lyrics_delay(false)), (350, 350));
