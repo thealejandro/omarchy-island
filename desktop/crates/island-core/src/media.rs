@@ -147,20 +147,56 @@ const fn rect(x: f32, y: f32, width: f32, height: f32) -> Rect {
 }
 
 // The open island, 560 x 180.
+pub const OPEN_WIDTH: f32 = 560.0;
 pub const ART: Rect = rect(24.0, 24.0, 88.0, 88.0);
-pub const TITLE: Rect = rect(128.0, 26.0, 408.0, 26.0);
-pub const ARTIST: Rect = rect(128.0, 54.0, 408.0, 22.0);
-pub const BAR: Rect = rect(128.0, 96.0, 408.0, 4.0);
-pub const TIMES: Rect = rect(128.0, 104.0, 408.0, 16.0);
+const TEXT_X: f32 = 128.0;
+const TEXT_WIDTH: f32 = 408.0;
 const BUTTON: f32 = 40.0;
 const BUTTONS_Y: f32 = 128.0;
-const BUTTONS_CENTER: f32 = 332.0;
 const BUTTONS_GAP: f32 = 64.0;
 
 // With synced lyrics the open island is wider, not taller: the lines run
 // in a column right of the player, as tall as it, so nothing is left empty.
-pub const OPEN_LYRICS_WIDTH: f32 = 860.0;
-pub const LYRICS: Rect = rect(560.0, 14.0, 276.0, 152.0);
+// The player's text gets narrower for it, so the island only grows by
+// what the column needs and stays a compact bar at the top of the screen.
+pub const OPEN_LYRICS_WIDTH: f32 = 720.0;
+const TEXT_WIDTH_BESIDE_LYRICS: f32 = 320.0;
+pub const LYRICS: Rect = rect(468.0, 14.0, 228.0, 152.0);
+
+/// Where the player's parts go in the open island, alone or beside lyrics.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Player {
+    pub title: Rect,
+    pub artist: Rect,
+    pub bar: Rect,
+    pub times: Rect,
+    buttons_center: f32,
+}
+
+pub const fn player(beside_lyrics: bool) -> Player {
+    let w = if beside_lyrics {
+        TEXT_WIDTH_BESIDE_LYRICS
+    } else {
+        TEXT_WIDTH
+    };
+    Player {
+        title: rect(TEXT_X, 26.0, w, 26.0),
+        artist: rect(TEXT_X, 54.0, w, 22.0),
+        bar: rect(TEXT_X, 96.0, w, 4.0),
+        times: rect(TEXT_X, 104.0, w, 16.0),
+        // The controls sit under the bar's middle.
+        buttons_center: TEXT_X + w / 2.0,
+    }
+}
+
+/// The open island's width.
+pub const fn open_width(beside_lyrics: bool) -> f32 {
+    if beside_lyrics {
+        OPEN_LYRICS_WIDTH
+    } else {
+        OPEN_WIDTH
+    }
+}
 /// Where the line being sung starts, from the column's top: room for the
 /// one before it above, and for what comes below.
 pub const LYRICS_ANCHOR: f32 = 42.0;
@@ -253,14 +289,14 @@ pub fn entrance(a: f32) -> (f32, f32, f32) {
     )
 }
 
-pub fn button(b: Button) -> Rect {
+pub const fn button(b: Button, beside_lyrics: bool) -> Rect {
     let dx = match b {
         Button::Prev => -BUTTONS_GAP,
         Button::PlayPause => 0.0,
         Button::Next => BUTTONS_GAP,
     };
     rect(
-        BUTTONS_CENTER + dx - BUTTON / 2.0,
+        player(beside_lyrics).buttons_center + dx - BUTTON / 2.0,
         BUTTONS_Y,
         BUTTON,
         BUTTON,
@@ -268,11 +304,11 @@ pub fn button(b: Button) -> Rect {
 }
 
 /// The button under (`x`, `y`), if any.
-pub fn hit(x: f32, y: f32) -> Option<Button> {
+pub fn hit(x: f32, y: f32, beside_lyrics: bool) -> Option<Button> {
     [Button::Prev, Button::PlayPause, Button::Next]
         .into_iter()
         .find(|&b| {
-            let r = button(b);
+            let r = button(b, beside_lyrics);
             x >= r.x && x < r.x + r.width && y >= r.y && y < r.y + r.height
         })
 }
@@ -284,10 +320,14 @@ mod tests {
     #[test]
     fn lyrics_fill_the_open_island_beside_the_player() {
         const {
-            assert!(LYRICS.x >= BAR.x + BAR.width);
+            let p = player(true);
+            assert!(LYRICS.x >= p.bar.x + p.bar.width + 16.0);
             assert!(LYRICS.x + LYRICS.width <= OPEN_LYRICS_WIDTH - 20.0);
             // The open island's height (180).
             assert!(LYRICS.y + LYRICS.height <= 180.0);
+            // Not much wider than the player alone.
+            assert!(OPEN_LYRICS_WIDTH <= OPEN_WIDTH * 1.3);
+            assert!(player(false).bar.x + player(false).bar.width <= OPEN_WIDTH - 20.0);
         }
     }
 
@@ -419,14 +459,21 @@ mod tests {
 
     #[test]
     fn buttons_are_hit_inside_and_missed_between() {
-        assert_eq!(hit(332.0, 148.0), Some(Button::PlayPause));
-        assert_eq!(hit(268.0, 148.0), Some(Button::Prev));
-        assert_eq!(hit(396.0, 148.0), Some(Button::Next));
-        assert_eq!(hit(300.0, 148.0), None);
-        assert_eq!(hit(332.0, 60.0), None);
+        assert_eq!(hit(332.0, 148.0, false), Some(Button::PlayPause));
+        assert_eq!(hit(268.0, 148.0, false), Some(Button::Prev));
+        assert_eq!(hit(396.0, 148.0, false), Some(Button::Next));
+        assert_eq!(hit(300.0, 148.0, false), None);
+        assert_eq!(hit(332.0, 60.0, false), None);
+        // Beside the lyrics they follow the narrower bar's middle.
+        assert_eq!(hit(288.0, 148.0, true), Some(Button::PlayPause));
+        assert_eq!(hit(396.0, 148.0, true), None);
         // They fit in the open island, left of the lyrics.
-        assert!(button(Button::Next).y + button(Button::Next).height <= 180.0);
-        let next = button(Button::Next);
+        for beside in [false, true] {
+            let next = button(Button::Next, beside);
+            assert!(next.y + next.height <= 180.0);
+            assert!(next.x + next.width <= open_width(beside));
+        }
+        let next = button(Button::Next, true);
         assert!(next.x + next.width <= LYRICS.x);
     }
 }

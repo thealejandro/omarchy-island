@@ -40,7 +40,7 @@ use windows::core::{Error, Result, w};
 // Sizes in DIPs (1/96 inch); the springs run in DIPs too, so a DPI change
 // doesn't jolt the motion.
 const CLOSED: (f32, f32) = (180.0, 32.0);
-const OPEN: (f32, f32) = (560.0, 180.0);
+const OPEN: (f32, f32) = (layout::OPEN_WIDTH, 180.0);
 const RADIUS: f32 = 18.0;
 const EAR: f32 = 10.0;
 const MARGIN: f32 = 8.0;
@@ -107,6 +107,9 @@ struct App {
     lyric_index: Option<usize>,
     /// When the open column started scrolling to it.
     lyric_moved: Option<Instant>,
+    /// The open island shows the lyrics in a column beside the player (on
+    /// by default); off, it stays just the player, as narrow as without them.
+    lyrics_column: bool,
 }
 
 thread_local! {
@@ -274,6 +277,7 @@ impl App {
             empty: self.empty,
             song: self.song_text,
             lyrics,
+            column: self.lyrics_column,
             glance: self.glance() && lyrics.is_some_and(|l| !l.current().trim().is_empty()),
         };
         let drawn = match &mut self.renderer {
@@ -320,7 +324,7 @@ impl App {
         let lx = (x - body.x - shape::ear_room(self.placement, EAR * s)) / s
             - (self.width.value - self.open_size().0) / 2.0;
         let ly = (y - body.y) / s;
-        let cmd = match layout::hit(lx, ly) {
+        let cmd = match layout::hit(lx, ly, self.column()) {
             Some(layout::Button::Prev) => media::Command::Prev,
             Some(layout::Button::PlayPause) => media::Command::PlayPause,
             Some(layout::Button::Next) => media::Command::Next,
@@ -365,20 +369,17 @@ impl App {
 
     /// The window is sized for the widest the island gets.
     fn widest(&self) -> f32 {
-        if self.lyrics.is_some() {
-            layout::OPEN_LYRICS_WIDTH
-        } else {
-            OPEN.0
-        }
+        layout::open_width(self.lyrics.is_some() && self.lyrics_column)
+    }
+
+    /// Whether the open island has its column of lyrics now.
+    fn column(&self) -> bool {
+        self.lyrics_column && !self.lines.is_empty()
     }
 
     /// The open island: wider with a column of lyrics.
     fn open_size(&self) -> (f32, f32) {
-        if self.lines.is_empty() {
-            OPEN
-        } else {
-            (layout::OPEN_LYRICS_WIDTH, OPEN.1)
-        }
+        (layout::open_width(self.column()), OPEN.1)
     }
 
     /// How much of the scroll to the line being sung is left.
@@ -447,7 +448,7 @@ impl App {
             // closed: it is just there.
             let step = matches!((self.lyric_index, index), (Some(a), Some(b)) if b == a + 1);
             self.lyric_index = index;
-            self.lyric_moved = (self.open && step).then(Instant::now);
+            self.lyric_moved = (self.open && self.lyrics_column && step).then(Instant::now);
             if self.lyric_moved.is_some() && self.last_frame.is_none() {
                 self.last_frame = Some(Instant::now());
                 self.pacer.start();
@@ -755,6 +756,7 @@ fn main() -> Result<()> {
             lines: Vec::new(),
             lyric_index: None,
             lyric_moved: None,
+            lyrics_column: arg("--open-lyrics").is_none_or(|s| s != "off"),
         };
         if let Some(r) = &app.renderer {
             r.align_song(

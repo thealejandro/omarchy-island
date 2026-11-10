@@ -77,6 +77,8 @@ pub struct Scene<'a> {
     pub song: SongText,
     /// With synced lyrics: where the song is in them.
     pub lyrics: Option<LyricsView<'a>>,
+    /// The open island shows them in a column beside the player.
+    pub column: bool,
     /// The glance shows the line being sung instead of the song.
     pub glance: bool,
 }
@@ -101,7 +103,7 @@ impl LyricsView<'_> {
 
 /// The open and closed layouts are drawn at their full size, centered in
 /// the body, so they don't reflow while it grows.
-const OPEN_W: f32 = 560.0;
+const OPEN_W: f32 = layout::OPEN_WIDTH;
 const CLOSED_W: f32 = 180.0;
 /// The note that stands in for a missing cover is laid out in a box this
 /// big (DIPs) and scaled to the cover's size.
@@ -615,20 +617,17 @@ impl Renderer {
             self.text(s.empty, &self.text.empty, all, 0.6 * alpha);
             return;
         };
+        let column = s.lyrics.filter(|_| s.column);
+        let p = layout::player(column.is_some());
         self.draw_art(t, shift(layout::ART, dx), 10.0, alpha, s.scale);
-        self.text(&t.title, &self.text.title, shift(layout::TITLE, dx), alpha);
+        self.text(&t.title, &self.text.title, shift(p.title, dx), alpha);
         let artist = if t.artist.is_empty() {
             &t.album
         } else {
             &t.artist
         };
-        self.text(
-            artist,
-            &self.text.artist,
-            shift(layout::ARTIST, dx),
-            0.6 * alpha,
-        );
-        let bar = shift(layout::BAR, dx);
+        self.text(artist, &self.text.artist, shift(p.artist, dx), 0.6 * alpha);
+        let bar = shift(p.bar, dx);
         self.rounded(bar, 2.0, 0.2 * alpha);
         if t.duration_ms > 0 {
             let done = (s.position_ms as f32 / t.duration_ms as f32).clamp(0.0, 1.0);
@@ -637,7 +636,7 @@ impl Renderer {
                 ..bar
             };
             self.rounded(filled, 2.0, 0.9 * alpha);
-            let times = shift(layout::TIMES, dx);
+            let times = shift(p.times, dx);
             self.text(
                 &fmt_time(s.position_ms),
                 &self.text.time,
@@ -661,9 +660,10 @@ impl Renderer {
             (Button::Next, "\u{E893}", t.can_next),
         ] {
             let a = if on { 0.95 } else { 0.3 } * alpha;
-            self.text(glyph, &self.text.icon, shift(layout::button(b), dx), a);
+            let r = layout::button(b, column.is_some());
+            self.text(glyph, &self.text.icon, shift(r, dx), a);
         }
-        if let Some(l) = s.lyrics {
+        if let Some(l) = column {
             self.draw_lyrics(&l, shift(layout::LYRICS, dx), alpha);
         }
     }
@@ -922,11 +922,7 @@ impl Renderer {
                 }
                 if open > 0.0 {
                     let a = self.enter(&base, cx, open);
-                    let w = if s.lyrics.is_some() {
-                        layout::OPEN_LYRICS_WIDTH
-                    } else {
-                        OPEN_W
-                    };
+                    let w = layout::open_width(s.column && s.lyrics.is_some());
                     self.draw_open(s, (s.size.0 - w) / 2.0, a);
                 }
                 self.view = (0.0, 1.0, 0.0);
