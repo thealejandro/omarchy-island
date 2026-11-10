@@ -75,6 +75,13 @@ test("focus pauses and resumes from a deadline without accumulating missed ticks
   assert.equal(F.finish(s, 65 * MIN, l).phase, "break")
 })
 
+test("long focus durations use the same hour format as desktop", () => {
+  assert.equal(I.clock(3599), "59:59")
+  assert.equal(I.clock(3600), "1:00:00")
+  assert.equal(I.clock(7200), "2:00:00")
+  assert.equal(I.clock(3723), "1:02:03")
+})
+
 test("focus cycles through short and long breaks, then waits for a click", () => {
   let s = F.create(l), now = 0
   for (let round = 1; round <= l.every; round++) {

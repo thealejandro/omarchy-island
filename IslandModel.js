@@ -18,6 +18,8 @@ function clock(seconds) {
   var s = Math.max(0, Math.floor(seconds || 0))
   var m = Math.floor(s / 60)
   var r = s % 60
+  if (s >= 3600) return Math.floor(s / 3600) + ":" + (m % 60 < 10 ? "0" : "") + m % 60
+    + ":" + (r < 10 ? "0" : "") + r
   return m + ":" + (r < 10 ? "0" : "") + r
 }
 

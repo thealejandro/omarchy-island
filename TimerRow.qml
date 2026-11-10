@@ -14,7 +14,9 @@ Item {
   readonly property real progress: island.timerTotal > 0
     ? 1 - island.timerRemaining / island.timerTotal : 0
 
-  implicitHeight: Math.max(left.height, buttons.height) + Style.spacing.md + Style.space(3)
+  readonly property bool stacked: left.width + buttons.width + Style.spacing.xl > width
+  implicitHeight: (stacked ? left.height + Style.spacing.md + buttons.height
+    : Math.max(left.height, buttons.height)) + Style.spacing.md + Style.space(3)
 
   WheelHandler {
     // Without this the handler ignores a regular mouse wheel.
@@ -68,7 +70,8 @@ Item {
   Row {
     id: buttons
     anchors.right: parent.right
-    anchors.verticalCenter: left.verticalCenter
+    anchors.verticalCenter: root.stacked ? undefined : left.verticalCenter
+    y: root.stacked ? left.height + Style.spacing.md : 0
     spacing: Style.spacing.lg
     IslandButton {
       anchors.verticalCenter: parent.verticalCenter
