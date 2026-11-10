@@ -2,6 +2,7 @@
 //! redirection bitmap and is transparent wherever the island isn't drawn.
 //! Text is DirectWrite; the cover is decoded with WIC.
 
+use island_core::lyrics::Line;
 use island_core::media::{self as layout, Button, SongText, TextAlign, fmt_time};
 use island_core::shape::{Outline, Point, Rect, Segment};
 use windows::Win32::Foundation::{E_FAIL, HMODULE, HWND, POINT, RECT};
@@ -31,11 +32,12 @@ use windows::Win32::Graphics::DirectComposition::{
 use windows::Win32::Graphics::DirectWrite::{
     DWRITE_FACTORY_TYPE_SHARED, DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL,
     DWRITE_FONT_WEIGHT, DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_WEIGHT_SEMI_BOLD,
-    DWRITE_MEASURING_MODE_NATURAL, DWRITE_PARAGRAPH_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT,
-    DWRITE_TEXT_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_LEADING, DWRITE_TEXT_ALIGNMENT_TRAILING,
+    DWRITE_MEASURING_MODE_NATURAL, DWRITE_PARAGRAPH_ALIGNMENT_CENTER,
+    DWRITE_PARAGRAPH_ALIGNMENT_NEAR, DWRITE_TEXT_ALIGNMENT, DWRITE_TEXT_ALIGNMENT_CENTER,
+    DWRITE_TEXT_ALIGNMENT_LEADING, DWRITE_TEXT_ALIGNMENT_TRAILING, DWRITE_TEXT_METRICS,
     DWRITE_TEXT_RANGE, DWRITE_TRIMMING, DWRITE_TRIMMING_GRANULARITY_CHARACTER,
-    DWRITE_WORD_WRAPPING_NO_WRAP, DWriteCreateFactory, IDWriteFactory, IDWriteFontCollection,
-    IDWriteTextFormat,
+    DWRITE_WORD_WRAPPING_NO_WRAP, DWRITE_WORD_WRAPPING_WRAP, DWriteCreateFactory, IDWriteFactory,
+    IDWriteFontCollection, IDWriteTextFormat, IDWriteTextLayout,
 };
 use windows::Win32::Graphics::Dxgi::Common::{
     DXGI_ALPHA_MODE_PREMULTIPLIED, DXGI_FORMAT_B8G8R8A8_UNORM,
@@ -73,10 +75,28 @@ pub struct Scene<'a> {
     pub empty: &'a str,
     /// What the song's line says (closed and peek).
     pub song: SongText,
-    /// With synced lyrics: the line being sung and the next one.
-    pub lyric: Option<(&'a str, &'a str)>,
+    /// With synced lyrics: where the song is in them.
+    pub lyrics: Option<LyricsView<'a>>,
     /// The glance shows the line being sung instead of the song.
     pub glance: bool,
+}
+
+#[derive(Clone, Copy)]
+pub struct LyricsView<'a> {
+    pub lines: &'a [Line],
+    /// The line being sung; `None` before the first.
+    pub index: Option<usize>,
+    /// How much of the scroll to it is left (see [`layout::lyrics_scroll`]).
+    pub scroll: f32,
+}
+
+impl LyricsView<'_> {
+    /// The words being sung; empty in a pause.
+    pub fn current(&self) -> &str {
+        self.index
+            .and_then(|i| self.lines.get(i))
+            .map_or("", |l| l.text.as_str())
+    }
 }
 
 /// The open and closed layouts are drawn at their full size, centered in
@@ -100,7 +120,9 @@ struct Art {
 
 struct Text {
     dw: IDWriteFactory,
-    lyric: IDWriteTextFormat,
+    /// The lyrics' lines: they wrap, and all have one size, so a line
+    /// keeps its height as it comes into focus.
+    lines: IDWriteTextFormat,
     title: IDWriteTextFormat,
     artist: IDWriteTextFormat,
     time: IDWriteTextFormat,
@@ -257,7 +279,11 @@ impl Text {
                 w!("Segoe MDL2 Assets")
             };
             let (n, b) = (DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_WEIGHT_SEMI_BOLD);
+            let lines = format(ui, b, 16.0, DWRITE_TEXT_ALIGNMENT_LEADING)?;
+            lines.SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP)?;
+            lines.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR)?;
             Ok(Self {
+                lines,
                 title: format(ui, b, 17.0, DWRITE_TEXT_ALIGNMENT_LEADING)?,
                 artist: format(ui, n, 13.0, DWRITE_TEXT_ALIGNMENT_LEADING)?,
                 time: format(ui, n, 11.0, DWRITE_TEXT_ALIGNMENT_LEADING)?,
@@ -267,7 +293,6 @@ impl Text {
                 peek: format(ui, b, 13.0, DWRITE_TEXT_ALIGNMENT_LEADING)?,
                 closed: format(ui, b, 12.0, DWRITE_TEXT_ALIGNMENT_LEADING)?,
                 note: format(icons, n, 22.0, DWRITE_TEXT_ALIGNMENT_CENTER)?,
-                lyric: format(ui, b, 15.0, DWRITE_TEXT_ALIGNMENT_LEADING)?,
                 dw: dw.clone(),
             })
         }
@@ -638,28 +663,91 @@ impl Renderer {
             let a = if on { 0.95 } else { 0.3 } * alpha;
             self.text(glyph, &self.text.icon, shift(layout::button(b), dx), a);
         }
-        if let Some((line, next)) = s.lyric {
-            // Between verses, a quiet ellipsis keeps the place.
-            let (text, a) = if line.is_empty() {
-                ("…", 0.4)
-            } else {
-                (line, 0.95)
-            };
-            self.text(text, &self.text.lyric, shift(layout::LYRIC, dx), a * alpha);
-            self.text(
-                next,
-                &self.text.artist,
-                shift(layout::LYRIC_NEXT, dx),
-                0.45 * alpha,
-            );
+        if let Some(l) = s.lyrics {
+            self.draw_lyrics(&l, shift(layout::LYRICS, dx), alpha);
+        }
+    }
+
+    /// The column of lyrics: the line being sung in full light, the ones
+    /// around it dimmer the farther they are, all gliding up on a change.
+    fn draw_lyrics(&self, l: &LyricsView, col: Rect, alpha: f32) {
+        // A few lines before and after are enough to fill the column.
+        let (first, current) = match l.index {
+            Some(i) => (i.saturating_sub(3), i),
+            None => (0, 0),
+        };
+        let mut texts: Vec<&str> = Vec::with_capacity(9);
+        if l.index.is_none() {
+            // Before the singing starts: the pause, then what comes.
+            texts.push("");
+        }
+        let last = (current + 6).min(l.lines.len());
+        texts.extend(
+            l.lines[first.min(last)..last]
+                .iter()
+                .map(|x| x.text.as_str()),
+        );
+        let at = current - first;
+        let layouts: Vec<IDWriteTextLayout> = texts
+            .iter()
+            .filter_map(|t| {
+                let t = if t.trim().is_empty() {
+                    layout::LYRICS_PAUSE
+                } else {
+                    t
+                };
+                unsafe {
+                    self.text
+                        .dw
+                        .CreateTextLayout(&utf16(t), &self.text.lines, col.width, 400.0)
+                        .ok()
+                }
+            })
+            .collect();
+        if layouts.len() != texts.len() {
+            return;
+        }
+        let heights: Vec<f32> = layouts
+            .iter()
+            .map(|t| unsafe {
+                let mut m = DWRITE_TEXT_METRICS::default();
+                let _ = t.GetMetrics(&mut m);
+                m.height
+            })
+            .collect();
+        let tops = layout::lyrics_tops(&heights, at, l.scroll);
+        // While it scrolls, the focus passes from the line before to this.
+        let focus = at as f32 - l.scroll;
+        unsafe {
+            self.dc
+                .PushAxisAlignedClip(&rf(col), D2D1_ANTIALIAS_MODE_ALIASED);
+            for (i, t) in layouts.iter().enumerate() {
+                let a = layout::lyrics_alpha(i as f32 - focus)
+                    * layout::lyrics_edge(tops[i], heights[i])
+                    * alpha;
+                if a <= 0.01 {
+                    continue;
+                }
+                self.ink.SetColor(&white(a));
+                self.dc.DrawTextLayout(
+                    v(Point {
+                        x: col.x,
+                        y: col.y + tops[i],
+                    }),
+                    t,
+                    &self.ink,
+                    D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT,
+                );
+            }
+            self.dc.PopAxisAlignedClip();
         }
     }
 
     fn draw_peek(&mut self, s: &Scene, dx: f32, alpha: f32) {
         let Some(t) = s.track else { return };
         self.draw_art(t, shift(layout::PEEK_ART, dx), 7.0, alpha, s.scale);
-        let spans = match s.lyric {
-            Some((line, _)) if s.glance => vec![(line.to_string(), false)],
+        let spans = match s.lyrics {
+            Some(l) if s.glance => vec![(l.current().to_string(), false)],
             _ => s.song.spans(&t.title, &t.artist),
         };
         self.song(&spans, &self.text.peek, shift(layout::PEEK_TEXT, dx), alpha);
@@ -834,7 +922,12 @@ impl Renderer {
                 }
                 if open > 0.0 {
                     let a = self.enter(&base, cx, open);
-                    self.draw_open(s, (s.size.0 - OPEN_W) / 2.0, a);
+                    let w = if s.lyrics.is_some() {
+                        layout::OPEN_LYRICS_WIDTH
+                    } else {
+                        OPEN_W
+                    };
+                    self.draw_open(s, (s.size.0 - w) / 2.0, a);
                 }
                 self.view = (0.0, 1.0, 0.0);
                 self.dc.PopAxisAlignedClip();

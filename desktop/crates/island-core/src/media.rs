@@ -157,11 +157,70 @@ const BUTTONS_Y: f32 = 128.0;
 const BUTTONS_CENTER: f32 = 332.0;
 const BUTTONS_GAP: f32 = 64.0;
 
-// With synced lyrics the open island is taller: the line being sung and
-// the next one, under the controls.
-pub const OPEN_LYRICS_HEIGHT: f32 = 232.0;
-pub const LYRIC: Rect = rect(24.0, 178.0, 512.0, 24.0);
-pub const LYRIC_NEXT: Rect = rect(24.0, 202.0, 512.0, 20.0);
+// With synced lyrics the open island is wider, not taller: the lines run
+// in a column right of the player, as tall as it, so nothing is left empty.
+pub const OPEN_LYRICS_WIDTH: f32 = 860.0;
+pub const LYRICS: Rect = rect(560.0, 14.0, 276.0, 152.0);
+/// Where the line being sung starts, from the column's top: room for the
+/// one before it above, and for what comes below.
+pub const LYRICS_ANCHOR: f32 = 42.0;
+pub const LYRICS_GAP: f32 = 8.0;
+/// A new line scrolls the column up over this long.
+pub const LYRICS_SCROLL_MS: f32 = 320.0;
+/// Lines fade out over this much at the column's edges.
+pub const LYRICS_FADE: f32 = 18.0;
+/// Stands for a line without words (a pause in the singing).
+pub const LYRICS_PAUSE: &str = "• • •";
+
+/// How much of the scroll to a new line is left `elapsed_ms` after it
+/// starts: 1 to 0, eased out.
+pub fn lyrics_scroll(elapsed_ms: f32) -> f32 {
+    let t = (elapsed_ms / LYRICS_SCROLL_MS).clamp(0.0, 1.0);
+    (1.0 - t).powi(3)
+}
+
+/// The tops of stacked lines of these `heights` in the column: the
+/// `current` one at [`LYRICS_ANCHOR`], lowered by `scroll` of the step it
+/// just took (the line before it and a gap), so a change glides up.
+pub fn lyrics_tops(heights: &[f32], current: usize, scroll: f32) -> Vec<f32> {
+    let mut tops = vec![0.0; heights.len()];
+    if current >= heights.len() {
+        return tops;
+    }
+    let back = current
+        .checked_sub(1)
+        .map_or(0.0, |i| heights[i] + LYRICS_GAP);
+    let base = LYRICS_ANCHOR + scroll.clamp(0.0, 1.0) * back;
+    let mut y = base;
+    for i in current..heights.len() {
+        tops[i] = y;
+        y += heights[i] + LYRICS_GAP;
+    }
+    let mut y = base;
+    for i in (0..current).rev() {
+        y -= heights[i] + LYRICS_GAP;
+        tops[i] = y;
+    }
+    tops
+}
+
+/// How bright a line is, by how far it is from the one in focus (in
+/// lines; fractional while scrolling): sung ones fade faster than the
+/// ones to come.
+pub fn lyrics_alpha(distance: f32) -> f32 {
+    if distance < 0.0 {
+        (1.0 + distance * 0.62).max(0.16)
+    } else {
+        (1.0 - distance * 0.42).max(0.2)
+    }
+}
+
+/// How much of a line at `top` with `height` shows at the column's edges.
+pub fn lyrics_edge(top: f32, height: f32) -> f32 {
+    let above = (top + height) / LYRICS_FADE;
+    let below = (LYRICS.height - top) / LYRICS_FADE;
+    above.min(below).clamp(0.0, 1.0)
+}
 
 // The glance on a new song (and, later, on each line of lyrics), 400 x 44.
 pub const PEEK: (f32, f32) = (400.0, 44.0);
@@ -221,6 +280,48 @@ pub fn hit(x: f32, y: f32) -> Option<Button> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lyrics_fill_the_open_island_beside_the_player() {
+        const {
+            assert!(LYRICS.x >= BAR.x + BAR.width);
+            assert!(LYRICS.x + LYRICS.width <= OPEN_LYRICS_WIDTH - 20.0);
+            // The open island's height (180).
+            assert!(LYRICS.y + LYRICS.height <= 180.0);
+        }
+    }
+
+    #[test]
+    fn lyrics_stack_around_the_line_being_sung() {
+        let h = [22.0, 44.0, 22.0, 22.0];
+        let tops = lyrics_tops(&h, 1, 0.0);
+        assert_eq!(tops[1], LYRICS_ANCHOR);
+        assert_eq!(tops[0], LYRICS_ANCHOR - 22.0 - LYRICS_GAP);
+        assert_eq!(tops[2], LYRICS_ANCHOR + 44.0 + LYRICS_GAP);
+        assert_eq!(tops[3], tops[2] + 22.0 + LYRICS_GAP);
+        // Just changed: everything is still one step down, where the line
+        // before was the one in focus.
+        let start = lyrics_tops(&h, 1, 1.0);
+        assert_eq!(start[0], LYRICS_ANCHOR);
+        // The first line has nothing to scroll from; out of range, nothing.
+        assert_eq!(lyrics_tops(&h, 0, 1.0)[0], LYRICS_ANCHOR);
+        assert_eq!(lyrics_tops(&h, 9, 0.0), vec![0.0; 4]);
+    }
+
+    #[test]
+    fn lyrics_scroll_and_fade_smoothly() {
+        assert_eq!(lyrics_scroll(0.0), 1.0);
+        assert_eq!(lyrics_scroll(LYRICS_SCROLL_MS), 0.0);
+        assert_eq!(lyrics_scroll(1e6), 0.0);
+        assert!(lyrics_scroll(LYRICS_SCROLL_MS / 2.0) < 0.2);
+        assert_eq!(lyrics_alpha(0.0), 1.0);
+        assert!(lyrics_alpha(-1.0) < lyrics_alpha(1.0));
+        assert!(lyrics_alpha(1.0) > lyrics_alpha(2.0));
+        assert!(lyrics_alpha(-9.0) > 0.0 && lyrics_alpha(9.0) > 0.0);
+        assert_eq!(lyrics_edge(LYRICS_ANCHOR, 22.0), 1.0);
+        assert_eq!(lyrics_edge(-30.0, 22.0), 0.0);
+        assert_eq!(lyrics_edge(LYRICS.height, 22.0), 0.0);
+    }
 
     #[test]
     fn entrance_eases_out_to_its_place() {
@@ -323,9 +424,9 @@ mod tests {
         assert_eq!(hit(396.0, 148.0), Some(Button::Next));
         assert_eq!(hit(300.0, 148.0), None);
         assert_eq!(hit(332.0, 60.0), None);
-        // They fit in the open island, and the lyrics under them.
+        // They fit in the open island, left of the lyrics.
         assert!(button(Button::Next).y + button(Button::Next).height <= 180.0);
-        const { assert!(LYRIC.y >= BUTTONS_Y + BUTTON) };
-        const { assert!(LYRIC_NEXT.y + LYRIC_NEXT.height <= OPEN_LYRICS_HEIGHT) };
+        let next = button(Button::Next);
+        assert!(next.x + next.width <= LYRICS.x);
     }
 }

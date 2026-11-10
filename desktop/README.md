@@ -30,7 +30,9 @@ controls. `--text-align center|left` and
 
 `--lyrics` turns on synced lyrics from [lrclib.net](https://lrclib.net)
 (off by default: it sends the song's name there). The closed island then
-shows the line being sung, and the open one that line and the next. Answers
+shows the line being sung, and the open one grows wider for a column of
+lyrics beside the player: the sung line bright, the ones around it fading,
+scrolling up as the song goes (pauses show as `• • •`). Answers
 are cached in `%LOCALAPPDATA%\island\lyrics` (the last 400 songs).
 
 CI builds with the MSVC toolchain. Without the Visual Studio Build Tools,
