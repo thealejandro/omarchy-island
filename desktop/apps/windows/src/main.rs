@@ -167,8 +167,8 @@ struct App {
     /// The open island shows the lyrics in a column beside the player (on
     /// by default); off, it is just the player.
     lyrics_column: bool,
-    /// The open island's width setting (DIPs, steps of 10): 720 by default
-    /// with the column, 560 without.
+    /// The open island's width setting (DIPs, steps of 10): 560 by default,
+    /// with the column or without.
     open_width_setting: f32,
     /// That width as it fits the screen now ([`layout::fit_open_width`]).
     open_width: f32,

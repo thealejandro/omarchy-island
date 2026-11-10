@@ -54,9 +54,10 @@ the song goes (pauses show as `• • •`). `openLyrics: false` leaves the
 open island as just the player, the lyrics only in the closed one. Answers
 are cached in `%LOCALAPPDATA%\island\lyrics` (the last 400 songs).
 
-`openWidth` is the open island's width (`auto`: 720 with the lyrics
-column, 560 without). The column takes a share of it; below about 600
-there is no room for one and only the player shows. On small or scaled-up
+`openWidth` is the open island's width (`auto`: 560, with the lyrics
+column or without). The column takes a share of it, or on a narrow island
+what the player can spare; below 500 there is no room for one and only the
+player shows. On small or scaled-up
 screens the island takes at most 60 % of the screen's width (610 on a
 1024-wide one, 760 on a 1280 x 1024 square monitor), down to 480.
 

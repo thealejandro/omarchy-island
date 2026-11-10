@@ -136,8 +136,8 @@ impl Settings {
         })
     }
 
-    /// The open island's width setting: the chosen one, or 720 with a
-    /// column of lyrics and 560 without.
+    /// The open island's width setting: the chosen one, or 560 (with a
+    /// column of lyrics or without, so turning them on doesn't resize it).
     pub fn open_width(&self) -> f32 {
         self.open_width
             .unwrap_or(if self.lyrics && self.open_lyrics {
