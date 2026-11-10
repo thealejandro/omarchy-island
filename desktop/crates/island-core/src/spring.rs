@@ -40,15 +40,21 @@ pub const CLOSE_HEIGHT: Params = Params {
     epsilon: 0.25,
 };
 
+/// The step the parameters are tuned for (Qt's).
 const STEP_MS: f32 = 16.0;
+/// The step actually taken: finer, so a frame of any length moves the
+/// spring by just that time, and every frame moves (16 ms steps on a
+/// 15.6 ms timer skipped one now and then, a visible hitch).
+const SUBSTEP_MS: f32 = 4.0;
+/// DIPs a second under which the motion is invisible (a tenth of a pixel a
+/// frame): the spring stops there instead of redrawing for nothing.
+const SETTLE_SPEED: f32 = 6.0;
 
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct Spring {
     pub value: f32,
     pub velocity: f32,
     pub target: f32,
-    /// Time not yet stepped, under one step.
-    carry_ms: f32,
 }
 
 impl Spring {
@@ -57,7 +63,6 @@ impl Spring {
             value,
             velocity: 0.0,
             target: value,
-            carry_ms: 0.0,
         }
     }
 
@@ -68,7 +73,6 @@ impl Spring {
     /// Advances by `elapsed_ms`; `true` while it is still moving.
     pub fn advance(&mut self, p: &Params, elapsed_ms: f32) -> bool {
         if self.is_settled() {
-            self.carry_ms = 0.0;
             return false;
         }
         // A long stall (a sleeping laptop, a busy thread) doesn't replay
@@ -77,16 +81,18 @@ impl Spring {
             self.snap();
             return false;
         }
-        self.carry_ms += elapsed_ms.max(0.0);
-        while self.carry_ms >= STEP_MS {
-            self.carry_ms -= STEP_MS;
+        let mut left = elapsed_ms.max(0.0);
+        while left > 0.0 {
+            let dt = left.min(SUBSTEP_MS);
+            left -= dt;
             let diff = self.target - self.value;
-            if diff.abs() < p.epsilon && self.velocity.abs() < p.epsilon {
+            if diff.abs() < p.epsilon && self.velocity.abs() < SETTLE_SPEED.max(p.epsilon) {
                 self.snap();
                 return false;
             }
-            self.velocity += (p.spring * diff - p.damping * self.velocity) / p.mass;
-            self.value += self.velocity * STEP_MS / 1000.0;
+            // Qt's step, scaled to this one's share of it.
+            self.velocity += (p.spring * diff - p.damping * self.velocity) / p.mass * dt / STEP_MS;
+            self.value += self.velocity * dt / 1000.0;
         }
         true
     }
@@ -94,7 +100,6 @@ impl Spring {
     fn snap(&mut self) {
         self.value = self.target;
         self.velocity = 0.0;
-        self.carry_ms = 0.0;
     }
 }
 
@@ -121,6 +126,27 @@ mod tests {
         assert_eq!(s.value, 180.0);
         assert!(peak > 180.0 && peak < 200.0, "peak {peak}");
         assert!(frames < 120, "{frames} frames");
+    }
+
+    #[test]
+    fn it_stops_once_the_motion_is_invisible() {
+        // Open and close at 60 Hz: done in about half a second each (the
+        // opening's wobble included), not drawing sub-pixel steps for most
+        // of a second.
+        for (from, to, p) in [
+            (32.0, 180.0, &OPEN_HEIGHT),
+            (180.0, 32.0, &CLOSE_HEIGHT),
+            (180.0, 560.0, &OPEN_WIDTH),
+            (560.0, 180.0, &CLOSE_WIDTH),
+        ] {
+            let mut s = Spring::at(from);
+            s.target = to;
+            let mut frames = 0;
+            while s.advance(p, 16.7) {
+                frames += 1;
+            }
+            assert!(frames <= 36, "{from} to {to}: {frames} frames");
+        }
     }
 
     #[test]
