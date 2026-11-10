@@ -26,6 +26,9 @@ use windows::core::{Interface, Result, RuntimeType};
 
 /// Artwork bigger than this is skipped (covers are a few hundred KB).
 const MAX_ART: u64 = 4 << 20;
+/// Looks for a late cover this many times, this far apart.
+const ART_RETRIES: u32 = 3;
+const ART_RETRY: std::time::Duration = std::time::Duration::from_millis(1500);
 
 #[derive(Debug, Clone)]
 pub struct Track {
@@ -40,6 +43,9 @@ pub struct Track {
     pub duration_ms: u64,
     /// The encoded image, shared until the song changes.
     pub art: Option<Arc<Vec<u8>>>,
+    /// The song before's image: apps publish a new song before its cover,
+    /// so for a moment `art` can still be this one.
+    pub art_before: Option<Arc<Vec<u8>>>,
     pub can_prev: bool,
     pub can_toggle: bool,
     pub can_next: bool,
@@ -144,6 +150,8 @@ fn run(
     let _ = manager.SessionsChanged(&notify(&tx));
     let mut watched: Option<Watched> = None;
     let mut last: Option<Track> = None;
+    // The song whose cover is awaited, and how many times it was retried.
+    let mut stale: ((String, String), u32) = Default::default();
     let _ = tx.send(Command::Refresh);
 
     while let Ok(first) = rx.recv() {
@@ -170,6 +178,29 @@ fn run(
             }
         }
         let track = session.as_ref().and_then(|s| read(s, last.as_ref()).ok());
+        // Some apps never say when the cover arrives: while it is still the
+        // previous song's, look again a few times.
+        if let Some(t) = &track {
+            let song = (t.title.clone(), t.artist.clone());
+            if song != stale.0 {
+                stale = (song, 0);
+            }
+            let old = match (&t.art, &t.art_before) {
+                (Some(a), Some(b)) => a.as_slice() == b.as_slice(),
+                (None, _) => true,
+                _ => false,
+            };
+            if old && stale.1 < ART_RETRIES {
+                stale.1 += 1;
+                let tx = tx.clone();
+                let _ = std::thread::Builder::new()
+                    .name("media-retry".into())
+                    .spawn(move || {
+                        std::thread::sleep(ART_RETRY);
+                        let _ = tx.send(Command::Refresh);
+                    });
+            }
+        }
         if let Ok(mut l) = latest.lock() {
             *l = track.clone();
         }
@@ -213,9 +244,19 @@ fn read(s: &Session, last: Option<&Track>) -> Result<Track> {
     }
 
     // The cover is read once per song. Apps often publish the song first and
-    // its cover a moment later, so a song without one tries again.
+    // its cover a moment later, so a song without one, or still with the
+    // previous song's, tries again on the next event.
     let same_song = last.filter(|l| l.title == title && l.artist == artist && l.album == album);
-    let art = match same_song.and_then(|l| l.art.clone()) {
+    let art_before = match same_song {
+        Some(l) => l.art_before.clone(),
+        None => last.and_then(|l| l.art.clone()),
+    };
+    let settled = same_song.and_then(|l| l.art.clone()).filter(|a| {
+        art_before
+            .as_ref()
+            .is_none_or(|b| a.as_slice() != b.as_slice())
+    });
+    let art = match settled {
         Some(a) => Some(a),
         None => artwork(&props).ok().flatten(),
     };
@@ -229,6 +270,7 @@ fn read(s: &Session, last: Option<&Track>) -> Result<Track> {
         measured: Instant::now(),
         duration_ms,
         art,
+        art_before,
         can_prev: controls.IsPreviousEnabled()?,
         can_toggle: controls.IsPlayPauseToggleEnabled()?
             || controls.IsPlayEnabled()?
