@@ -4,6 +4,7 @@
 mod bars;
 mod lyrics;
 mod media;
+mod pacer;
 mod render;
 
 use std::cell::RefCell;
@@ -46,7 +47,6 @@ const MARGIN: f32 = 8.0;
 const HOVER_DELAY_MS: u32 = 120;
 
 const HOVER_TIMER: usize = 1;
-const FRAME_TIMER: usize = 2;
 /// Moves the progress bar on, once a second while open and playing.
 const TICK_TIMER: usize = 3;
 /// Ends the glance on a new song.
@@ -60,6 +60,8 @@ const WM_APP_LAYOUT: u32 = WM_APP + 1;
 const WM_APP_MEDIA: u32 = WM_APP + 2;
 /// The lyrics thread has an answer.
 const WM_APP_LYRICS: u32 = WM_APP + 3;
+/// Time for a frame, while the island moves (see `pacer.rs`).
+const WM_APP_FRAME: u32 = WM_APP + 4;
 // windows-rs only has it under the (big) Win32_UI_Controls feature.
 const WM_MOUSELEAVE: u32 = 0x02A3;
 
@@ -84,8 +86,11 @@ struct App {
     tracking: bool,
     /// The window region last set, in px: left, top, right, bottom.
     region: [i32; 4],
-    /// While springs move: the last frame. `None`: no frame timer.
+    /// While springs move: the last frame. `None`: no frames asked for.
     last_frame: Option<Instant>,
+    pacer: pacer::Pacer,
+    /// The body is on its way to a smaller size.
+    shrinking: bool,
     renderer: Option<render::Renderer>,
     media: media::Media,
     track: Option<media::Track>,
@@ -324,8 +329,18 @@ impl App {
         let open = ((h - CLOSED.1) / (OPEN.1 - CLOSED.1)).clamp(0.0, 1.0);
         // The closed content leaves fast; the open one comes in once there
         // is room for it.
-        let open_a = ((open - 0.4) / 0.6).clamp(0.0, 1.0);
-        let leaving = (1.0 - open * 3.0).clamp(0.0, 1.0);
+        // Growing, it comes in early so the body is never empty; shrinking,
+        // it leaves early so the body never cuts it.
+        let open_a = if self.shrinking {
+            (open - 0.6) / 0.4
+        } else {
+            (open - 0.25) / 0.55
+        }
+        .clamp(0.0, 1.0);
+        // The small views leave fast as the body grows, and come back early
+        // as it shrinks, so it is never empty on the way.
+        let pace = if self.shrinking { 1.4 } else { 3.0 };
+        let leaving = (1.0 - open * pace).clamp(0.0, 1.0);
         if self.peek_view {
             // One gives way to the other halfway, so they never overlap.
             let grown = ((h - CLOSED.1) / (layout::PEEK.1 - CLOSED.1)).clamp(0.0, 1.0);
@@ -334,7 +349,7 @@ impl App {
             // It leaves as the body grows past its own height, not the
             // closed one: at rest it is fully visible.
             let past = ((h - layout::PEEK.1) / (OPEN.1 - layout::PEEK.1)).clamp(0.0, 1.0);
-            let leaving = (1.0 - past * 3.0).clamp(0.0, 1.0);
+            let leaving = (1.0 - past * pace).clamp(0.0, 1.0);
             [closed, peek * leaving, open_a]
         } else {
             [leaving, 0.0, open_a]
@@ -422,10 +437,9 @@ impl App {
         if self.open == open {
             return;
         }
+        // The glance stays the view being left while the island opens (it
+        // is dropped once open), so the song's line never flashes between.
         self.open = open;
-        if open {
-            self.peek_view = false;
-        }
         self.retarget();
         self.follow_lyrics();
     }
@@ -457,11 +471,14 @@ impl App {
         } else {
             CLOSED
         };
+        if h != self.height.target {
+            self.shrinking = h < self.height.value;
+        }
         self.width.target = w;
         self.height.target = h;
         if self.last_frame.is_none() {
             self.last_frame = Some(Instant::now());
-            unsafe { SetTimer(Some(self.hwnd), FRAME_TIMER, 10, None) };
+            self.pacer.start();
         }
         self.tick();
     }
@@ -473,22 +490,22 @@ impl App {
             .map_or(16.0, |t| (now - t).as_secs_f32() * 1000.0);
         self.last_frame = Some(now);
         let peeking = self.peeking();
-        let (pw, ph) = if self.open || peeking {
-            (spring::OPEN_WIDTH, spring::OPEN_HEIGHT)
-        } else {
+        // Growing is loose and a little wobbly; shrinking (also from open
+        // to the glance) is firm, so it never dips under where it stops.
+        let (pw, ph) = if self.shrinking {
             (spring::CLOSE_WIDTH, spring::CLOSE_HEIGHT)
+        } else {
+            (spring::OPEN_WIDTH, spring::OPEN_HEIGHT)
         };
         let moving = self.width.advance(&pw, ms) | self.height.advance(&ph, ms);
         self.draw();
         if !moving {
             // Nothing runs while the island is still.
-            if !self.open && !peeking {
+            if self.open || !peeking {
                 self.peek_view = false;
             }
             self.last_frame = None;
-            unsafe {
-                let _ = KillTimer(Some(self.hwnd), FRAME_TIMER);
-            }
+            self.pacer.stop();
         }
     }
 
@@ -521,7 +538,13 @@ impl App {
                     self.set_open(true);
                 }
             }
-            WM_TIMER if wp.0 == FRAME_TIMER => self.frame(),
+            WM_APP_FRAME => {
+                self.pacer.drawn();
+                // A frame already on its way when the island came to rest.
+                if self.last_frame.is_some() {
+                    self.frame();
+                }
+            }
             WM_TIMER if wp.0 == TICK_TIMER => {
                 if self.last_frame.is_none() {
                     self.draw();
@@ -681,6 +704,8 @@ fn main() -> Result<()> {
             last_frame: None,
             renderer: Some(render::Renderer::new(hwnd)?),
             media: media::Media::start(hwnd, WM_APP_MEDIA),
+            pacer: pacer::Pacer::new(hwnd, WM_APP_FRAME),
+            shrinking: false,
             track: None,
             empty: nothing_playing(),
             song_text: arg("--song-text")
@@ -703,7 +728,6 @@ fn main() -> Result<()> {
         APP.with_borrow_mut(|a| *a = Some(app));
         APP.with_borrow_mut(|a| a.as_mut().map(App::layout));
         let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
-
         let mut msg = MSG::default();
         while GetMessageW(&mut msg, None, 0, 0).as_bool() {
             let _ = TranslateMessage(&msg);

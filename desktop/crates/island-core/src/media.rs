@@ -176,6 +176,24 @@ pub const SMALL_ART: Rect = rect(12.0, 6.0, 20.0, 20.0);
 pub const CLOSED_TEXT: Rect = rect(40.0, 0.0, 214.0, 32.0);
 pub const BARS: Rect = rect(270.0, 10.0, 18.0, 12.0);
 
+// A view coming in grows from a touch smaller and drops into place from
+// above (the plugin's peek: scale 0.96 and a 6 px drop, OutCubic).
+pub const ENTER_SCALE: f32 = 0.94;
+pub const ENTER_DROP: f32 = 6.0;
+
+/// How a view shows while its visibility `a` goes from 0 to 1: opacity,
+/// scale about its top center, and how far above its place it is (DIPs).
+/// Eased out: it shows quickly and settles gently; leaving runs it back.
+pub fn entrance(a: f32) -> (f32, f32, f32) {
+    let a = a.clamp(0.0, 1.0);
+    let e = 1.0 - (1.0 - a).powi(3);
+    (
+        e,
+        ENTER_SCALE + (1.0 - ENTER_SCALE) * e,
+        ENTER_DROP * (1.0 - e),
+    )
+}
+
 pub fn button(b: Button) -> Rect {
     let dx = match b {
         Button::Prev => -BUTTONS_GAP,
@@ -203,6 +221,24 @@ pub fn hit(x: f32, y: f32) -> Option<Button> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn entrance_eases_out_to_its_place() {
+        assert_eq!(entrance(0.0), (0.0, ENTER_SCALE, ENTER_DROP));
+        assert_eq!(entrance(1.0), (1.0, 1.0, 0.0));
+        assert_eq!(entrance(-1.0), entrance(0.0));
+        assert_eq!(entrance(2.0), entrance(1.0));
+        // Past halfway in time, most of the way there.
+        let (o, k, d) = entrance(0.5);
+        assert!(o > 0.85 && k > 0.99 && d < 1.0, "{o} {k} {d}");
+        // Always moving forward.
+        let mut last = entrance(0.0);
+        for i in 1..=20 {
+            let now = entrance(i as f32 / 20.0);
+            assert!(now.0 > last.0 && now.1 > last.1 && now.2 < last.2);
+            last = now;
+        }
+    }
 
     #[test]
     fn times() {
