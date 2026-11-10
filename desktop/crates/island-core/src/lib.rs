@@ -6,6 +6,7 @@
 //! (`LyricsModel.js`, `IslandSettings.js`); both sides keep the same limits.
 
 pub mod lyrics;
+pub mod monitor;
 pub mod shape;
 pub mod spring;
 

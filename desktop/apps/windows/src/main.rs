@@ -6,26 +6,28 @@ mod render;
 use std::cell::RefCell;
 use std::time::Instant;
 
+use island_core::monitor::{self, Monitor, MonitorChoice};
 use island_core::shape::{self, Placement, Rect};
 use island_core::spring::{self, Spring};
-use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, WPARAM};
+use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{
-    CreateRectRgn, GetMonitorInfoW, MONITOR_DEFAULTTOPRIMARY, MONITORINFO, MonitorFromPoint,
-    SetWindowRgn,
+    CreateRectRgn, EnumDisplayMonitors, GetMonitorInfoW, HDC, HMONITOR, MONITORINFO, SetWindowRgn,
 };
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::HiDpi::{
-    DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, GetDpiForWindow, SetProcessDpiAwarenessContext,
+    DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, GetDpiForMonitor, MDT_EFFECTIVE_DPI,
+    SetProcessDpiAwarenessContext,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::{TME_LEAVE, TRACKMOUSEEVENT, TrackMouseEvent};
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetMessageW, HWND_TOPMOST,
-    IDC_ARROW, KillTimer, LoadCursorW, MA_NOACTIVATE, MSG, PostMessageW, PostQuitMessage,
-    RegisterClassW, SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SetTimer, SetWindowPos, ShowWindow,
-    TranslateMessage, WM_APP, WM_DESTROY, WM_DISPLAYCHANGE, WM_DPICHANGED, WM_MOUSEACTIVATE,
-    WM_MOUSEMOVE, WM_RBUTTONUP, WM_TIMER, WNDCLASSW, WS_EX_NOACTIVATE, WS_EX_NOREDIRECTIONBITMAP,
-    WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
+    IDC_ARROW, KillTimer, LoadCursorW, MA_NOACTIVATE, MONITORINFOF_PRIMARY, MSG, PostMessageW,
+    PostQuitMessage, RegisterClassW, SW_SHOWNOACTIVATE, SWP_NOACTIVATE, SetTimer, SetWindowPos,
+    ShowWindow, TranslateMessage, WM_APP, WM_DESTROY, WM_DISPLAYCHANGE, WM_DPICHANGED,
+    WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_RBUTTONUP, WM_TIMER, WNDCLASSW, WS_EX_NOACTIVATE,
+    WS_EX_NOREDIRECTIONBITMAP, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
 };
+use windows::core::BOOL;
 use windows::core::{Error, Result, w};
 
 // Sizes in DIPs (1/96 inch); the springs run in DIPs too, so a DPI change
@@ -46,6 +48,7 @@ const WM_MOUSELEAVE: u32 = 0x02A3;
 struct App {
     hwnd: HWND,
     placement: Placement,
+    monitor: MonitorChoice,
     scale: f32,
     /// The window on screen, in px: sized for the open island.
     window: Rect,
@@ -63,32 +66,83 @@ thread_local! {
     static APP: RefCell<Option<App>> = const { RefCell::new(None) };
 }
 
-fn primary_monitor() -> Rect {
+unsafe extern "system" fn collect_monitor(
+    mon: HMONITOR,
+    _: HDC,
+    _: *mut RECT,
+    out: LPARAM,
+) -> BOOL {
     let mut mi = MONITORINFO {
         cbSize: size_of::<MONITORINFO>() as u32,
         ..Default::default()
     };
+    // SAFETY: `out` is the &mut Vec that `monitors` passes, alive for the call.
+    let list = unsafe { &mut *(out.0 as *mut Vec<(HMONITOR, Monitor)>) };
+    if unsafe { GetMonitorInfoW(mon, &mut mi) }.as_bool() {
+        let r = mi.rcMonitor;
+        let rect = Rect {
+            x: r.left as f32,
+            y: r.top as f32,
+            width: (r.right - r.left) as f32,
+            height: (r.bottom - r.top) as f32,
+        };
+        list.push((
+            mon,
+            Monitor {
+                rect,
+                primary: mi.dwFlags & MONITORINFOF_PRIMARY != 0,
+            },
+        ));
+    }
+    true.into()
+}
+
+/// The connected screens, as Windows lists them now.
+fn monitors() -> Vec<(HMONITOR, Monitor)> {
+    let mut list: Vec<(HMONITOR, Monitor)> = Vec::new();
     unsafe {
-        let mon = MonitorFromPoint(POINT { x: 0, y: 0 }, MONITOR_DEFAULTTOPRIMARY);
-        let _ = GetMonitorInfoW(mon, &mut mi);
+        let _ = EnumDisplayMonitors(
+            None,
+            None,
+            Some(collect_monitor),
+            LPARAM(&mut list as *mut _ as isize),
+        );
     }
-    let r = mi.rcMonitor;
-    Rect {
-        x: r.left as f32,
-        y: r.top as f32,
-        width: (r.right - r.left) as f32,
-        height: (r.bottom - r.top) as f32,
+    list
+}
+
+/// The chosen screen and its scale; the primary when it is gone.
+fn screen(choice: MonitorChoice) -> (Rect, f32) {
+    let list = monitors();
+    let mons: Vec<Monitor> = list.iter().map(|m| m.1).collect();
+    let Some(i) = monitor::pick(&mons, choice) else {
+        return (
+            Rect {
+                x: 0.0,
+                y: 0.0,
+                width: 1920.0,
+                height: 1080.0,
+            },
+            1.0,
+        );
+    };
+    let (mut dx, mut dy) = (96, 96);
+    unsafe {
+        let _ = GetDpiForMonitor(list[i].0, MDT_EFFECTIVE_DPI, &mut dx, &mut dy);
     }
+    (mons[i].rect, dx.max(96) as f32 / 96.0)
 }
 
 impl App {
-    /// Places the window for the current DPI and monitor, and redraws.
+    /// Places the window on its screen at that screen's scale, and redraws.
+    /// Runs again when screens are added, removed, moved or rescaled.
     fn layout(&mut self) {
-        self.scale = unsafe { GetDpiForWindow(self.hwnd) }.max(96) as f32 / 96.0;
+        let (mon, scale) = screen(self.monitor);
+        self.scale = scale;
         let s = self.scale;
         let r = shape::window_rect(
             self.placement,
-            primary_monitor(),
+            mon,
             OPEN.0 * s,
             OPEN.1 * s,
             EAR * s,
@@ -255,11 +309,9 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRES
     handled.unwrap_or_else(|| unsafe { DefWindowProcW(hwnd, msg, wp, lp) })
 }
 
-fn placement_arg() -> Placement {
-    let mut args = std::env::args().skip_while(|a| a != "--placement").skip(1);
-    args.next()
-        .and_then(|s| Placement::parse(&s))
-        .unwrap_or_default()
+/// The value after `--name` on the command line (settings come in phase 5).
+fn arg(name: &str) -> Option<String> {
+    std::env::args().skip_while(|a| a != name).nth(1)
 }
 
 fn main() -> Result<()> {
@@ -293,7 +345,12 @@ fn main() -> Result<()> {
         )?;
         let app = App {
             hwnd,
-            placement: placement_arg(),
+            placement: arg("--placement")
+                .and_then(|s| Placement::parse(&s))
+                .unwrap_or_default(),
+            monitor: arg("--monitor")
+                .and_then(|s| MonitorChoice::parse(&s))
+                .unwrap_or_default(),
             scale: 1.0,
             window: Rect::default(),
             width: Spring::at(CLOSED.0),
