@@ -934,8 +934,6 @@ impl App {
         self.apply(file);
     }
 
-    /// How visible the closed, glance and open contents are, from the
-    /// body's height: each one fades as the body leaves its size.
     /// How open the body is, from the small view it grows from (the closed
     /// island or the glance) to the open one: 0 to 1.
     fn openness(&self) -> f32 {
@@ -947,22 +945,24 @@ impl App {
         ((self.height.value - small) / (OPEN.1 - small)).clamp(0.0, 1.0)
     }
 
+    /// How visible the closed, glance and open contents are, from the
+    /// body's height: each one fades as the body leaves its size.
     fn alphas(&self) -> [f32; 3] {
         let h = self.height.value;
         let open = ((h - CLOSED.1) / (OPEN.1 - CLOSED.1)).clamp(0.0, 1.0);
         // The closed content leaves fast; the open one comes in once there
-        // is room for it.
-        // Growing, it comes in early so the body is never empty; shrinking,
-        // it leaves early so the body never cuts it.
+        // is room for it. It shrinks with the body (scaled to it), so
+        // closing it can stay until the body is small, while the cover
+        // travels on its own.
         let open_a = if self.shrinking {
-            (open - 0.6) / 0.4
+            (open - 0.3) / 0.45
         } else {
             (open - 0.25) / 0.55
         }
         .clamp(0.0, 1.0);
-        // The small views leave fast as the body grows, and come back early
-        // as it shrinks, so it is never empty on the way.
-        let pace = if self.shrinking { 1.4 } else { 3.0 };
+        // The small views leave fast as the body grows; shrinking, they come
+        // back only once it is nearly their size, not over a tall body.
+        let pace = if self.shrinking { 2.4 } else { 3.0 };
         let leaving = (1.0 - open * pace).clamp(0.0, 1.0);
         if self.peek_view {
             let peek_h = self.peek_size().1;
