@@ -35,6 +35,8 @@ pub struct Texts {
     pub microphone_off: &'static str,
     pub camera_on: &'static str,
     pub camera_off: &'static str,
+    pub connected: &'static str,
+    pub disconnected: &'static str,
 }
 
 pub const EN: Texts = Texts {
@@ -62,6 +64,8 @@ pub const EN: Texts = Texts {
     microphone_off: "Microphone off",
     camera_on: "Camera in use",
     camera_off: "Camera off",
+    connected: "Connected",
+    disconnected: "Disconnected",
 };
 
 pub const ES: Texts = Texts {
@@ -89,6 +93,8 @@ pub const ES: Texts = Texts {
     microphone_off: "Micrófono apagado",
     camera_on: "Cámara en uso",
     camera_off: "Cámara apagada",
+    connected: "Conectado",
+    disconnected: "Desconectado",
 };
 
 /// `text` with each `{}` replaced by the next of `args`.
@@ -168,6 +174,8 @@ mod tests {
                 t.microphone_off,
                 t.camera_on,
                 t.camera_off,
+                t.connected,
+                t.disconnected,
             ] {
                 assert!(!s.trim().is_empty());
                 // The tray's tooltip and menu take up to 127 characters.

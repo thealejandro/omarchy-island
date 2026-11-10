@@ -67,6 +67,8 @@ pub struct Settings {
     pub volume_glance: bool,
     /// A glance when an app starts or stops using the microphone or camera.
     pub privacy_glance: bool,
+    /// A glance when a paired Bluetooth device connects or disconnects.
+    pub bluetooth_glance: bool,
 }
 
 impl Default for Settings {
@@ -84,6 +86,7 @@ impl Default for Settings {
             focus: Lengths::default(),
             volume_glance: true,
             privacy_glance: true,
+            bluetooth_glance: true,
         }
     }
 }
@@ -105,7 +108,8 @@ pub const TEMPLATE: &str = r#"{
   "longBreakMinutes": 15,
   "longBreakEvery": 4,
   "volumeGlance": true,
-  "privacyGlance": true
+  "privacyGlance": true,
+  "bluetoothGlance": true
 }
 "#;
 
@@ -173,6 +177,7 @@ impl Settings {
             },
             volume_glance: flag("volumeGlance", d.volume_glance),
             privacy_glance: flag("privacyGlance", d.privacy_glance),
+            bluetooth_glance: flag("bluetoothGlance", d.bluetooth_glance),
         })
     }
 
@@ -275,6 +280,7 @@ mod tests {
         assert!(!parse(r#"{"volumeGlance": false}"#).volume_glance);
         assert!(parse(r#"{"volumeGlance": 0}"#).volume_glance);
         assert!(!parse(r#"{"privacyGlance": false}"#).privacy_glance);
+        assert!(!parse(r#"{"bluetoothGlance": false}"#).bluetooth_glance);
         // A BOM (Notepad's UTF-8) is fine.
         assert!(parse("\u{feff}{\"lyrics\": true}").lyrics);
         // Too big to be a settings file.
