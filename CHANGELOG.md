@@ -19,7 +19,10 @@ project follows [Semantic Versioning](https://semver.org/).
   A single deadline alarm completes each phase; display updates run only
   while visible. A running focus starts its break automatically; the next
   focus waits for a click. (#81)
-
+- Settings › World: the city list is edited as rows, with buttons to move
+  and remove each city, and a zone field that searches the time zones
+  (`timedatectl list-timezones`, read once when the field is first used).
+  (#24)
 - Brazilian Portuguese interface, including settings and calendar dates. (#26)
 - The island's own bar button (`widgetIcon`) shows the Silence glyph
   while Silence is on and the island holds the notifications. (#37)
@@ -28,7 +31,6 @@ project follows [Semantic Versioning](https://semver.org/).
 
 - Choice controls wrap within the settings page. Media transitions are
   shorter and media/spring animations respect reduced motion. (#81)
-
 - Settings: a row whose control is too wide (Closed island, with six
   choices) now puts the label on top instead of cutting it to a couple
   of letters, and the icon picker wraps from the last icon to the first

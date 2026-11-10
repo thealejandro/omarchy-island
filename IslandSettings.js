@@ -102,6 +102,10 @@ function parseCities(raw) {
   var list = []
   if (Array.isArray(raw)) {
     list = raw
+  } else if (raw && typeof raw === "object" && typeof raw.length === "number") {
+    // A list handed through a QML signal's `var` arrives as a sequence
+    // that isn't a JS array.
+    list = Array.prototype.slice.call(raw)
   } else if (typeof raw === "string") {
     list = raw.split(/[,\n]/).map(function(part) {
       var bits = part.split("|")
