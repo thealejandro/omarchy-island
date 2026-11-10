@@ -63,6 +63,8 @@ pub struct Settings {
     pub default_page: Page,
     /// The focus timer's lengths.
     pub focus: Lengths,
+    /// A glance on each change of the system's volume.
+    pub volume_glance: bool,
 }
 
 impl Default for Settings {
@@ -78,6 +80,7 @@ impl Default for Settings {
             open_width: None,
             default_page: Page::default(),
             focus: Lengths::default(),
+            volume_glance: true,
         }
     }
 }
@@ -97,7 +100,8 @@ pub const TEMPLATE: &str = r#"{
   "focusMinutes": 25,
   "breakMinutes": 5,
   "longBreakMinutes": 15,
-  "longBreakEvery": 4
+  "longBreakEvery": 4,
+  "volumeGlance": true
 }
 "#;
 
@@ -163,6 +167,7 @@ impl Settings {
                 long: minutes("longBreakMinutes", Lengths::LONG, df.long),
                 every: minutes("longBreakEvery", Lengths::EVERY, df.every),
             },
+            volume_glance: flag("volumeGlance", d.volume_glance),
         })
     }
 
@@ -262,6 +267,8 @@ mod tests {
             }
         );
         assert_eq!(parse(r#"{"defaultPage": "nope"}"#).default_page, Page::Home);
+        assert!(!parse(r#"{"volumeGlance": false}"#).volume_glance);
+        assert!(parse(r#"{"volumeGlance": 0}"#).volume_glance);
         // A BOM (Notepad's UTF-8) is fine.
         assert!(parse("\u{feff}{\"lyrics\": true}").lyrics);
         // Too big to be a settings file.

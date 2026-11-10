@@ -28,6 +28,9 @@ pub struct Texts {
     pub ready: &'static str,
     /// Under the time while it's stopped.
     pub wheel_hint: &'static str,
+    // The glances.
+    pub volume: &'static str,
+    pub muted: &'static str,
 }
 
 pub const EN: Texts = Texts {
@@ -49,6 +52,8 @@ pub const EN: Texts = Texts {
     break_over: "Break over",
     ready: "Ready for another round",
     wheel_hint: "scroll to change",
+    volume: "Volume",
+    muted: "Muted",
 };
 
 pub const ES: Texts = Texts {
@@ -70,6 +75,8 @@ pub const ES: Texts = Texts {
     break_over: "Descanso terminado",
     ready: "Listo para otra ronda",
     wheel_hint: "rueda para cambiar",
+    volume: "Volumen",
+    muted: "Silenciado",
 };
 
 /// `text` with each `{}` replaced by the next of `args`.
@@ -143,6 +150,8 @@ mod tests {
                 t.break_over,
                 t.ready,
                 t.wheel_hint,
+                t.volume,
+                t.muted,
             ] {
                 assert!(!s.trim().is_empty());
                 // The tray's tooltip and menu take up to 127 characters.
