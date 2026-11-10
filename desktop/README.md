@@ -49,7 +49,6 @@ that isn't valid JSON is ignored until it is fixed.
 | `bluetoothGlance` | `true`, `false` | `true` |
 | `notificationGlance` | `true`, `false` | `true` |
 | `notificationsInFullScreen` | `true`, `false` | `true` |
-| `windowsBanners` | `true`, `false` | `true` |
 | `lyricsDelay` | `auto`, or 0 to 2000 (ms) | `auto` |
 
 While music plays (any app in Windows' media controls), the closed island
@@ -120,20 +119,16 @@ shell's count of notifications changes, so nothing runs in between.
 It doesn't need Windows' banner: to see notifications only in the island,
 turn off "Show notification banners" for those apps under Settings >
 System > Notifications (they still go to the notification center, and the
-island still shows them). With an app in full screen the glance shows too
+island still shows them); "Notifications only in the island…" in its menu
+opens that page. The island never changes them itself. With an app in
+full screen the glance shows too
 (`notificationsInFullScreen: false` keeps it away then); never while
 presenting, in a game in exclusive full screen or with Do Not Disturb
 (except the one Windows 11 turns on by itself in full screen).
 A click on the glance opens the app that sent it (Windows lets no other app
-click the notification itself). `windowsBanners: false` lets the island
-tell notifications alone: it turns off Windows' banner for each app (as
-the switch in Settings would; Windows' own alerts keep theirs), notes the
-ones it turned off in `%LOCALAPPDATA%\island\banners.txt`, and turns
-those back on when the island quits or the setting goes back to `true`.
-If the island crashed or was killed with them off, it turns them back on
-as it starts with `true`. Before uninstalling with `false`, set it to
-`true` (or quit the island) first; else turn them on again in Settings >
-System > Notifications.
+click the notification itself). An earlier version could turn the banners
+off itself (`windowsBanners: false`); as it starts, the island turns back
+on the ones it left off then, noted in `%LOCALAPPDATA%\island\banners.txt`.
 `notificationGlance: false` turns it off.
 
 The icons are filled ones from Microsoft's
