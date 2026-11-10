@@ -54,7 +54,8 @@ that isn't valid JSON is ignored until it is fixed.
 While music plays (any app in Windows' media controls), the closed island
 shows the cover, the song and bars that move with the music; a new song
 peeks for a few seconds, and the open island has the progress and the
-controls. When an unplugged screen was chosen, the island goes to the
+controls, in the cover's color (the progress, the play button, the tab
+and the glow; white for a gray cover). When an unplugged screen was chosen, the island goes to the
 primary until it is back.
 
 `lyrics` turns on synced lyrics from [lrclib.net](https://lrclib.net)
@@ -87,7 +88,8 @@ changes `focusMinutes` by 5. The island opens on `defaultPage`, then on the
 page last chosen.
 
 When the volume changes (keys, taskbar or any app), the closed island
-glances at it for a moment: the speaker, the percentage and a bar, or
+glances at it for a moment: the speaker, the percentage and a bar in
+Windows' accent color, or
 "Muted". It follows the default speakers when they change, and nothing
 runs while the volume stays put. `volumeGlance: false` turns it off.
 
@@ -106,10 +108,10 @@ off.
 
 When a notification pops up, the island grows into a glance of its own,
 taller than the song's so the two never pass for each other: the app's
-logo, its name and "now", the title in bold and the next line dim. A ring
-in the logo's color (the system's accent when the logo has none) beats
-around the island three times and then glows softly until the glance ends,
-5 seconds later. It reads them with Windows' own listener
+logo, its name and "now", the title in bold and the next line dim. Two
+lights in the logo's color (the system's accent when the logo has none)
+run once around the island's edge, while a ring beats three times and then
+glows softly until the glance ends, 5 seconds later. It reads them with Windows' own listener
 (allowed under Privacy, "Notification access") and looks only when the
 shell's count of notifications changes, so nothing runs in between.
 

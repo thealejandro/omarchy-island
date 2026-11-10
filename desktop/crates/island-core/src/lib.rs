@@ -6,6 +6,7 @@
 //! (`LyricsModel.js`, `IslandSettings.js`); both sides keep the same limits.
 
 pub mod bluetooth;
+pub mod color;
 pub mod focus;
 pub mod glance;
 pub mod icons;

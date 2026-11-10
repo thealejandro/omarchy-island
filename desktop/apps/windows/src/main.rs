@@ -454,7 +454,15 @@ impl App {
             self.pulse
                 .map_or(f32::MAX, |t| t.elapsed().as_secs_f32() * 1000.0),
         );
-        fn shown<'a>(n: &'a Notice, when: &'a str, ring: f32) -> render::Notice<'a> {
+        let orbit = self
+            .pulse
+            .and_then(|t| island_core::notifications::orbit(t.elapsed().as_secs_f32() * 1000.0));
+        fn shown<'a>(
+            n: &'a Notice,
+            when: &'a str,
+            ring: f32,
+            orbit: Option<(f32, f32)>,
+        ) -> render::Notice<'a> {
             render::Notice {
                 icon: n.icon,
                 tint: n.tint,
@@ -466,10 +474,11 @@ impl App {
                 logo: n.logo.as_ref(),
                 when,
                 ring,
+                orbit,
             }
         }
         let when = self.texts.now;
-        let view = |n| shown(n, when, ring);
+        let view = |n| shown(n, when, ring, orbit);
         let scene = render::Scene {
             page: self.page,
             tabs_clock: &clock,

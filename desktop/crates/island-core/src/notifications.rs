@@ -71,6 +71,23 @@ pub fn ring(ms: f32) -> f32 {
     REST + (1.0 - REST) * beat * beat
 }
 
+/// How long the light runs around the island's edge as one arrives (ms).
+pub const ORBIT_MS: f32 = 1500.0;
+
+/// How far around the edge the light is, `ms` after it arrived (0 to 1:
+/// once around, fast at first and slowing to a stop), and how bright;
+/// `None` once it is done.
+pub fn orbit(ms: f32) -> Option<(f32, f32)> {
+    if !(0.0..ORBIT_MS).contains(&ms) {
+        return None;
+    }
+    let t = ms / ORBIT_MS;
+    let at = 1.0 - (1.0 - t).powi(3);
+    // In quickly, out with the end of the lap.
+    let bright = (t / 0.12).min(1.0) * (1.0 - t * t);
+    Some((at, bright))
+}
+
 /// Where a notification's glance puts things: the logo at the left; the
 /// app and "now" on top, then the title and, if there is one, the body.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -215,6 +232,22 @@ mod tests {
         assert_eq!(Moment::from_state(6), Quiet);
         assert_eq!(Moment::from_state(5), Free);
         assert_eq!(Moment::from_state(42), Free);
+    }
+
+    #[test]
+    fn the_light_goes_once_around_and_fades() {
+        assert_eq!(orbit(-1.0), None);
+        assert_eq!(orbit(ORBIT_MS), None);
+        let (start, dark) = orbit(0.0).unwrap();
+        assert_eq!((start, dark), (0.0, 0.0));
+        let mut last = 0.0;
+        for i in 1..30 {
+            let (at, bright) = orbit(ORBIT_MS * i as f32 / 30.0).unwrap();
+            assert!(at > last && at <= 1.0 && (0.0..=1.0).contains(&bright));
+            last = at;
+        }
+        assert!(orbit(ORBIT_MS * 0.2).unwrap().1 > 0.9);
+        assert!(orbit(ORBIT_MS * 0.99).unwrap().1 < 0.05);
     }
 
     #[test]

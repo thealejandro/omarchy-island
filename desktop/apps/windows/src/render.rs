@@ -2,6 +2,7 @@
 //! redirection bitmap and is transparent wherever the island isn't drawn.
 //! Text is DirectWrite; the cover is decoded with WIC.
 
+use island_core::color;
 use island_core::glance;
 use island_core::icons::{self, Icon};
 use island_core::lyrics::Line;
@@ -19,13 +20,14 @@ use windows::Win32::Graphics::Direct2D::Common::{
 use windows::Win32::Graphics::Direct2D::{
     D2D1_ANTIALIAS_MODE_ALIASED, D2D1_ARC_SEGMENT, D2D1_ARC_SIZE_LARGE, D2D1_ARC_SIZE_SMALL,
     D2D1_BITMAP_BRUSH_PROPERTIES1, D2D1_BITMAP_OPTIONS_CANNOT_DRAW, D2D1_BITMAP_OPTIONS_TARGET,
-    D2D1_BITMAP_PROPERTIES1, D2D1_DEVICE_CONTEXT_OPTIONS_NONE, D2D1_DRAW_TEXT_OPTIONS_CLIP,
+    D2D1_BITMAP_PROPERTIES1, D2D1_CAP_STYLE_ROUND, D2D1_DASH_STYLE_CUSTOM,
+    D2D1_DEVICE_CONTEXT_OPTIONS_NONE, D2D1_DRAW_TEXT_OPTIONS_CLIP,
     D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT, D2D1_ELLIPSE, D2D1_EXTEND_MODE_CLAMP,
     D2D1_FACTORY_TYPE_SINGLE_THREADED, D2D1_GAMMA_2_2, D2D1_INTERPOLATION_MODE_LINEAR,
-    D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES, D2D1_ROUNDED_RECT, D2D1_SWEEP_DIRECTION_CLOCKWISE,
-    D2D1_SWEEP_DIRECTION_COUNTER_CLOCKWISE, D2D1CreateFactory, ID2D1BitmapBrush1, ID2D1Brush,
-    ID2D1DeviceContext, ID2D1Factory1, ID2D1Image, ID2D1PathGeometry, ID2D1RenderTarget,
-    ID2D1SolidColorBrush,
+    D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES, D2D1_ROUNDED_RECT, D2D1_STROKE_STYLE_PROPERTIES1,
+    D2D1_SWEEP_DIRECTION_CLOCKWISE, D2D1_SWEEP_DIRECTION_COUNTER_CLOCKWISE, D2D1CreateFactory,
+    ID2D1BitmapBrush1, ID2D1Brush, ID2D1DeviceContext, ID2D1Factory1, ID2D1Image,
+    ID2D1PathGeometry, ID2D1RenderTarget, ID2D1SolidColorBrush,
 };
 use windows::Win32::Graphics::Direct3D::{D3D_DRIVER_TYPE_HARDWARE, D3D_DRIVER_TYPE_WARP};
 use windows::Win32::Graphics::Direct3D11::{
@@ -145,6 +147,9 @@ pub struct Notice<'a> {
     pub logo: Option<&'a std::sync::Arc<Vec<u8>>>,
     pub when: &'a str,
     pub ring: f32,
+    /// The light running around the edge as it arrives: how far around
+    /// (0 to 1) and how bright (see `island_core::notifications::orbit`).
+    pub orbit: Option<(f32, f32)>,
 }
 
 /// The focus page, ready to draw.
@@ -860,6 +865,11 @@ impl Renderer {
         self.tinted_rounded(r, radius, [1.0; 3], alpha);
     }
 
+    /// The cover's color made vivid for the player; white without one.
+    fn theme(&self) -> [f32; 3] {
+        self.accent.map_or(WHITE, color::vivid)
+    }
+
     fn tinted_rounded(&self, r: Rect, radius: f32, [r_, g, b]: [f32; 3], a: f32) {
         unsafe {
             self.ink.SetColor(&D2D1_COLOR_F { r: r_, g, b, a });
@@ -913,7 +923,12 @@ impl Renderer {
             let r = shift(pages::tab(i), dx);
             let on = page == s.page;
             if on {
-                self.rounded(r, r.height / 2.0, 0.14 * alpha);
+                let tint = if s.track.is_some() {
+                    self.theme()
+                } else {
+                    WHITE
+                };
+                self.tinted_rounded(r, r.height / 2.0, tint, 0.18 * alpha);
             }
             let icon = match page {
                 Page::Home => Icon::Music,
@@ -989,15 +1004,26 @@ impl Renderer {
             &t.artist
         };
         self.text(artist, &self.text.artist, shift(p.artist, dx), 0.6 * alpha);
+        // The player takes the cover's color: the progress and the play
+        // button (white for a gray cover).
+        let theme = self.theme();
         let bar = shift(p.bar, dx);
-        self.rounded(bar, 2.0, 0.2 * alpha);
+        self.tinted_rounded(bar, 2.0, theme, 0.16 * alpha);
         if t.duration_ms > 0 {
             let done = (s.position_ms as f32 / t.duration_ms as f32).clamp(0.0, 1.0);
             let filled = Rect {
                 width: bar.width * done,
                 ..bar
             };
-            self.rounded(filled, 2.0, 0.9 * alpha);
+            self.tinted_rounded(filled, 2.0, theme, 0.95 * alpha);
+            // The playhead, a dot a little taller than the bar.
+            let head = Rect {
+                x: filled.x + filled.width - 4.0,
+                y: bar.y + bar.height / 2.0 - 4.0,
+                width: 8.0,
+                height: 8.0,
+            };
+            self.tinted_rounded(head, 4.0, theme, alpha);
             let times = shift(p.times, dx);
             self.text(
                 &fmt_time(s.position_ms),
@@ -1024,8 +1050,14 @@ impl Renderer {
             (Button::Next, Icon::Next, 19.0, t.can_next),
         ] {
             let a = if on { 0.95 } else { 0.3 } * alpha;
-            let r = layout::button(b, s.open);
-            self.icon(icon, shift(r, dx), size, WHITE, a);
+            let r = shift(layout::button(b, s.open), dx);
+            if b == Button::PlayPause {
+                // On a disc in the cover's color, the icon in what reads.
+                self.tinted_rounded(r, r.width / 2.0, theme, a);
+                self.icon(icon, r, 22.0, color::ink_on(theme), alpha);
+            } else {
+                self.icon(icon, r, size, WHITE, a);
+            }
         }
         if let (Some(l), Some(col)) = (s.lyrics, s.open.lyrics_rect()) {
             self.draw_lyrics(&l, shift(col, dx), alpha);
@@ -1199,7 +1231,13 @@ impl Renderer {
         // the word stands where the bar was.
         let at = |r: Rect| lift(r, dy);
         let l = glance::level_layout(size);
-        self.icon(n.icon, at(l.icon), l.icon.height * 0.8, n.tint, alpha);
+        // A level with no color of its own takes the system's accent.
+        let tint = if n.tint == WHITE {
+            color::vivid(system_accent())
+        } else {
+            n.tint
+        };
+        self.icon(n.icon, at(l.icon), l.icon.height * 0.8, WHITE, alpha);
         if n.detail.is_empty() {
             let word = Rect {
                 x: l.bar.x,
@@ -1212,13 +1250,13 @@ impl Renderer {
             return;
         }
         let bar = at(l.bar);
-        self.rounded(bar, bar.height / 2.0, 0.2 * alpha);
+        self.tinted_rounded(bar, bar.height / 2.0, tint, 0.18 * alpha);
         let done = Rect {
             width: bar.width * level.clamp(0.0, 1.0),
             ..bar
         };
         if done.width > 0.0 {
-            self.tinted_rounded(done, bar.height / 2.0, n.tint, 0.95 * alpha);
+            self.tinted_rounded(done, bar.height / 2.0, tint, 0.95 * alpha);
         }
         self.tinted(n.detail, &self.text.clock, at(l.text), WHITE, 0.9 * alpha);
     }
@@ -1275,6 +1313,50 @@ impl Renderer {
             for (width, k) in [(6.0, 0.18), (1.6, 1.0)] {
                 self.ink.SetColor(&D2D1_COLOR_F { r, g, b, a: a * k });
                 self.dc.DrawGeometry(geo, &self.ink, width * scale, None);
+            }
+        }
+    }
+
+    /// Two lights running around the edge, opposite each other, each a
+    /// bright head with a tail that fades: soft and wide under, fine and
+    /// near white on top. `at` is how far around (0 to 1).
+    fn comet(&self, geo: &ID2D1PathGeometry, rgb: [f32; 3], at: f32, a: f32, scale: f32) {
+        if a <= 0.0 {
+            return;
+        }
+        let Ok(total) = (unsafe { geo.ComputeLength(None, 0.25) }) else {
+            return;
+        };
+        let period = total / 2.0;
+        if period <= 1.0 {
+            return;
+        }
+        let head = at * total;
+        for (width, tail, k, white) in [
+            (10.0, 0.34, 0.22, 0.0),
+            (4.0, 0.24, 0.55, 0.25),
+            (2.0, 0.14, 1.0, 0.6),
+        ] {
+            let w = width * scale;
+            let len = (tail * period).min(period - w);
+            let props = D2D1_STROKE_STYLE_PROPERTIES1 {
+                startCap: D2D1_CAP_STYLE_ROUND,
+                endCap: D2D1_CAP_STYLE_ROUND,
+                dashCap: D2D1_CAP_STYLE_ROUND,
+                dashStyle: D2D1_DASH_STYLE_CUSTOM,
+                // The dash starts `len` behind the head.
+                dashOffset: -((head - len).rem_euclid(period)) / w,
+                ..Default::default()
+            };
+            let dashes = [len / w, (period - len) / w];
+            let Ok(style) = (unsafe { self.factory.CreateStrokeStyle(&props, Some(&dashes)) })
+            else {
+                return;
+            };
+            let [r, g, b] = color::toward_white(rgb, white);
+            unsafe {
+                self.ink.SetColor(&D2D1_COLOR_F { r, g, b, a: a * k });
+                self.dc.DrawGeometry(geo, &self.ink, w, &style);
             }
         }
     }
@@ -1381,16 +1463,18 @@ impl Renderer {
         // A notification on screen: its color, ring and how visible it is.
         let toast = match s.notice {
             Some(n) if n.toast && s.alpha[1] > 0.0 => {
-                Some((self.toast_accent(&n, s.scale), n.ring, s.alpha[1]))
+                Some((self.toast_accent(&n, s.scale), n.ring, s.alpha[1], n.orbit))
             }
             _ => None,
         };
         let (sw, sh) = (s.width.max(1) as i32, s.height.max(1) as i32);
+        // Room for the ring and the light around the edge, outside it.
+        let m = (6.0 * s.scale).ceil() as i32;
         let now = RECT {
-            left: (s.body.x.floor() as i32 - 4).clamp(0, sw - 1),
-            top: (s.body.y.floor() as i32 - 4).clamp(0, sh - 1),
-            right: ((s.body.x + s.body.width).ceil() as i32 + 4).clamp(1, sw),
-            bottom: ((s.body.y + s.body.height).ceil() as i32 + 4).clamp(1, sh),
+            left: (s.body.x.floor() as i32 - m).clamp(0, sw - 1),
+            top: (s.body.y.floor() as i32 - m).clamp(0, sh - 1),
+            right: ((s.body.x + s.body.width).ceil() as i32 + m).clamp(1, sw),
+            bottom: ((s.body.y + s.body.height).ceil() as i32 + m).clamp(1, sh),
         };
         let dirty = match self.drawn {
             Some(d) => RECT {
@@ -1443,13 +1527,16 @@ impl Renderer {
                 self.dc.FillGeometry(&geo, &self.fill, None::<&ID2D1Brush>);
                 // A notification takes the glow over in its own color, with
                 // its ring; the cover's gives way as it comes in.
-                let shown = toast.map_or(0.0, |(_, _, a)| a);
+                let shown = toast.map_or(0.0, |(_, _, a, _)| a);
                 if let Some(accent) = self.accent {
                     self.glow(&geo, s.body.height, accent, 1.0 - shown)?;
                 }
-                if let Some((color, ring, a)) = toast {
+                if let Some((color, ring, a, orbit)) = toast {
                     self.glow(&geo, s.body.height, color, a)?;
                     self.ring(&geo, color, ring * a, s.scale);
+                    if let Some((at, bright)) = orbit {
+                        self.comet(&geo, color, at, bright * a, s.scale);
+                    }
                 }
 
                 // The content, in DIPs, clipped to the body.
