@@ -8,6 +8,7 @@
 pub mod bluetooth;
 pub mod focus;
 pub mod glance;
+pub mod icons;
 pub mod lyrics;
 pub mod media;
 pub mod menu;
@@ -18,6 +19,7 @@ pub mod privacy;
 pub mod settings;
 pub mod shape;
 pub mod spring;
+pub mod svg;
 pub mod texts;
 
 /// Version of the desktop apps, from the workspace.

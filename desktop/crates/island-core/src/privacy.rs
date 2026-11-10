@@ -20,10 +20,10 @@ impl Device {
     }
 
     /// Segoe Fluent Icons (and MDL2).
-    pub fn icon(self) -> &'static str {
+    pub fn icon(self) -> crate::icons::Icon {
         match self {
-            Device::Microphone => "\u{E720}",
-            Device::Camera => "\u{E722}",
+            Device::Microphone => crate::icons::Icon::Mic,
+            Device::Camera => crate::icons::Icon::Camera,
         }
     }
 

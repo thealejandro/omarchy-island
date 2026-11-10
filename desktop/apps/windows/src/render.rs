@@ -3,18 +3,21 @@
 //! Text is DirectWrite; the cover is decoded with WIC.
 
 use island_core::glance;
+use island_core::icons::{self, Icon};
 use island_core::lyrics::Line;
 use island_core::media::{self as layout, Button, SongText, TextAlign, fmt_time};
 use island_core::menu;
 use island_core::pages::{self, FocusButton, Page};
 use island_core::shape::{Outline, Point, Rect, Segment};
+use island_core::svg;
 use windows::Win32::Foundation::{E_FAIL, HMODULE, HWND, POINT, RECT};
 use windows::Win32::Graphics::Direct2D::Common::{
-    D2D_RECT_F, D2D_SIZE_F, D2D1_ALPHA_MODE_PREMULTIPLIED, D2D1_COLOR_F, D2D1_FIGURE_BEGIN_FILLED,
-    D2D1_FIGURE_END_CLOSED, D2D1_GRADIENT_STOP, D2D1_PIXEL_FORMAT,
+    D2D_RECT_F, D2D_SIZE_F, D2D1_ALPHA_MODE_PREMULTIPLIED, D2D1_BEZIER_SEGMENT, D2D1_COLOR_F,
+    D2D1_FIGURE_BEGIN_FILLED, D2D1_FIGURE_END_CLOSED, D2D1_FIGURE_END_OPEN, D2D1_FILL_MODE_WINDING,
+    D2D1_GRADIENT_STOP, D2D1_PIXEL_FORMAT,
 };
 use windows::Win32::Graphics::Direct2D::{
-    D2D1_ANTIALIAS_MODE_ALIASED, D2D1_ARC_SEGMENT, D2D1_ARC_SIZE_SMALL,
+    D2D1_ANTIALIAS_MODE_ALIASED, D2D1_ARC_SEGMENT, D2D1_ARC_SIZE_LARGE, D2D1_ARC_SIZE_SMALL,
     D2D1_BITMAP_BRUSH_PROPERTIES1, D2D1_BITMAP_OPTIONS_CANNOT_DRAW, D2D1_BITMAP_OPTIONS_TARGET,
     D2D1_BITMAP_PROPERTIES1, D2D1_DEVICE_CONTEXT_OPTIONS_NONE, D2D1_DRAW_TEXT_OPTIONS_CLIP,
     D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT, D2D1_ELLIPSE, D2D1_EXTEND_MODE_CLAMP,
@@ -40,7 +43,7 @@ use windows::Win32::Graphics::DirectWrite::{
     DWRITE_TEXT_ALIGNMENT_LEADING, DWRITE_TEXT_ALIGNMENT_TRAILING, DWRITE_TEXT_METRICS,
     DWRITE_TEXT_RANGE, DWRITE_TRIMMING, DWRITE_TRIMMING_GRANULARITY_CHARACTER,
     DWRITE_WORD_WRAPPING_NO_WRAP, DWRITE_WORD_WRAPPING_WRAP, DWriteCreateFactory, IDWriteFactory,
-    IDWriteFontCollection, IDWriteTextFormat, IDWriteTextLayout,
+    IDWriteTextFormat, IDWriteTextLayout,
 };
 use windows::Win32::Graphics::Dwm::DwmGetColorizationColor;
 use windows::Win32::Graphics::Dxgi::Common::{
@@ -129,7 +132,7 @@ fn lift(r: Rect, dy: f32) -> Rect {
 /// and, for a level (the volume), a bar.
 #[derive(Clone, Copy)]
 pub struct Notice<'a> {
-    pub icon: &'a str,
+    pub icon: Icon,
     pub tint: [f32; 3],
     pub title: &'a str,
     pub detail: &'a str,
@@ -237,13 +240,10 @@ struct Text {
     time: IDWriteTextFormat,
     time_end: IDWriteTextFormat,
     empty: IDWriteTextFormat,
-    icon: IDWriteTextFormat,
     peek: IDWriteTextFormat,
     closed: IDWriteTextFormat,
-    note: IDWriteTextFormat,
     menu: IDWriteTextFormat,
     menu_head: IDWriteTextFormat,
-    tab: IDWriteTextFormat,
     clock: IDWriteTextFormat,
     big: IDWriteTextFormat,
     next: IDWriteTextFormat,
@@ -308,6 +308,8 @@ pub struct Renderer {
     /// The body's bounds in the last frame (px): the next frame redraws
     /// only those and its own, and the rest of the surface is kept.
     drawn: Option<RECT>,
+    /// The icons drawn so far, as shapes.
+    icons: std::cell::RefCell<std::collections::HashMap<Icon, ID2D1PathGeometry>>,
 }
 
 fn d3d_device() -> Result<ID3D11Device> {
@@ -386,17 +388,6 @@ fn affine(k: f32, x: f32, y: f32) -> Matrix3x2 {
     }
 }
 
-fn has_family(dw: &IDWriteFactory, name: PCWSTR) -> bool {
-    let mut fonts: Option<IDWriteFontCollection> = None;
-    let (mut index, mut exists) = (0, BOOL(0));
-    unsafe {
-        dw.GetSystemFontCollection(&mut fonts, false).is_ok()
-            && fonts.is_some_and(|f| {
-                f.FindFamilyName(name, &mut index, &mut exists).is_ok() && exists.as_bool()
-            })
-    }
-}
-
 impl Text {
     fn new() -> Result<Self> {
         unsafe {
@@ -427,13 +418,6 @@ impl Text {
                 Ok(f)
             };
             let ui = w!("Segoe UI");
-            // Windows 11 has Fluent icons; Windows 10 the MDL2 ones, with the
-            // same code points for these.
-            let icons = if has_family(&dw, w!("Segoe Fluent Icons")) {
-                w!("Segoe Fluent Icons")
-            } else {
-                w!("Segoe MDL2 Assets")
-            };
             let (n, b) = (DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_WEIGHT_SEMI_BOLD);
             let lines = format(ui, b, 16.0, DWRITE_TEXT_ALIGNMENT_LEADING)?;
             lines.SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP)?;
@@ -445,13 +429,10 @@ impl Text {
                 time: format(ui, n, 11.0, DWRITE_TEXT_ALIGNMENT_LEADING)?,
                 time_end: format(ui, n, 11.0, DWRITE_TEXT_ALIGNMENT_TRAILING)?,
                 empty: format(ui, n, 14.0, DWRITE_TEXT_ALIGNMENT_CENTER)?,
-                icon: format(icons, n, 18.0, DWRITE_TEXT_ALIGNMENT_CENTER)?,
                 peek: format(ui, b, 13.0, DWRITE_TEXT_ALIGNMENT_LEADING)?,
                 closed: format(ui, b, 12.0, DWRITE_TEXT_ALIGNMENT_LEADING)?,
-                note: format(icons, n, 22.0, DWRITE_TEXT_ALIGNMENT_CENTER)?,
                 menu: format(ui, n, 12.0, DWRITE_TEXT_ALIGNMENT_LEADING)?,
                 menu_head: format(ui, b, 12.0, DWRITE_TEXT_ALIGNMENT_LEADING)?,
-                tab: format(icons, n, 15.0, DWRITE_TEXT_ALIGNMENT_CENTER)?,
                 clock: format(ui, b, 12.0, DWRITE_TEXT_ALIGNMENT_TRAILING)?,
                 big: format(ui, b, 42.0, DWRITE_TEXT_ALIGNMENT_LEADING)?,
                 next: format(ui, n, 12.0, DWRITE_TEXT_ALIGNMENT_TRAILING)?,
@@ -488,6 +469,7 @@ impl Renderer {
                 bars_at: None,
                 view: (0.0, 1.0, 0.0),
                 drawn: None,
+                icons: Default::default(),
                 factory,
                 dc,
                 dcomp,
@@ -731,10 +713,95 @@ impl Renderer {
                         width: NOTE_BOX,
                         height: NOTE_BOX,
                     };
-                    self.text("\u{E8D6}", &self.text.note, box_, 0.6 * alpha);
+                    self.icon(Icon::Music, box_, 22.0, WHITE, 0.6 * alpha);
                     dc.SetTransform(&m);
                 }
             }
+        }
+    }
+
+    /// An icon's shape (see `island_core::icons`), read once.
+    fn icon_geometry(&self, icon: Icon) -> Option<ID2D1PathGeometry> {
+        if let Some(g) = self.icons.borrow().get(&icon) {
+            return Some(g.clone());
+        }
+        let cmds = svg::parse(icon.path())?;
+        let geo = unsafe {
+            let geo: ID2D1PathGeometry = self.factory.CreatePathGeometry().ok()?.cast().ok()?;
+            let sink = geo.Open().ok()?;
+            sink.SetFillMode(D2D1_FILL_MODE_WINDING);
+            let mut open = false;
+            for c in cmds {
+                match c {
+                    svg::Cmd::Move(p) => {
+                        if open {
+                            sink.EndFigure(D2D1_FIGURE_END_OPEN);
+                        }
+                        sink.BeginFigure(v(p), D2D1_FIGURE_BEGIN_FILLED);
+                        open = true;
+                    }
+                    svg::Cmd::Line(p) => sink.AddLine(v(p)),
+                    svg::Cmd::Cubic(a, b, to) => sink.AddBezier(&D2D1_BEZIER_SEGMENT {
+                        point1: v(a),
+                        point2: v(b),
+                        point3: v(to),
+                    }),
+                    svg::Cmd::Arc {
+                        radius,
+                        rotation,
+                        large,
+                        sweep,
+                        to,
+                    } => sink.AddArc(&D2D1_ARC_SEGMENT {
+                        point: v(to),
+                        size: D2D_SIZE_F {
+                            width: radius.0,
+                            height: radius.1,
+                        },
+                        rotationAngle: rotation,
+                        sweepDirection: if sweep {
+                            D2D1_SWEEP_DIRECTION_CLOCKWISE
+                        } else {
+                            D2D1_SWEEP_DIRECTION_COUNTER_CLOCKWISE
+                        },
+                        arcSize: if large {
+                            D2D1_ARC_SIZE_LARGE
+                        } else {
+                            D2D1_ARC_SIZE_SMALL
+                        },
+                    }),
+                    svg::Cmd::Close => {
+                        if open {
+                            sink.EndFigure(D2D1_FIGURE_END_CLOSED);
+                        }
+                        open = false;
+                    }
+                }
+            }
+            if open {
+                sink.EndFigure(D2D1_FIGURE_END_OPEN);
+            }
+            sink.Close().ok()?;
+            geo
+        };
+        self.icons.borrow_mut().insert(icon, geo.clone());
+        Some(geo)
+    }
+
+    /// `icon`, filled in its color, `size` DIPs across, centered in `r`.
+    fn icon(&self, icon: Icon, r: Rect, size: f32, [r_, g, b]: [f32; 3], a: f32) {
+        let Some(geo) = self.icon_geometry(icon) else {
+            return;
+        };
+        let k = size / icons::VIEW;
+        let (x, y) = (r.x + (r.width - size) / 2.0, r.y + (r.height - size) / 2.0);
+        unsafe {
+            let mut m = Matrix3x2::default();
+            self.dc.GetTransform(&mut m);
+            self.dc.SetTransform(&(affine(k, x, y) * m));
+            self.ink.SetColor(&D2D1_COLOR_F { r: r_, g, b, a });
+            self.dc.FillGeometry(&geo, &self.ink, None::<&ID2D1Brush>);
+            self.dc.SetTransform(&m);
         }
     }
 
@@ -848,12 +915,12 @@ impl Renderer {
             if on {
                 self.rounded(r, r.height / 2.0, 0.14 * alpha);
             }
-            let glyph = match page {
-                Page::Home => "\u{EC4F}",
-                Page::Focus => "\u{E916}",
+            let icon = match page {
+                Page::Home => Icon::Music,
+                Page::Focus => Icon::Timer,
             };
             let a = if on { 0.95 } else { 0.5 };
-            self.text(glyph, &self.text.tab, r, a * alpha);
+            self.icon(icon, r, 16.0, WHITE, a * alpha);
         }
         let clock = shift(pages::clock(s.open.width), dx);
         if s.tabs_timer {
@@ -891,14 +958,14 @@ impl Renderer {
                 self.rounded(d, pages::DOT / 2.0, 0.2 * alpha);
             }
         }
-        let play = if f.running { "\u{E769}" } else { "\u{E768}" };
-        for (b, glyph) in [
-            (FocusButton::Reset, "\u{E72C}"),
-            (FocusButton::PlayPause, play),
-            (FocusButton::Skip, "\u{E893}"),
+        let play = if f.running { Icon::Pause } else { Icon::Play };
+        for (b, icon, size) in [
+            (FocusButton::Reset, Icon::Reset, 19.0),
+            (FocusButton::PlayPause, play, 24.0),
+            (FocusButton::Skip, Icon::Next, 19.0),
         ] {
             let r = shift(pages::focus_button(b, width), dx);
-            self.text(glyph, &self.text.icon, r, 0.95 * alpha);
+            self.icon(icon, r, size, WHITE, 0.95 * alpha);
         }
     }
 
@@ -945,18 +1012,20 @@ impl Renderer {
                 0.5 * alpha,
             );
         }
-        for (b, glyph, on) in [
-            (Button::Prev, "\u{E892}", t.can_prev),
+        // Play and pause bigger than the skips, as on a phone.
+        for (b, icon, size, on) in [
+            (Button::Prev, Icon::Previous, 19.0, t.can_prev),
             (
                 Button::PlayPause,
-                if t.playing { "\u{E769}" } else { "\u{E768}" },
+                if t.playing { Icon::Pause } else { Icon::Play },
+                25.0,
                 t.can_toggle,
             ),
-            (Button::Next, "\u{E893}", t.can_next),
+            (Button::Next, Icon::Next, 19.0, t.can_next),
         ] {
             let a = if on { 0.95 } else { 0.3 } * alpha;
             let r = layout::button(b, s.open);
-            self.text(glyph, &self.text.icon, shift(r, dx), a);
+            self.icon(icon, shift(r, dx), size, WHITE, a);
         }
         if let (Some(l), Some(col)) = (s.lyrics, s.open.lyrics_rect()) {
             self.draw_lyrics(&l, shift(col, dx), alpha);
@@ -1118,7 +1187,7 @@ impl Renderer {
         let at = |r: Rect| lift(shift(r, dx), dy);
         let Some(level) = n.level else {
             // (A level is laid out at the body's own size, without `dx`.)
-            self.tinted(n.icon, &self.text.icon, at(layout::PEEK_ART), n.tint, alpha);
+            self.icon(n.icon, at(layout::PEEK_ART), 20.0, n.tint, alpha);
             let mut spans = vec![(n.title.to_string(), false)];
             if !n.detail.is_empty() {
                 spans.push((format!("  {}", n.detail), true));
@@ -1130,7 +1199,7 @@ impl Renderer {
         // the word stands where the bar was.
         let at = |r: Rect| lift(r, dy);
         let l = glance::level_layout(size);
-        self.tinted(n.icon, &self.text.icon, at(l.icon), n.tint, alpha);
+        self.icon(n.icon, at(l.icon), l.icon.height * 0.8, n.tint, alpha);
         if n.detail.is_empty() {
             let word = Rect {
                 x: l.bar.x,
@@ -1182,7 +1251,7 @@ impl Renderer {
             None => {
                 let accent = self.toast_accent(n, scale);
                 self.tinted_rounded(r, 11.0, accent, 0.28 * alpha);
-                self.tinted(n.icon, &self.text.icon, r, WHITE, alpha);
+                self.icon(n.icon, r, 24.0, WHITE, alpha);
             }
         }
         self.tinted(n.title, &self.text.menu, at(l.app), WHITE, 0.6 * alpha);
@@ -1221,7 +1290,7 @@ impl Renderer {
                     width: 20.0,
                     height: h,
                 };
-                self.tinted("\u{E916}", &self.text.tab, icon, s.focus.tint(), alpha);
+                self.icon(Icon::Timer, icon, 16.0, s.focus.tint(), alpha);
                 let text = Rect {
                     x: dx + 44.0,
                     y: 0.0,

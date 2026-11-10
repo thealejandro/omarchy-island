@@ -2,6 +2,7 @@
 //! of the song: an icon, a title, a detail and, for a level, a bar. Sizes
 //! in DIPs, in the glance's own space (see [`crate::media::PEEK`]).
 
+use crate::icons::Icon;
 use crate::media::CLOSED_MEDIA_WIDTH;
 use crate::shape::Rect;
 
@@ -54,15 +55,14 @@ pub fn percent(level: f32) -> u32 {
     (level.clamp(0.0, 1.0) * 100.0).round() as u32
 }
 
-/// Segoe Fluent Icons (and MDL2): a speaker with as many waves as the
+/// A speaker with as many waves as the
 /// volume is loud, crossed out when muted.
-pub fn volume_icon(level: f32, muted: bool) -> &'static str {
+pub fn volume_icon(level: f32, muted: bool) -> Icon {
     match percent(level) {
-        _ if muted => "\u{E74F}",
-        0 => "\u{E992}",
-        1..=33 => "\u{E993}",
-        34..=66 => "\u{E994}",
-        _ => "\u{E995}",
+        _ if muted => Icon::SpeakerMute,
+        0 => Icon::Speaker0,
+        1..=50 => Icon::Speaker1,
+        _ => Icon::Speaker2,
     }
 }
 
@@ -82,11 +82,11 @@ mod tests {
         assert_eq!(percent(0.456), 46);
         assert_eq!(percent(1.2), 100);
         assert_eq!(percent(-1.0), 0);
-        assert_eq!(volume_icon(0.0, false), "\u{E992}");
-        assert_eq!(volume_icon(0.2, false), "\u{E993}");
-        assert_eq!(volume_icon(0.5, false), "\u{E994}");
-        assert_eq!(volume_icon(0.9, false), "\u{E995}");
-        assert_eq!(volume_icon(0.9, true), "\u{E74F}");
+        assert_eq!(volume_icon(0.0, false), Icon::Speaker0);
+        assert_eq!(volume_icon(0.2, false), Icon::Speaker1);
+        assert_eq!(volume_icon(0.5, false), Icon::Speaker1);
+        assert_eq!(volume_icon(0.9, false), Icon::Speaker2);
+        assert_eq!(volume_icon(0.9, true), Icon::SpeakerMute);
     }
 
     #[test]

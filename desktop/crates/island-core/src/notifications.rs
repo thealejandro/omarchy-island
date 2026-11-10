@@ -5,7 +5,7 @@
 use crate::shape::Rect;
 
 /// Segoe Fluent Icons (and MDL2): the notification bell.
-pub const ICON: &str = "\u{EA8F}";
+pub const ICON: crate::icons::Icon = crate::icons::Icon::Bell;
 
 /// A notification's glance: bigger than the song's, so it never passes for
 /// it, with room for the app's logo and two lines (DIPs).

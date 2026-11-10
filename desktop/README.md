@@ -114,6 +114,11 @@ shell shows one, so nothing runs in between. When Windows doesn't pop a
 notification up (Do Not Disturb, or an app in full screen), there is no
 glance either. `notificationGlance: false` turns it off.
 
+The icons are filled ones from Microsoft's
+[Fluent UI System Icons](https://github.com/microsoft/fluentui-system-icons)
+(MIT License, Copyright (c) 2020 Microsoft Corporation), drawn as shapes,
+so they look the same on Windows 10 and 11 and at any scale.
+
 For trying things out, the command line wins over the file:
 `--placement`, `--monitor`, `--text-align`, `--song-text`, `--lyrics`,
 `--open-lyrics on|off`, `--open-width` and `--page home|focus`.

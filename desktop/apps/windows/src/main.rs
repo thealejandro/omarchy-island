@@ -116,7 +116,7 @@ enum Before {
 /// A glance's content, kept until it ends.
 #[derive(Clone, Default)]
 struct Notice {
-    icon: &'static str,
+    icon: island_core::icons::Icon,
     tint: [f32; 3],
     title: std::borrow::Cow<'static, str>,
     detail: String,
@@ -580,7 +580,7 @@ impl App {
             };
             self.notify(
                 Notice {
-                    icon: "\u{E916}",
+                    icon: island_core::icons::Icon::Timer,
                     tint,
                     title: title.into(),
                     detail,
