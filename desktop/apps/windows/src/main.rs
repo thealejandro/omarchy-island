@@ -107,9 +107,9 @@ struct App {
     lyric_index: Option<usize>,
     /// When the open column started scrolling to it.
     lyric_moved: Option<Instant>,
-    /// The open island shows the lyrics in a column beside the player (on
-    /// by default); off, it stays just the player, as narrow as without them.
-    lyrics_column: bool,
+    /// How the open island shows the lyrics beside the player (compact by
+    /// default); off, it stays just the player, as narrow as without them.
+    lyrics_column: layout::LyricsColumn,
 }
 
 thread_local! {
@@ -277,7 +277,7 @@ impl App {
             empty: self.empty,
             song: self.song_text,
             lyrics,
-            column: self.lyrics_column,
+            column: self.column(),
             glance: self.glance() && lyrics.is_some_and(|l| !l.current().trim().is_empty()),
         };
         let drawn = match &mut self.renderer {
@@ -369,17 +369,25 @@ impl App {
 
     /// The window is sized for the widest the island gets.
     fn widest(&self) -> f32 {
-        layout::open_width(self.lyrics.is_some() && self.lyrics_column)
+        if self.lyrics.is_some() {
+            self.lyrics_column.open_width()
+        } else {
+            OPEN.0
+        }
     }
 
-    /// Whether the open island has its column of lyrics now.
-    fn column(&self) -> bool {
-        self.lyrics_column && !self.lines.is_empty()
+    /// The open island's column of lyrics now: off without lines.
+    fn column(&self) -> layout::LyricsColumn {
+        if self.lines.is_empty() {
+            layout::LyricsColumn::Off
+        } else {
+            self.lyrics_column
+        }
     }
 
     /// The open island: wider with a column of lyrics.
     fn open_size(&self) -> (f32, f32) {
-        (layout::open_width(self.column()), OPEN.1)
+        (self.column().open_width(), OPEN.1)
     }
 
     /// How much of the scroll to the line being sung is left.
@@ -448,7 +456,8 @@ impl App {
             // closed: it is just there.
             let step = matches!((self.lyric_index, index), (Some(a), Some(b)) if b == a + 1);
             self.lyric_index = index;
-            self.lyric_moved = (self.open && self.lyrics_column && step).then(Instant::now);
+            let column = self.lyrics_column != layout::LyricsColumn::Off;
+            self.lyric_moved = (self.open && column && step).then(Instant::now);
             if self.lyric_moved.is_some() && self.last_frame.is_none() {
                 self.last_frame = Some(Instant::now());
                 self.pacer.start();
@@ -756,7 +765,9 @@ fn main() -> Result<()> {
             lines: Vec::new(),
             lyric_index: None,
             lyric_moved: None,
-            lyrics_column: arg("--open-lyrics").is_none_or(|s| s != "off"),
+            lyrics_column: arg("--open-lyrics")
+                .and_then(|s| layout::LyricsColumn::parse(&s))
+                .unwrap_or_default(),
         };
         if let Some(r) = &app.renderer {
             r.align_song(

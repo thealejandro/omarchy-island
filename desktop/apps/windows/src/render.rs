@@ -77,8 +77,8 @@ pub struct Scene<'a> {
     pub song: SongText,
     /// With synced lyrics: where the song is in them.
     pub lyrics: Option<LyricsView<'a>>,
-    /// The open island shows them in a column beside the player.
-    pub column: bool,
+    /// How the open island shows them beside the player (off without them).
+    pub column: layout::LyricsColumn,
     /// The glance shows the line being sung instead of the song.
     pub glance: bool,
 }
@@ -617,8 +617,7 @@ impl Renderer {
             self.text(s.empty, &self.text.empty, all, 0.6 * alpha);
             return;
         };
-        let column = s.lyrics.filter(|_| s.column);
-        let p = layout::player(column.is_some());
+        let p = layout::player(s.column);
         self.draw_art(t, shift(layout::ART, dx), 10.0, alpha, s.scale);
         self.text(&t.title, &self.text.title, shift(p.title, dx), alpha);
         let artist = if t.artist.is_empty() {
@@ -660,11 +659,11 @@ impl Renderer {
             (Button::Next, "\u{E893}", t.can_next),
         ] {
             let a = if on { 0.95 } else { 0.3 } * alpha;
-            let r = layout::button(b, column.is_some());
+            let r = layout::button(b, s.column);
             self.text(glyph, &self.text.icon, shift(r, dx), a);
         }
-        if let Some(l) = column {
-            self.draw_lyrics(&l, shift(layout::LYRICS, dx), alpha);
+        if let Some(l) = s.lyrics.filter(|_| s.column != layout::LyricsColumn::Off) {
+            self.draw_lyrics(&l, shift(s.column.rect(), dx), alpha);
         }
     }
 
@@ -922,7 +921,7 @@ impl Renderer {
                 }
                 if open > 0.0 {
                     let a = self.enter(&base, cx, open);
-                    let w = layout::open_width(s.column && s.lyrics.is_some());
+                    let w = s.column.open_width();
                     self.draw_open(s, (s.size.0 - w) / 2.0, a);
                 }
                 self.view = (0.0, 1.0, 0.0);
