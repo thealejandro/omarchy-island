@@ -146,22 +146,170 @@ const fn rect(x: f32, y: f32, width: f32, height: f32) -> Rect {
     }
 }
 
-// The open island, 560 x 180.
+// The open island, 180 tall; its width is a setting, in steps of 10.
+pub const OPEN_WIDTH: f32 = 560.0;
+/// The width by default with a column of lyrics.
+pub const OPEN_LYRICS_WIDTH: f32 = 720.0;
+pub const OPEN_WIDTH_MIN: f32 = 480.0;
+pub const OPEN_WIDTH_MAX: f32 = 960.0;
+const OPEN_WIDTH_STEP: f32 = 10.0;
 pub const ART: Rect = rect(24.0, 24.0, 88.0, 88.0);
-pub const TITLE: Rect = rect(128.0, 26.0, 408.0, 26.0);
-pub const ARTIST: Rect = rect(128.0, 54.0, 408.0, 22.0);
-pub const BAR: Rect = rect(128.0, 96.0, 408.0, 4.0);
-pub const TIMES: Rect = rect(128.0, 104.0, 408.0, 16.0);
+const TEXT_X: f32 = 128.0;
+const MARGIN: f32 = 24.0;
 const BUTTON: f32 = 40.0;
 const BUTTONS_Y: f32 = 128.0;
-const BUTTONS_CENTER: f32 = 332.0;
 const BUTTONS_GAP: f32 = 64.0;
 
-// With synced lyrics the open island is taller: the line being sung and
-// the next one, under the controls.
-pub const OPEN_LYRICS_HEIGHT: f32 = 232.0;
-pub const LYRIC: Rect = rect(24.0, 178.0, 512.0, 24.0);
-pub const LYRIC_NEXT: Rect = rect(24.0, 202.0, 512.0, 20.0);
+// With synced lyrics the open island is not taller: the lines run in a
+// column right of the player, as tall as it, so nothing is left empty.
+const LYRICS_TOP: f32 = 14.0;
+const LYRICS_HEIGHT: f32 = 152.0;
+const LYRICS_GAP_X: f32 = 20.0;
+/// The column's share of the room beside the cover.
+const LYRICS_SHARE: f32 = 0.42;
+/// Narrower than this the lines would break every few words: no column.
+const LYRICS_MIN_WIDTH: f32 = 180.0;
+
+/// The open island's width from a setting: a whole number of DIPs,
+/// rounded to a step of 10 and kept between the smallest and largest.
+pub fn parse_open_width(s: &str) -> Option<f32> {
+    let w: f32 = s.trim().parse().ok().filter(|w: &f32| w.is_finite())?;
+    let w = (w / OPEN_WIDTH_STEP).round() * OPEN_WIDTH_STEP;
+    Some(w.clamp(OPEN_WIDTH_MIN, OPEN_WIDTH_MAX))
+}
+
+/// The most of a screen's width the open island takes.
+const SCREEN_SHARE: f32 = 0.6;
+
+/// The open island's width on a screen `screen` DIPs wide: the setting, but
+/// at most a share of the screen (in steps of 10), so it stays a bar at the
+/// top on a 1280 x 1024 monitor or a laptop at 150 % too. Never below the
+/// smallest width unless the screen itself is narrower.
+pub fn fit_open_width(setting: f32, screen: f32) -> f32 {
+    let most = (screen * SCREEN_SHARE / OPEN_WIDTH_STEP).floor() * OPEN_WIDTH_STEP;
+    setting.min(most.max(OPEN_WIDTH_MIN)).min(screen.max(0.0))
+}
+
+/// How the open island is laid out: its width, and whether the lyrics
+/// take a column of it. The island keeps its width with or without lines,
+/// so it doesn't jump when they arrive; the player fills what's left.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Open {
+    pub width: f32,
+    pub lyrics: bool,
+}
+
+impl Open {
+    pub const fn new(width: f32, lyrics: bool) -> Self {
+        Self { width, lyrics }
+    }
+
+    /// The column's width: a share of the room, in steps of 10; none if
+    /// that is too narrow to read.
+    fn column_width(self) -> f32 {
+        if !self.lyrics {
+            return 0.0;
+        }
+        let room = self.width - TEXT_X - MARGIN - LYRICS_GAP_X;
+        let w = (room * LYRICS_SHARE / OPEN_WIDTH_STEP).round() * OPEN_WIDTH_STEP;
+        if w < LYRICS_MIN_WIDTH { 0.0 } else { w }
+    }
+
+    /// The player's text width, beside the column if there is one.
+    fn text_width(self) -> f32 {
+        let col = self.column_width();
+        let beside = if col > 0.0 { col + LYRICS_GAP_X } else { 0.0 };
+        self.width - TEXT_X - MARGIN - beside
+    }
+
+    /// Where the lines go, if they have a column.
+    pub fn lyrics_rect(self) -> Option<Rect> {
+        let w = self.column_width();
+        (w > 0.0).then(|| rect(self.width - MARGIN - w, LYRICS_TOP, w, LYRICS_HEIGHT))
+    }
+}
+
+/// Where the player's parts go in the open island, alone or beside lyrics.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Player {
+    pub title: Rect,
+    pub artist: Rect,
+    pub bar: Rect,
+    pub times: Rect,
+    buttons_center: f32,
+}
+
+pub fn player(open: Open) -> Player {
+    let w = open.text_width();
+    Player {
+        title: rect(TEXT_X, 26.0, w, 26.0),
+        artist: rect(TEXT_X, 54.0, w, 22.0),
+        bar: rect(TEXT_X, 96.0, w, 4.0),
+        times: rect(TEXT_X, 104.0, w, 16.0),
+        // The controls sit under the bar's middle.
+        buttons_center: TEXT_X + w / 2.0,
+    }
+}
+/// Where the line being sung starts, from the column's top: room for the
+/// one before it above, and for what comes below.
+pub const LYRICS_ANCHOR: f32 = 42.0;
+pub const LYRICS_GAP: f32 = 8.0;
+/// A new line scrolls the column up over this long.
+pub const LYRICS_SCROLL_MS: f32 = 320.0;
+/// Lines fade out over this much at the column's edges.
+pub const LYRICS_FADE: f32 = 18.0;
+/// Stands for a line without words (a pause in the singing).
+pub const LYRICS_PAUSE: &str = "• • •";
+
+/// How much of the scroll to a new line is left `elapsed_ms` after it
+/// starts: 1 to 0, eased out.
+pub fn lyrics_scroll(elapsed_ms: f32) -> f32 {
+    let t = (elapsed_ms / LYRICS_SCROLL_MS).clamp(0.0, 1.0);
+    (1.0 - t).powi(3)
+}
+
+/// The tops of stacked lines of these `heights` in the column: the
+/// `current` one at [`LYRICS_ANCHOR`], lowered by `scroll` of the step it
+/// just took (the line before it and a gap), so a change glides up.
+pub fn lyrics_tops(heights: &[f32], current: usize, scroll: f32) -> Vec<f32> {
+    let mut tops = vec![0.0; heights.len()];
+    if current >= heights.len() {
+        return tops;
+    }
+    let back = current
+        .checked_sub(1)
+        .map_or(0.0, |i| heights[i] + LYRICS_GAP);
+    let base = LYRICS_ANCHOR + scroll.clamp(0.0, 1.0) * back;
+    let mut y = base;
+    for i in current..heights.len() {
+        tops[i] = y;
+        y += heights[i] + LYRICS_GAP;
+    }
+    let mut y = base;
+    for i in (0..current).rev() {
+        y -= heights[i] + LYRICS_GAP;
+        tops[i] = y;
+    }
+    tops
+}
+
+/// How bright a line is, by how far it is from the one in focus (in
+/// lines; fractional while scrolling): sung ones fade faster than the
+/// ones to come.
+pub fn lyrics_alpha(distance: f32) -> f32 {
+    if distance < 0.0 {
+        (1.0 + distance * 0.62).max(0.16)
+    } else {
+        (1.0 - distance * 0.42).max(0.2)
+    }
+}
+
+/// How much of a line at `top` with `height` shows at the column's edges.
+pub fn lyrics_edge(top: f32, height: f32) -> f32 {
+    let above = (top + height) / LYRICS_FADE;
+    let below = (LYRICS_HEIGHT - top) / LYRICS_FADE;
+    above.min(below).clamp(0.0, 1.0)
+}
 
 // The glance on a new song (and, later, on each line of lyrics), 400 x 44.
 pub const PEEK: (f32, f32) = (400.0, 44.0);
@@ -194,14 +342,14 @@ pub fn entrance(a: f32) -> (f32, f32, f32) {
     )
 }
 
-pub fn button(b: Button) -> Rect {
+pub fn button(b: Button, open: Open) -> Rect {
     let dx = match b {
         Button::Prev => -BUTTONS_GAP,
         Button::PlayPause => 0.0,
         Button::Next => BUTTONS_GAP,
     };
     rect(
-        BUTTONS_CENTER + dx - BUTTON / 2.0,
+        player(open).buttons_center + dx - BUTTON / 2.0,
         BUTTONS_Y,
         BUTTON,
         BUTTON,
@@ -209,11 +357,11 @@ pub fn button(b: Button) -> Rect {
 }
 
 /// The button under (`x`, `y`), if any.
-pub fn hit(x: f32, y: f32) -> Option<Button> {
+pub fn hit(x: f32, y: f32, open: Open) -> Option<Button> {
     [Button::Prev, Button::PlayPause, Button::Next]
         .into_iter()
         .find(|&b| {
-            let r = button(b);
+            let r = button(b, open);
             x >= r.x && x < r.x + r.width && y >= r.y && y < r.y + r.height
         })
 }
@@ -221,6 +369,104 @@ pub fn hit(x: f32, y: f32) -> Option<Button> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lyrics_fill_the_open_island_beside_the_player() {
+        // Every width a setting can give, with and without lyrics.
+        let mut w = OPEN_WIDTH_MIN;
+        while w <= OPEN_WIDTH_MAX {
+            for lyrics in [false, true] {
+                let o = Open::new(w, lyrics);
+                let p = player(o);
+                assert!(p.bar.width >= 200.0, "{w}: room for the bar");
+                let end = p.bar.x + p.bar.width;
+                match o.lyrics_rect() {
+                    Some(l) => {
+                        assert!(lyrics);
+                        assert!(l.x >= end + 16.0, "{w}");
+                        assert_eq!(l.x + l.width, w - 24.0, "{w}");
+                        // The open island's height (180).
+                        assert!(l.y + l.height <= 180.0);
+                        assert!(l.width >= 180.0 && l.width % 10.0 == 0.0, "{w}");
+                    }
+                    None => assert_eq!(end, w - 24.0, "{w}"),
+                }
+            }
+            w += 10.0;
+        }
+        // The default with lyrics: the player a bit narrower than alone.
+        let o = Open::new(OPEN_LYRICS_WIDTH, true);
+        assert_eq!(o.lyrics_rect().map(|l| l.width), Some(230.0));
+        assert_eq!(player(o).bar.width, 318.0);
+        assert_eq!(player(Open::new(OPEN_WIDTH, false)).bar.width, 408.0);
+        // Too narrow for a readable column: just the player.
+        assert_eq!(Open::new(540.0, true).lyrics_rect(), None);
+        assert!(Open::new(600.0, true).lyrics_rect().is_some());
+    }
+
+    #[test]
+    fn open_width_comes_in_steps_of_ten_within_limits() {
+        assert_eq!(parse_open_width("540"), Some(540.0));
+        assert_eq!(parse_open_width(" 724 "), Some(720.0));
+        assert_eq!(parse_open_width("725.5"), Some(730.0));
+        assert_eq!(parse_open_width("100"), Some(OPEN_WIDTH_MIN));
+        assert_eq!(parse_open_width("5000"), Some(OPEN_WIDTH_MAX));
+        assert_eq!(parse_open_width("ancho"), None);
+        assert_eq!(parse_open_width("NaN"), None);
+        assert_eq!(parse_open_width("inf"), None);
+    }
+
+    #[test]
+    fn open_width_fits_small_screens() {
+        // A 2560 screen at 100 %: the setting as it is.
+        assert_eq!(fit_open_width(960.0, 2560.0), 960.0);
+        assert_eq!(fit_open_width(720.0, 1920.0), 720.0);
+        // A square 17" (1280 x 1024) still fits the default.
+        assert_eq!(fit_open_width(720.0, 1280.0), 720.0);
+        assert_eq!(fit_open_width(960.0, 1280.0), 760.0);
+        // 1366 at 125 % (1093 DIPs) and 1024 x 768.
+        assert_eq!(fit_open_width(720.0, 1092.8), 650.0);
+        assert_eq!(fit_open_width(720.0, 1024.0), 610.0);
+        // Smaller still: the smallest width, never past the screen.
+        assert_eq!(fit_open_width(720.0, 800.0), OPEN_WIDTH_MIN);
+        assert_eq!(fit_open_width(720.0, 400.0), 400.0);
+        // A narrower setting is kept.
+        assert_eq!(fit_open_width(540.0, 1024.0), 540.0);
+        // At the width a 1024 screen gets, there is still a lyrics column.
+        assert!(Open::new(610.0, true).lyrics_rect().is_some());
+    }
+
+    #[test]
+    fn lyrics_stack_around_the_line_being_sung() {
+        let h = [22.0, 44.0, 22.0, 22.0];
+        let tops = lyrics_tops(&h, 1, 0.0);
+        assert_eq!(tops[1], LYRICS_ANCHOR);
+        assert_eq!(tops[0], LYRICS_ANCHOR - 22.0 - LYRICS_GAP);
+        assert_eq!(tops[2], LYRICS_ANCHOR + 44.0 + LYRICS_GAP);
+        assert_eq!(tops[3], tops[2] + 22.0 + LYRICS_GAP);
+        // Just changed: everything is still one step down, where the line
+        // before was the one in focus.
+        let start = lyrics_tops(&h, 1, 1.0);
+        assert_eq!(start[0], LYRICS_ANCHOR);
+        // The first line has nothing to scroll from; out of range, nothing.
+        assert_eq!(lyrics_tops(&h, 0, 1.0)[0], LYRICS_ANCHOR);
+        assert_eq!(lyrics_tops(&h, 9, 0.0), vec![0.0; 4]);
+    }
+
+    #[test]
+    fn lyrics_scroll_and_fade_smoothly() {
+        assert_eq!(lyrics_scroll(0.0), 1.0);
+        assert_eq!(lyrics_scroll(LYRICS_SCROLL_MS), 0.0);
+        assert_eq!(lyrics_scroll(1e6), 0.0);
+        assert!(lyrics_scroll(LYRICS_SCROLL_MS / 2.0) < 0.2);
+        assert_eq!(lyrics_alpha(0.0), 1.0);
+        assert!(lyrics_alpha(-1.0) < lyrics_alpha(1.0));
+        assert!(lyrics_alpha(1.0) > lyrics_alpha(2.0));
+        assert!(lyrics_alpha(-9.0) > 0.0 && lyrics_alpha(9.0) > 0.0);
+        assert_eq!(lyrics_edge(LYRICS_ANCHOR, 22.0), 1.0);
+        assert_eq!(lyrics_edge(-30.0, 22.0), 0.0);
+        assert_eq!(lyrics_edge(LYRICS_HEIGHT, 22.0), 0.0);
+    }
 
     #[test]
     fn entrance_eases_out_to_its_place() {
@@ -318,14 +564,28 @@ mod tests {
 
     #[test]
     fn buttons_are_hit_inside_and_missed_between() {
-        assert_eq!(hit(332.0, 148.0), Some(Button::PlayPause));
-        assert_eq!(hit(268.0, 148.0), Some(Button::Prev));
-        assert_eq!(hit(396.0, 148.0), Some(Button::Next));
-        assert_eq!(hit(300.0, 148.0), None);
-        assert_eq!(hit(332.0, 60.0), None);
-        // They fit in the open island, and the lyrics under them.
-        assert!(button(Button::Next).y + button(Button::Next).height <= 180.0);
-        const { assert!(LYRIC.y >= BUTTONS_Y + BUTTON) };
-        const { assert!(LYRIC_NEXT.y + LYRIC_NEXT.height <= OPEN_LYRICS_HEIGHT) };
+        let alone = Open::new(OPEN_WIDTH, false);
+        assert_eq!(hit(332.0, 148.0, alone), Some(Button::PlayPause));
+        assert_eq!(hit(268.0, 148.0, alone), Some(Button::Prev));
+        assert_eq!(hit(396.0, 148.0, alone), Some(Button::Next));
+        assert_eq!(hit(300.0, 148.0, alone), None);
+        assert_eq!(hit(332.0, 60.0, alone), None);
+        // Beside lyrics, they follow the narrower bar's middle.
+        let beside = Open::new(OPEN_LYRICS_WIDTH, true);
+        assert_eq!(hit(287.0, 148.0, beside), Some(Button::PlayPause));
+        assert_eq!(hit(396.0, 148.0, beside), None);
+        // They fit in the open island, left of the lyrics, at any width.
+        let mut w = OPEN_WIDTH_MIN;
+        while w <= OPEN_WIDTH_MAX {
+            for lyrics in [false, true] {
+                let o = Open::new(w, lyrics);
+                let next = button(Button::Next, o);
+                assert!(next.y + next.height <= 180.0);
+                let end = o.lyrics_rect().map_or(w, |l| l.x);
+                assert!(next.x + next.width <= end, "{w}");
+                assert!(button(Button::Prev, o).x >= ART.x + ART.width, "{w}");
+            }
+            w += 10.0;
+        }
     }
 }
