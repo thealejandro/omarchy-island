@@ -98,6 +98,23 @@ impl SongText {
 
     /// The line; a missing part leaves just the other one.
     pub fn line(self, title: &str, artist: &str) -> String {
+        self.spans(title, artist).into_iter().map(|s| s.0).collect()
+    }
+
+    /// The line in pieces, `true` on the ones shown dimmer: next to the
+    /// title, the artist and the separator, so the title stands out.
+    pub fn spans(self, title: &str, artist: &str) -> Vec<(String, bool)> {
+        let parts = self.parts(title, artist);
+        let both = parts.len() > 1;
+        parts
+            .into_iter()
+            .enumerate()
+            .map(|(i, s)| (s.to_string(), both && (i == 1 || s != title)))
+            .collect()
+    }
+
+    /// The text pieces in order: one, or first, separator, second.
+    fn parts<'a>(self, title: &'a str, artist: &'a str) -> Vec<&'a str> {
         let (a, b) = match self {
             Self::TitleArtist => (title, artist),
             Self::ArtistTitle => (artist, title),
@@ -106,9 +123,9 @@ impl SongText {
             Self::Artist => (artist, ""),
         };
         match (a.is_empty(), b.is_empty()) {
-            (false, false) => format!("{a}  ·  {b}"),
-            (true, _) => b.to_string(),
-            (false, true) => a.to_string(),
+            (false, false) => vec![a, "  ·  ", b],
+            (true, _) => vec![b],
+            (false, true) => vec![a],
         }
     }
 }
@@ -139,6 +156,12 @@ const BUTTON: f32 = 40.0;
 const BUTTONS_Y: f32 = 128.0;
 const BUTTONS_CENTER: f32 = 332.0;
 const BUTTONS_GAP: f32 = 64.0;
+
+// With synced lyrics the open island is taller: the line being sung and
+// the next one, under the controls.
+pub const OPEN_LYRICS_HEIGHT: f32 = 232.0;
+pub const LYRIC: Rect = rect(24.0, 178.0, 512.0, 24.0);
+pub const LYRIC_NEXT: Rect = rect(24.0, 202.0, 512.0, 20.0);
 
 // The glance on a new song (and, later, on each line of lyrics), 400 x 44.
 pub const PEEK: (f32, f32) = (400.0, 44.0);
@@ -227,6 +250,30 @@ mod tests {
         assert_eq!(line(SongText::TitleArtist, "casa", ""), "casa");
         assert_eq!(line(SongText::ArtistTitle, "casa", ""), "casa");
         assert_eq!(line(SongText::Artist, "casa", ""), "casa");
+        // The artist and the separator are dimmer; the title never.
+        let s = |v: &[(&str, bool)]| {
+            v.iter()
+                .map(|(t, d)| (t.to_string(), *d))
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(
+            SongText::TitleArtist.spans("casa", "Riosse"),
+            s(&[("casa", false), ("  ·  ", true), ("Riosse", true)])
+        );
+        assert_eq!(
+            SongText::ArtistTitle.spans("casa", "Riosse"),
+            s(&[("Riosse", true), ("  ·  ", true), ("casa", false)])
+        );
+        assert_eq!(
+            SongText::Artist.spans("casa", "Riosse"),
+            s(&[("Riosse", false)])
+        );
+        assert_eq!(
+            SongText::Title.spans("casa", "Riosse"),
+            s(&[("casa", false)])
+        );
+        // Only a title (or the same text twice): nothing dims.
+        assert_eq!(SongText::Artist.spans("casa", ""), s(&[("casa", false)]));
         assert_eq!(SongText::parse("artist"), Some(SongText::Artist));
         assert_eq!(SongText::parse("nope"), None);
         assert_eq!(TextAlign::parse("left"), Some(TextAlign::Left));
@@ -240,7 +287,9 @@ mod tests {
         assert_eq!(hit(396.0, 148.0), Some(Button::Next));
         assert_eq!(hit(300.0, 148.0), None);
         assert_eq!(hit(332.0, 60.0), None);
-        // They fit in the open island.
+        // They fit in the open island, and the lyrics under them.
         assert!(button(Button::Next).y + button(Button::Next).height <= 180.0);
+        const { assert!(LYRIC.y >= BUTTONS_Y + BUTTON) };
+        const { assert!(LYRIC_NEXT.y + LYRIC_NEXT.height <= OPEN_LYRICS_HEIGHT) };
     }
 }

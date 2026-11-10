@@ -287,6 +287,64 @@ pub fn cache_key(artist: &str, title: &str, album: &str, duration_sec: f64) -> S
     format!("{}\n{}\n{}\n{secs}", norm(artist), norm(title), norm(album))
 }
 
+/// A cache file's name for a [`cache_key`]: 16 hex digits (FNV-1a), so no
+/// song text ever reaches the file system.
+pub fn file_name(key: &str) -> String {
+    let mut h: u64 = 0xcbf2_9ce4_8422_2325;
+    for b in key.bytes() {
+        h ^= b as u64;
+        h = h.wrapping_mul(0x0100_0000_01b3);
+    }
+    format!("{h:016x}")
+}
+
+/// `/api/<endpoint>?name=value&â€¦`, each value percent-encoded (UTF-8), as
+/// `curl --data-urlencode` does in `lyrics-fetch.sh`.
+pub fn api_path(endpoint: &str, fields: &[(&str, &str)]) -> String {
+    let mut out = format!("/api/{endpoint}");
+    for (i, (k, v)) in fields.iter().enumerate() {
+        out.push(if i == 0 { '?' } else { '&' });
+        out.push_str(k);
+        out.push('=');
+        for b in v.bytes() {
+            if b.is_ascii_alphanumeric() || matches!(b, b'-' | b'.' | b'_' | b'~') {
+                out.push(b as char);
+            } else {
+                out.push_str(&format!("%{b:02X}"));
+            }
+        }
+    }
+    out
+}
+
+/// The requests for a song, in order, at most three as the script does: by
+/// name (with the album when there is one), by the cleaned names when they
+/// differ, and a search. `duration` is whole seconds.
+pub fn requests(artist: &str, title: &str, album: &str, duration: u32) -> Vec<String> {
+    let d = duration.to_string();
+    let mut first = vec![
+        ("track_name", title),
+        ("artist_name", artist),
+        ("duration", d.as_str()),
+    ];
+    if !album.is_empty() {
+        first.push(("album_name", album));
+    }
+    let mut out = vec![api_path("get", &first)];
+    let (ca, ct) = (normalize_artist(artist), normalize_title(title));
+    if ct != title || ca != artist {
+        out.push(api_path(
+            "get",
+            &[("track_name", &ct), ("artist_name", &ca), ("duration", &d)],
+        ));
+    }
+    out.push(api_path(
+        "search",
+        &[("track_name", &ct), ("artist_name", &ca)],
+    ));
+    out
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
     Synced,
@@ -305,7 +363,7 @@ pub struct Found {
 }
 
 impl Found {
-    fn nothing() -> Self {
+    pub fn nothing() -> Self {
         Self::of(Kind::Nothing, 0)
     }
 

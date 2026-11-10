@@ -276,3 +276,55 @@ fn pick_search_closest_duration_with_synced_lyrics() {
     let far = json!([rec(json!({"duration": 100, "syncedLyrics": "[00:01.00]a"}))]);
     assert!(pick_search(&far, 180.0).is_none());
 }
+
+// ---- in-process fetching (the desktop apps): what the script did with curl
+
+#[test]
+fn api_path_encodes_every_value() {
+    assert_eq!(
+        api_path(
+            "get",
+            &[("track_name", "Añoranza & co"), ("duration", "200")]
+        ),
+        "/api/get?track_name=A%C3%B1oranza%20%26%20co&duration=200"
+    );
+    // Nothing of the value can start another field or a fragment.
+    assert_eq!(
+        api_path("search", &[("q", "a=b?c#d/e+f")]),
+        "/api/search?q=a%3Db%3Fc%23d%2Fe%2Bf"
+    );
+}
+
+#[test]
+fn requests_follow_the_script_order() {
+    // Same names: by name with the album, then the search.
+    let r = requests("Riosse", "casa", "Sola", 200);
+    assert_eq!(r.len(), 2);
+    assert!(
+        r[0].starts_with(
+            "/api/get?track_name=casa&artist_name=Riosse&duration=200&album_name=Sola"
+        )
+    );
+    assert!(r[1].starts_with("/api/search?"));
+    // Cleaned names differ: one more try by them, without the album.
+    let r = requests("Riosse feat. Otro", "casa (Remastered 2011)", "", 200);
+    assert_eq!(r.len(), 3);
+    assert!(!r[0].contains("album_name"));
+    assert_eq!(
+        r[1],
+        "/api/get?track_name=casa&artist_name=Riosse&duration=200"
+    );
+    assert_eq!(r[2], "/api/search?track_name=casa&artist_name=Riosse");
+}
+
+#[test]
+fn file_names_are_stable_hex() {
+    let k = cache_key("Riosse", "casa", "", 200.0);
+    assert_eq!(file_name(&k), file_name(&k));
+    assert_eq!(file_name(&k).len(), 16);
+    assert!(file_name(&k).bytes().all(|b| b.is_ascii_hexdigit()));
+    assert_ne!(
+        file_name(&k),
+        file_name(&cache_key("Riosse", "casa", "", 201.0))
+    );
+}
