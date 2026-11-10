@@ -4,7 +4,7 @@
 
 use island_core::media::{self as layout, Button, SongText, TextAlign, fmt_time};
 use island_core::shape::{Outline, Point, Rect, Segment};
-use windows::Win32::Foundation::{E_FAIL, HMODULE, HWND, POINT};
+use windows::Win32::Foundation::{E_FAIL, HMODULE, HWND, POINT, RECT};
 use windows::Win32::Graphics::Direct2D::Common::{
     D2D_RECT_F, D2D_SIZE_F, D2D1_ALPHA_MODE_PREMULTIPLIED, D2D1_COLOR_F, D2D1_FIGURE_BEGIN_FILLED,
     D2D1_FIGURE_END_CLOSED, D2D1_GRADIENT_STOP, D2D1_PIXEL_FORMAT,
@@ -132,6 +132,12 @@ pub struct Renderer {
     bars: Bars,
     /// Where this frame wants the bars (DIPs), how visible, and if playing.
     bars_at: Option<(Rect, f32, bool)>,
+    /// The view being drawn: its scale's center x, the scale and how far
+    /// above its place it is (see [`layout::entrance`]).
+    view: (f32, f32, f32),
+    /// The body's bounds in the last frame (px): the next frame redraws
+    /// only those and its own, and the rest of the surface is kept.
+    drawn: Option<RECT>,
 }
 
 fn d3d_device() -> Result<ID3D11Device> {
@@ -292,6 +298,8 @@ impl Renderer {
             Ok(Self {
                 bars,
                 bars_at: None,
+                view: (0.0, 1.0, 0.0),
+                drawn: None,
                 factory,
                 dc,
                 dcomp,
@@ -338,6 +346,8 @@ impl Renderer {
             s
         };
         self.surface = Some((s.clone(), width, height));
+        // A new surface starts empty: the first frame draws all of it.
+        self.drawn = None;
         Ok(s)
     }
 
@@ -668,9 +678,29 @@ impl Renderer {
     /// The bars are composition visuals (see `bars.rs`): here we only note
     /// where they go, the most visible view winning.
     fn bars(&mut self, t: &Track, bars: Rect, alpha: f32) {
+        // Where the view's entrance puts them; their size stays, so their
+        // surface is never painted again mid-motion.
+        let (cx, k, drop) = self.view;
+        let bars = Rect {
+            x: cx + (bars.x + bars.width / 2.0 - cx) * k - bars.width / 2.0,
+            y: (bars.y + bars.height / 2.0) * k - drop - bars.height / 2.0,
+            ..bars
+        };
         if self.bars_at.is_none_or(|(_, a, _)| alpha > a) {
             self.bars_at = Some((bars, alpha, t.playing));
         }
+    }
+
+    /// Places the next view for its entrance at visibility `a`, scaled
+    /// about (`cx`, 0) of the content; gives its opacity.
+    fn enter(&mut self, base: &Matrix3x2, cx: f32, a: f32) -> f32 {
+        let (opacity, k, drop) = layout::entrance(a);
+        self.view = (cx, k, drop);
+        unsafe {
+            self.dc
+                .SetTransform(&(affine(k, cx * (1.0 - k), -drop) * *base));
+        }
+        opacity
     }
 
     /// The cover's color rising from the bottom of the body (px, from the
@@ -715,9 +745,30 @@ impl Renderer {
             .and_then(|t| t.art.as_ref())
             .and_then(|b| self.art(b, side))
             .map(|a| a.accent);
+        let (sw, sh) = (s.width.max(1) as i32, s.height.max(1) as i32);
+        let now = RECT {
+            left: (s.body.x.floor() as i32 - 1).clamp(0, sw - 1),
+            top: (s.body.y.floor() as i32 - 1).clamp(0, sh - 1),
+            right: ((s.body.x + s.body.width).ceil() as i32 + 1).clamp(1, sw),
+            bottom: ((s.body.y + s.body.height).ceil() as i32 + 1).clamp(1, sh),
+        };
+        let dirty = match self.drawn {
+            Some(d) => RECT {
+                left: d.left.min(now.left),
+                top: d.top.min(now.top),
+                right: d.right.max(now.right),
+                bottom: d.bottom.max(now.bottom),
+            },
+            None => RECT {
+                left: 0,
+                top: 0,
+                right: sw,
+                bottom: sh,
+            },
+        };
         unsafe {
             let mut offset = POINT::default();
-            let dxgi: IDXGISurface = surface.BeginDraw(None, &mut offset)?;
+            let dxgi: IDXGISurface = surface.BeginDraw(Some(&dirty), &mut offset)?;
             let drawn = (|| {
                 let props = D2D1_BITMAP_PROPERTIES1 {
                     pixelFormat: D2D1_PIXEL_FORMAT {
@@ -732,16 +783,17 @@ impl Renderer {
                 let bitmap = self.dc.CreateBitmapFromDxgiSurface(&dxgi, Some(&props))?;
                 self.dc.SetTarget(&bitmap);
                 self.dc.BeginDraw();
-                // The surface can live inside a bigger atlas: draw only in
-                // our part of it, at `offset`.
-                let (ox, oy) = (offset.x as f32, offset.y as f32);
+                // The update area can live inside a bigger atlas: its
+                // top-left is at `offset`. From here on, window px.
+                let ox = (offset.x - dirty.left) as f32;
+                let oy = (offset.y - dirty.top) as f32;
                 self.dc.SetTransform(&Matrix3x2::translation(ox, oy));
                 self.dc.PushAxisAlignedClip(
                     &D2D_RECT_F {
-                        left: 0.0,
-                        top: 0.0,
-                        right: s.width as f32,
-                        bottom: s.height as f32,
+                        left: dirty.left as f32,
+                        top: dirty.top as f32,
+                        right: dirty.right as f32,
+                        bottom: dirty.bottom as f32,
                     },
                     D2D1_ANTIALIAS_MODE_ALIASED,
                 );
@@ -754,7 +806,8 @@ impl Renderer {
                 }
 
                 // The content, in DIPs, clipped to the body.
-                self.dc.SetTransform(&affine(s.scale, bx + s.inset, by));
+                let base = affine(s.scale, bx + s.inset, by);
+                self.dc.SetTransform(&base);
                 self.dc.PushAxisAlignedClip(
                     &D2D_RECT_F {
                         left: 0.0,
@@ -765,20 +818,25 @@ impl Renderer {
                     D2D1_ANTIALIAS_MODE_ALIASED,
                 );
                 let [closed, peek, open] = s.alpha;
+                let cx = s.size.0 / 2.0;
                 if closed > 0.0 {
                     let w = if s.track.is_some() {
                         layout::CLOSED_MEDIA_WIDTH
                     } else {
                         CLOSED_W
                     };
-                    self.draw_closed(s, (s.size.0 - w) / 2.0, closed);
+                    let a = self.enter(&base, cx, closed);
+                    self.draw_closed(s, (s.size.0 - w) / 2.0, a);
                 }
                 if peek > 0.0 {
-                    self.draw_peek(s, (s.size.0 - layout::PEEK.0) / 2.0, peek);
+                    let a = self.enter(&base, cx, peek);
+                    self.draw_peek(s, (s.size.0 - layout::PEEK.0) / 2.0, a);
                 }
                 if open > 0.0 {
-                    self.draw_open(s, (s.size.0 - OPEN_W) / 2.0, open);
+                    let a = self.enter(&base, cx, open);
+                    self.draw_open(s, (s.size.0 - OPEN_W) / 2.0, a);
                 }
+                self.view = (0.0, 1.0, 0.0);
                 self.dc.PopAxisAlignedClip();
 
                 self.dc.PopAxisAlignedClip();
@@ -788,6 +846,7 @@ impl Renderer {
             })();
             surface.EndDraw()?;
             drawn?;
+            self.drawn = Some(now);
             match self.bars_at.take() {
                 Some((r, alpha, playing)) => {
                     let k = s.scale;
