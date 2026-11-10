@@ -29,7 +29,7 @@ Column {
       return [{ value: null, label: tr("opt_auto") }, { value: 1, label: tr("opt_mon") },
         { value: 6, label: tr("opt_sat") }, { value: 7, label: tr("opt_sun") }]
     return s.options.map(function(o) {
-      if (s.key === "language") return { value: o, label: o === "" ? tr("opt_auto") : (o === "pt" ? "Português" : (o === "es" ? "Español" : "English")) }
+      if (s.key === "language") return { value: o, label: o === "" ? tr("opt_auto") : (o === "es" ? "Español" : "English") }
       return { value: o, label: tr("opt_" + o) }
     })
   }
@@ -194,7 +194,8 @@ Column {
             switch (row.modelData.type) {
               case "bool": return toggleComp
               case "int": return stepperComp
-              case "string": case "cities": return fieldComp
+              case "cities": return citiesComp
+              case "string": return fieldComp
               default: return segmentComp
             }
           }
@@ -272,6 +273,18 @@ Column {
             onPicked: (v) => root.save(row.key, v)
           }
         }
+        // The city list is edited as rows, not as text: name and zone per
+        // row with reorder/remove buttons, and an add row whose zone field
+        // searches the IANA zone list.
+        Component {
+          id: citiesComp
+          IslandCitiesEditor {
+            island: root.island
+            width: rows.width
+            cities: row.value
+            onAccepted: (c) => root.save(row.key, c)
+          }
+        }
         Component {
           id: fieldComp
           IslandField {
@@ -279,9 +292,8 @@ Column {
             label: root.tr("set_" + row.key)
             revertOnLeave: true
             width: Math.min(Style.space(240), rows.width * 0.5)
-            text: row.modelData.type === "cities" ? IslandSettings.citiesText(row.value) : String(row.value || "")
-            placeholder: row.modelData.type === "cities" ? "Tokyo|Asia/Tokyo" : ""
-            onAccepted: (t) => root.save(row.key, row.modelData.type === "cities" ? IslandSettings.parseCities(t) : t)
+            text: String(row.value || "")
+            onAccepted: (t) => root.save(row.key, t)
           }
         }
       }
