@@ -69,6 +69,8 @@ pub struct Settings {
     pub privacy_glance: bool,
     /// A glance when a paired Bluetooth device connects or disconnects.
     pub bluetooth_glance: bool,
+    /// A glance when a notification shows: its app and title.
+    pub notification_glance: bool,
     /// How late the lyrics follow the position the player tells, in ms:
     /// the sound comes out later than that (more so over Bluetooth).
     /// `None` ("auto"): by the speakers in use, see [`Settings::lyrics_delay`].
@@ -97,6 +99,7 @@ impl Default for Settings {
             volume_glance: true,
             privacy_glance: true,
             bluetooth_glance: true,
+            notification_glance: true,
             lyrics_delay: None,
         }
     }
@@ -121,6 +124,7 @@ pub const TEMPLATE: &str = r#"{
   "volumeGlance": true,
   "privacyGlance": true,
   "bluetoothGlance": true,
+  "notificationGlance": true,
   "lyricsDelay": "auto"
 }
 "#;
@@ -190,6 +194,7 @@ impl Settings {
             volume_glance: flag("volumeGlance", d.volume_glance),
             privacy_glance: flag("privacyGlance", d.privacy_glance),
             bluetooth_glance: flag("bluetoothGlance", d.bluetooth_glance),
+            notification_glance: flag("notificationGlance", d.notification_glance),
             // A number in range; "auto" or anything else: by the speakers.
             lyrics_delay: o
                 .get("lyricsDelay")
@@ -306,6 +311,7 @@ mod tests {
         assert!(parse(r#"{"volumeGlance": 0}"#).volume_glance);
         assert!(!parse(r#"{"privacyGlance": false}"#).privacy_glance);
         assert!(!parse(r#"{"bluetoothGlance": false}"#).bluetooth_glance);
+        assert!(!parse(r#"{"notificationGlance": false}"#).notification_glance);
         // The lyrics' delay: a number wins over the speakers; else by them.
         let s = parse(r#"{"lyricsDelay": 350}"#);
         assert_eq!((s.lyrics_delay(true), s.lyrics_delay(false)), (350, 350));

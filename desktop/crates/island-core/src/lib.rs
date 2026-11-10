@@ -12,6 +12,7 @@ pub mod lyrics;
 pub mod media;
 pub mod menu;
 pub mod monitor;
+pub mod notifications;
 pub mod pages;
 pub mod privacy;
 pub mod settings;

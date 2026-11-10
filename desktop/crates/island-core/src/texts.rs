@@ -37,6 +37,8 @@ pub struct Texts {
     pub camera_off: &'static str,
     pub connected: &'static str,
     pub disconnected: &'static str,
+    /// A notification whose app has no name.
+    pub notification: &'static str,
 }
 
 pub const EN: Texts = Texts {
@@ -66,6 +68,7 @@ pub const EN: Texts = Texts {
     camera_off: "Camera off",
     connected: "Connected",
     disconnected: "Disconnected",
+    notification: "Notification",
 };
 
 pub const ES: Texts = Texts {
@@ -95,6 +98,7 @@ pub const ES: Texts = Texts {
     camera_off: "Cámara apagada",
     connected: "Conectado",
     disconnected: "Desconectado",
+    notification: "Notificación",
 };
 
 /// `text` with each `{}` replaced by the next of `args`.

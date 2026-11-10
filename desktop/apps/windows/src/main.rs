@@ -5,6 +5,7 @@ mod bars;
 mod bluetooth;
 mod lyrics;
 mod media;
+mod notifications;
 mod pacer;
 mod privacy;
 mod render;
@@ -99,6 +100,8 @@ const WM_APP_SPEAKERS: u32 = WM_APP + 8;
 const WM_APP_PRIVACY: u32 = WM_APP + 9;
 /// A Bluetooth device connected or disconnected (see `bluetooth.rs`).
 const WM_APP_BLUETOOTH: u32 = WM_APP + 10;
+/// A notification showed (see `notifications.rs`).
+const WM_APP_NOTIFICATION: u32 = WM_APP + 11;
 
 /// How long the glance's content takes to change in place, in ms.
 const SWAP_MS: f32 = 300.0;
@@ -115,7 +118,7 @@ enum Before {
 struct Notice {
     icon: &'static str,
     tint: [f32; 3],
-    title: &'static str,
+    title: std::borrow::Cow<'static, str>,
     detail: String,
     level: Option<f32>,
 }
@@ -235,6 +238,9 @@ struct App {
     users: [Vec<String>; 2],
     /// The watch on paired Bluetooth devices, while that glance is on.
     bluetooth: Option<bluetooth::Bluetooth>,
+    /// The watch on notifications, while that glance is on and Windows
+    /// lets the island read them.
+    notifications: Option<notifications::Notifications>,
     /// The glance's content being left in place, and since when.
     swap: Option<(Before, Instant)>,
 }
@@ -441,7 +447,7 @@ impl App {
             notice: self.notice.as_ref().map(|n| render::Notice {
                 icon: n.icon,
                 tint: n.tint,
-                title: n.title,
+                title: &n.title,
                 detail: &n.detail,
                 level: n.level,
             }),
@@ -451,7 +457,7 @@ impl App {
                     Before::Notice(n) => render::Before::Notice(render::Notice {
                         icon: n.icon,
                         tint: n.tint,
-                        title: n.title,
+                        title: &n.title,
                         detail: &n.detail,
                         level: n.level,
                     }),
@@ -557,7 +563,7 @@ impl App {
                 Notice {
                     icon: "\u{E916}",
                     tint,
-                    title,
+                    title: title.into(),
                     detail,
                     level: None,
                 },
@@ -627,7 +633,7 @@ impl App {
         let n = Notice {
             icon: glance::volume_icon(level, muted),
             tint: render::WHITE,
-            title: if muted { t.muted } else { t.volume },
+            title: if muted { t.muted } else { t.volume }.into(),
             // Muted, the volume kept for later means nothing now.
             detail: if muted {
                 String::new()
@@ -659,8 +665,23 @@ impl App {
         let n = Notice {
             icon: island_core::bluetooth::ICON,
             tint: island_core::bluetooth::TINT,
-            title,
+            title: title.into(),
             detail: name,
+            level: None,
+        };
+        self.notify(n, PEEK_MS);
+    }
+
+    /// Notifications showed: a glance for the last one (a burst ends on
+    /// the newest), its app and title.
+    fn notified(&mut self) {
+        let Some(n) = &self.notifications else { return };
+        let Some(t) = n.take().pop() else { return };
+        let n = Notice {
+            icon: island_core::notifications::ICON,
+            tint: render::WHITE,
+            title: t.app.into(),
+            detail: t.title,
             level: None,
         };
         self.notify(n, PEEK_MS);
@@ -682,7 +703,8 @@ impl App {
                     t.microphone_on
                 } else {
                     t.camera_on
-                },
+                }
+                .into(),
                 detail: app.to_string(),
                 level: None,
             },
@@ -693,7 +715,8 @@ impl App {
                     t.microphone_off
                 } else {
                     t.camera_off
-                },
+                }
+                .into(),
                 detail: String::new(),
                 level: None,
             },
@@ -1097,6 +1120,18 @@ impl App {
                 .then(|| bluetooth::Bluetooth::start(self.hwnd, WM_APP_BLUETOOTH).ok())
                 .flatten();
         }
+        if s.notification_glance != self.notifications.is_some() {
+            self.notifications = s
+                .notification_glance
+                .then(|| {
+                    notifications::Notifications::start(
+                        self.hwnd,
+                        WM_APP_NOTIFICATION,
+                        self.texts.notification,
+                    )
+                })
+                .flatten();
+        }
         self.lyrics_column = s.open_lyrics;
         self.open_width_setting = s.open_width();
         self.layout();
@@ -1411,6 +1446,7 @@ impl App {
             WM_APP_VOLUME if self.volume.is_some() => self.volume_changed(volume::read(wp, lp)),
             WM_APP_PRIVACY if self.privacy.is_some() => self.privacy_changed(wp.0),
             WM_APP_BLUETOOTH => self.bluetooth_changed(),
+            WM_APP_NOTIFICATION => self.notified(),
             WM_TIMER if wp.0 == BLUETOOTH_TIMER => self.bluetooth_changed(),
             WM_APP_SPEAKERS => {
                 // New speakers come with their own volume: no glance for it.
@@ -1734,6 +1770,7 @@ fn main() -> Result<()> {
             privacy: None,
             users: Default::default(),
             bluetooth: None,
+            notifications: None,
             swap: None,
         };
         APP.with_borrow_mut(|a| *a = Some(app));

@@ -47,6 +47,7 @@ that isn't valid JSON is ignored until it is fixed.
 | `volumeGlance` | `true`, `false` | `true` |
 | `privacyGlance` | `true`, `false` | `true` |
 | `bluetoothGlance` | `true`, `false` | `true` |
+| `notificationGlance` | `true`, `false` | `true` |
 | `lyricsDelay` | `auto`, or 0 to 2000 (ms) | `auto` |
 
 While music plays (any app in Windows' media controls), the closed island
@@ -101,6 +102,13 @@ for 5 seconds (some devices, phones above all, connect for a moment on
 their own). Only paired devices are watched, so it never scans for new
 ones. `bluetoothGlance: false` turns it
 off.
+
+When a notification pops up, the island glances at it with the app's name
+and the notification's title. It reads them with Windows' own listener
+(allowed under Privacy, "Notification access") and looks only when the
+shell shows one, so nothing runs in between. When Windows doesn't pop a
+notification up (Do Not Disturb, or an app in full screen), there is no
+glance either. `notificationGlance: false` turns it off.
 
 For trying things out, the command line wins over the file:
 `--placement`, `--monitor`, `--text-align`, `--song-text`, `--lyrics`,
