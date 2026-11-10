@@ -164,6 +164,7 @@ const MENU_OPEN_LYRICS: u32 = 2;
 const MENU_STARTUP: u32 = 3;
 const MENU_SETTINGS: u32 = 4;
 const MENU_QUIT: u32 = 5;
+const MENU_ONLY_ISLAND: u32 = 6;
 const MENU_CLASS: PCWSTR = w!("IslandMenu");
 
 /// The menu window, while it is open.
@@ -1330,6 +1331,15 @@ impl App {
                 MENU_OPEN_LYRICS,
                 row(toggle, t.open_lyrics, self.settings.open_lyrics, lyrics),
             ),
+            (
+                MENU_ONLY_ISLAND,
+                row(
+                    toggle,
+                    t.only_island,
+                    !self.settings.windows_banners,
+                    self.settings.notification_glance,
+                ),
+            ),
             (0, row(line, "", false, false)),
             (
                 MENU_STARTUP,
@@ -1525,6 +1535,7 @@ impl App {
         let (key, on) = match id {
             MENU_LYRICS => ("lyrics", &mut file.lyrics),
             MENU_OPEN_LYRICS => ("openLyrics", &mut file.open_lyrics),
+            MENU_ONLY_ISLAND => ("windowsBanners", &mut file.windows_banners),
             MENU_STARTUP => {
                 let _ = startup::set(!startup::is_on());
                 return;
@@ -1542,6 +1553,7 @@ impl App {
         // From what is in use; the command line no longer holds it.
         *on = !match id {
             MENU_LYRICS => std::mem::take(&mut self.args.lyrics) | self.settings.lyrics,
+            MENU_ONLY_ISLAND => self.settings.windows_banners,
             _ => self
                 .args
                 .open_lyrics
