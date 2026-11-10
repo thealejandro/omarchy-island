@@ -31,6 +31,10 @@ pub struct Texts {
     // The glances.
     pub volume: &'static str,
     pub muted: &'static str,
+    pub microphone_on: &'static str,
+    pub microphone_off: &'static str,
+    pub camera_on: &'static str,
+    pub camera_off: &'static str,
 }
 
 pub const EN: Texts = Texts {
@@ -54,6 +58,10 @@ pub const EN: Texts = Texts {
     wheel_hint: "scroll to change",
     volume: "Volume",
     muted: "Muted",
+    microphone_on: "Microphone in use",
+    microphone_off: "Microphone off",
+    camera_on: "Camera in use",
+    camera_off: "Camera off",
 };
 
 pub const ES: Texts = Texts {
@@ -77,6 +85,10 @@ pub const ES: Texts = Texts {
     wheel_hint: "rueda para cambiar",
     volume: "Volumen",
     muted: "Silenciado",
+    microphone_on: "Micrófono en uso",
+    microphone_off: "Micrófono apagado",
+    camera_on: "Cámara en uso",
+    camera_off: "Cámara apagada",
 };
 
 /// `text` with each `{}` replaced by the next of `args`.
@@ -152,6 +164,10 @@ mod tests {
                 t.wheel_hint,
                 t.volume,
                 t.muted,
+                t.microphone_on,
+                t.microphone_off,
+                t.camera_on,
+                t.camera_off,
             ] {
                 assert!(!s.trim().is_empty());
                 // The tray's tooltip and menu take up to 127 characters.

@@ -12,6 +12,7 @@ pub mod media;
 pub mod menu;
 pub mod monitor;
 pub mod pages;
+pub mod privacy;
 pub mod settings;
 pub mod shape;
 pub mod spring;
