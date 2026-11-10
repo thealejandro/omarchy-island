@@ -331,12 +331,63 @@ pub const PEEK_ART: Rect = rect(14.0, 8.0, 28.0, 28.0);
 pub const PEEK_TEXT: Rect = rect(54.0, 0.0, 300.0, 44.0);
 pub const PEEK_BARS: Rect = rect(368.0, 16.0, 18.0, 12.0);
 
-// The closed island, 180 x 32; 300 wide while something plays, for the
-// song's name.
-pub const CLOSED_MEDIA_WIDTH: f32 = 300.0;
+/// The most the song's glance grows to for a long line, before the screen
+/// has its say (see [`fit_open_width`]).
+pub const PEEK_MOST: f32 = 760.0;
+/// Around the glance's line: the cover and its gap on the left, the gap,
+/// the bars and the edge on the right.
+const PEEK_CHROME: f32 = PEEK_TEXT.x + (PEEK.0 - PEEK_TEXT.x - PEEK_TEXT.width);
+
+/// Rounds a width up to a step of 10, between `least` and `most`.
+fn fit(w: f32, least: f32, most: f32) -> f32 {
+    let w = (w / OPEN_WIDTH_STEP).ceil() * OPEN_WIDTH_STEP;
+    w.clamp(least, most.max(least))
+}
+
+/// The song's glance, as wide as its line (`text` DIPs) needs: never
+/// narrower than [`PEEK`], at most `most`.
+pub fn peek_width(text: f32, most: f32) -> f32 {
+    fit(text + PEEK_CHROME, PEEK.0, most)
+}
+
+/// Where the glance's cover, line and bars go at `width`.
+pub fn peek_parts(width: f32) -> (Rect, Rect, Rect) {
+    let text = rect(PEEK_TEXT.x, 0.0, width - PEEK_CHROME, PEEK.1);
+    let bars = rect(
+        width - (PEEK.0 - PEEK_BARS.x),
+        PEEK_BARS.y,
+        PEEK_BARS.width,
+        PEEK_BARS.height,
+    );
+    (PEEK_ART, text, bars)
+}
+
+// The closed island, 180 x 32; while something plays, as wide as the
+// song's name needs, between these.
+pub const CLOSED_MEDIA_WIDTH: f32 = 220.0;
+pub const CLOSED_MEDIA_MOST: f32 = 420.0;
 pub const SMALL_ART: Rect = rect(12.0, 6.0, 20.0, 20.0);
+/// The name's gap to the cover and to the bars, the same on both sides.
+const CLOSED_GAP: f32 = 12.0;
+const BARS_W: f32 = 18.0;
+const CLOSED_CHROME: f32 = SMALL_ART.x + SMALL_ART.width + 2.0 * CLOSED_GAP + BARS_W + SMALL_ART.x;
+/// The closed island's text without music (the focus timer).
 pub const CLOSED_TEXT: Rect = rect(40.0, 0.0, 214.0, 32.0);
-pub const BARS: Rect = rect(270.0, 10.0, 18.0, 12.0);
+
+/// The closed island while music plays, as wide as the song's name (`text`
+/// DIPs) needs.
+pub fn closed_width(text: f32) -> f32 {
+    fit(text + CLOSED_CHROME, CLOSED_MEDIA_WIDTH, CLOSED_MEDIA_MOST)
+}
+
+/// Where the closed island's cover, name and bars go at `width`: the name
+/// centered between the two, the same gap on each side.
+pub fn closed_parts(width: f32) -> (Rect, Rect, Rect) {
+    let x = SMALL_ART.x + SMALL_ART.width + CLOSED_GAP;
+    let text = rect(x, 0.0, width - CLOSED_CHROME, 32.0);
+    let bars = rect(width - SMALL_ART.x - BARS_W, 10.0, BARS_W, 12.0);
+    (SMALL_ART, text, bars)
+}
 
 // A view coming in grows from a touch smaller and drops into place from
 // above (the plugin's peek: scale 0.96 and a 6 px drop, OutCubic).
@@ -613,5 +664,40 @@ mod tests {
             }
             w += 10.0;
         }
+    }
+}
+
+#[cfg(test)]
+mod width_tests {
+    use super::*;
+
+    #[test]
+    fn the_glance_grows_with_its_line_up_to_the_most() {
+        assert_eq!(peek_width(0.0, 760.0), PEEK.0);
+        assert_eq!(peek_width(300.0, 760.0), PEEK.0);
+        assert_eq!(peek_width(455.0, 760.0), 560.0);
+        assert_eq!(peek_width(2000.0, 760.0), 760.0);
+        // A narrow screen's most never shrinks it below the usual.
+        assert_eq!(peek_width(2000.0, 300.0), PEEK.0);
+        let (art, text, bars) = peek_parts(560.0);
+        assert_eq!(text.width, 460.0);
+        assert!(art.x + art.width < text.x && text.x + text.width < bars.x);
+        assert_eq!(
+            bars.x + bars.width,
+            560.0 - (PEEK.0 - PEEK_BARS.x - PEEK_BARS.width)
+        );
+        assert_eq!(peek_parts(PEEK.0), (PEEK_ART, PEEK_TEXT, PEEK_BARS));
+    }
+
+    #[test]
+    fn the_closed_island_fits_the_name_with_even_gaps() {
+        assert_eq!(closed_width(0.0), CLOSED_MEDIA_WIDTH);
+        assert_eq!(closed_width(1000.0), CLOSED_MEDIA_MOST);
+        let w = closed_width(181.0);
+        assert_eq!(w % 10.0, 0.0);
+        let (art, text, bars) = closed_parts(w);
+        assert!(text.width >= 181.0);
+        assert_eq!(text.x - (art.x + art.width), bars.x - (text.x + text.width));
+        assert_eq!(w - (bars.x + bars.width), art.x);
     }
 }

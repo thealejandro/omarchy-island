@@ -3,17 +3,16 @@
 //! in DIPs, in the glance's own space (see [`crate::media::PEEK`]).
 
 use crate::icons::Icon;
-use crate::media::CLOSED_MEDIA_WIDTH;
 use crate::shape::Rect;
 
 /// How long a level's glance stays after its last change: short, it
 /// follows the keys or the wheel.
 pub const LEVEL_MS: u32 = 1500;
 
-/// A level's glance on its own: as wide as the closed island with a song
+/// A level's glance on its own: about as wide as the closed island with a song
 /// and only a touch taller, enough to catch the eye. Over the lyrics'
 /// glance it takes that one's size instead.
-pub const LEVEL: (f32, f32) = (CLOSED_MEDIA_WIDTH, 36.0);
+pub const LEVEL: (f32, f32) = (300.0, 36.0);
 
 /// Where a level's glance puts things, at `size`: the icon at the left,
 /// the bar filling the middle and the percentage at the right.

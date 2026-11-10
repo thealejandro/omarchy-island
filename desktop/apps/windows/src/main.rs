@@ -1,6 +1,7 @@
 // No console window in release builds; debug builds keep it for logs.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
+mod banners;
 mod bars;
 mod bluetooth;
 mod lyrics;
@@ -126,6 +127,23 @@ struct Notice {
     toast: bool,
     body: String,
     logo: Option<std::sync::Arc<Vec<u8>>>,
+    /// The app that sent the notification, opened by a click on it.
+    app_id: String,
+}
+
+/// Opens the app with this AppUserModelID, as its tile in Start would.
+/// Windows lets no other app click a notification itself, so this is as
+/// close to it as the island gets.
+fn open_app(app_id: &str) {
+    // An id the shell gave, inside its apps folder: nothing that could leave
+    // it or pass on arguments.
+    if app_id.is_empty() || app_id.contains(['"', ':', '/']) || app_id.contains("..") {
+        return;
+    }
+    let target = HSTRING::from(format!("shell:AppsFolder\\{app_id}"));
+    unsafe {
+        ShellExecuteW(None, w!("open"), &target, None, None, SW_SHOWNORMAL);
+    }
 }
 
 /// How long a notification's glance stays: a touch longer than the others,
@@ -227,6 +245,14 @@ struct App {
     open_width_setting: f32,
     /// That width as it fits the screen now ([`layout::fit_open_width`]).
     open_width: f32,
+    /// The most the song's glance grows to on this screen.
+    peek_most: f32,
+    /// Windows' banners are turned off for the island to tell alone.
+    banners_off: bool,
+    /// The song's glance and the closed island with music, as wide as their
+    /// text needs ([`layout::peek_width`], [`layout::closed_width`]).
+    peek_w: f32,
+    closed_w: f32,
     /// The open island's page: the one last chosen (while the app runs).
     page: Page,
     timer: focus::Timer,
@@ -335,6 +361,7 @@ impl App {
         self.scale = scale;
         // Small or scaled-up screens get a narrower open island.
         let fit = layout::fit_open_width(self.open_width_setting, mon.width / scale);
+        self.peek_most = layout::fit_open_width(layout::PEEK_MOST, mon.width / scale);
         if fit != self.open_width {
             self.open_width = fit;
             if self.open {
@@ -512,6 +539,10 @@ impl App {
             lyrics,
             open: self.open_layout(),
             glance: self.glance() && lyrics.is_some_and(|l| !l.current().trim().is_empty()),
+            peek_width: self.peek_size().0,
+            closed_width: self.closed_w,
+            openness: self.openness(),
+            peek_view: self.peek_view,
         };
         let drawn = match &mut self.renderer {
             Some(r) => r.draw(&scene),
@@ -731,6 +762,10 @@ impl App {
             }
         }
         let t = a.toast;
+        // An app new to the island: its next ones come without a banner.
+        if self.banners_off {
+            banners::quiet(&t.app_id);
+        }
         let n = Notice {
             icon: island_core::notifications::ICON,
             tint: render::WHITE,
@@ -739,6 +774,7 @@ impl App {
             toast: true,
             body: t.body,
             logo: a.logo,
+            app_id: t.app_id,
             ..Default::default()
         };
         self.pulse = Some(Instant::now());
@@ -812,7 +848,20 @@ impl App {
         (lx, (y - body.y) / s)
     }
 
+    /// A notification's glance is out (not yet giving way).
+    fn toast_shown(&self) -> bool {
+        self.peek && self.notice.as_ref().is_some_and(|n| n.toast)
+    }
+
     fn click(&mut self, x: f32, y: f32) {
+        // On a notification: its app, and the glance has done its job.
+        if !self.open && self.toast_shown() {
+            if let Some(n) = &self.notice {
+                open_app(&n.app_id);
+            }
+            self.set_peek(false);
+            return;
+        }
         if !self.open {
             return;
         }
@@ -886,6 +935,17 @@ impl App {
 
     /// How visible the closed, glance and open contents are, from the
     /// body's height: each one fades as the body leaves its size.
+    /// How open the body is, from the small view it grows from (the closed
+    /// island or the glance) to the open one: 0 to 1.
+    fn openness(&self) -> f32 {
+        let small = if self.peek_view {
+            self.peek_size().1
+        } else {
+            CLOSED.1
+        };
+        ((self.height.value - small) / (OPEN.1 - small)).clamp(0.0, 1.0)
+    }
+
     fn alphas(&self) -> [f32; 3] {
         let h = self.height.value;
         let open = ((h - CLOSED.1) / (OPEN.1 - CLOSED.1)).clamp(0.0, 1.0);
@@ -925,7 +985,21 @@ impl App {
 
     /// The window is sized for the widest the island gets.
     fn widest(&self) -> f32 {
-        self.open_width
+        self.open_width.max(self.peek_most)
+    }
+
+    /// Measures the closed island's and the song's glance's text, for
+    /// their widths: the song's name, and the line being sung if it shows.
+    fn fit_text(&mut self) {
+        let Some(r) = &self.renderer else { return };
+        let Some(t) = &self.track else { return };
+        let name = self.song_text.spans(&t.title, &t.artist);
+        self.closed_w = layout::closed_width(r.text_width(&name, true));
+        let line = match self.showing() {
+            Before::Line(l) => vec![(l, false)],
+            _ => name,
+        };
+        self.peek_w = layout::peek_width(r.text_width(&line, false), self.peek_most);
     }
 
     /// The open island's layout now: a column for the lines if there are.
@@ -964,8 +1038,10 @@ impl App {
             island_core::notifications::SIZE
         } else if level && !self.glance() {
             glance::LEVEL
-        } else {
+        } else if self.notice.is_some() {
             layout::PEEK
+        } else {
+            (self.peek_w, layout::PEEK.1)
         }
     }
 
@@ -1028,6 +1104,10 @@ impl App {
             // closed: it is just there.
             let step = matches!((self.lyric_index, index), (Some(a), Some(b)) if b == a + 1);
             self.lyric_index = index;
+            // Closed, the glance grows or shrinks to the new line.
+            if !self.open && self.glance() {
+                self.retarget();
+            }
             let column = self.open_layout().lyrics_rect().is_some();
             self.lyric_moved = (self.open && column && step).then(Instant::now);
             if self.lyric_moved.is_some() && self.last_frame.is_none() {
@@ -1072,13 +1152,14 @@ impl App {
         if self.peeking() && !self.open {
             self.peek_view = true;
         }
+        self.fit_text();
         let (w, h) = if self.open {
             self.open_size()
         } else if self.peeking() {
             self.peek_size()
         } else if self.track.is_some() {
             // Wide enough for the song's name.
-            (layout::CLOSED_MEDIA_WIDTH, CLOSED.1)
+            (self.closed_w, CLOSED.1)
         } else {
             CLOSED
         };
@@ -1205,6 +1286,16 @@ impl App {
                     )
                 })
                 .flatten();
+        }
+        // Windows' banners off only while the island can tell them instead.
+        let alone = !s.windows_banners && self.notifications.is_some();
+        if alone != self.banners_off {
+            self.banners_off = alone;
+            if alone {
+                banners::quiet_all();
+            } else {
+                banners::restore();
+            }
         }
         self.lyrics_column = s.open_lyrics;
         self.open_width_setting = s.open_width();
@@ -1486,7 +1577,11 @@ impl App {
                 unsafe {
                     let _ = KillTimer(Some(self.hwnd), HOVER_TIMER);
                 }
-                if self.tracking {
+                // Over a notification the pointer is there to click it: the
+                // player waits until it is gone.
+                if self.tracking && self.toast_shown() {
+                    unsafe { SetTimer(Some(self.hwnd), HOVER_TIMER, HOVER_DELAY_MS, None) };
+                } else if self.tracking {
                     self.set_open(true);
                 }
             }
@@ -1606,7 +1701,13 @@ impl App {
                     self.open_menu();
                 }
             }
-            WM_DESTROY => unsafe { PostQuitMessage(0) },
+            WM_DESTROY => {
+                // Gone, the island tells nothing: the banners come back.
+                if self.banners_off {
+                    banners::restore();
+                }
+                unsafe { PostQuitMessage(0) }
+            }
             _ if msg == self.taskbar_created && msg != 0 => {
                 if let Some(t) = &self.tray {
                     t.add(self.texts.name);
@@ -1833,6 +1934,10 @@ fn main() -> Result<()> {
             open_width_setting: defaults.open_width(),
             // Fitted to the screen by the first layout.
             open_width: defaults.open_width(),
+            peek_most: layout::PEEK.0,
+            banners_off: false,
+            peek_w: layout::PEEK.0,
+            closed_w: layout::CLOSED_MEDIA_WIDTH,
             page: defaults.default_page,
             timer: focus::Timer::new(&defaults.focus),
             start: Instant::now(),

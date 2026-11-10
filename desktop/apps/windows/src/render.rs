@@ -94,6 +94,14 @@ pub struct Scene<'a> {
     pub open: layout::Open,
     /// The glance shows the line being sung instead of the song.
     pub glance: bool,
+    /// The song's glance and the closed island with music, as wide as
+    /// their text needs (DIPs).
+    pub peek_width: f32,
+    pub closed_width: f32,
+    /// How far the body is from its small size (closed or the glance it
+    /// grows from, `peek_view`) to the open one: 0 to 1.
+    pub openness: f32,
+    pub peek_view: bool,
     /// The open island's page, and the tabs' right end: the time of day,
     /// or the focus timer while it runs.
     pub page: Page,
@@ -256,6 +264,12 @@ fn windows_accent() -> [f32; 3] {
     system_accent()
 }
 
+/// How much the open view is scaled so it fits the body while the island
+/// grows to it or shrinks from it: 1 once open.
+fn open_fit(s: &Scene) -> f32 {
+    (s.size.0 / s.open.width).clamp(0.5, 1.0)
+}
+
 /// The system's accent color, brightened for the black island the way a
 /// cover's is (see [`layout::accent`]).
 fn system_accent() -> [f32; 3] {
@@ -339,6 +353,8 @@ pub struct Renderer {
     // Kept alive: dropping the target detaches the visual from the window.
     _target: IDCompositionTarget,
     visual: IDCompositionVisual,
+    /// While the cover travels between views, they leave it out.
+    morphing: bool,
     surface: Option<(IDCompositionSurface, u32, u32)>,
     fill: ID2D1SolidColorBrush,
     ink: ID2D1SolidColorBrush,
@@ -521,6 +537,7 @@ impl Renderer {
                 bars,
                 bars_at: None,
                 view: (0.0, 1.0, 0.0),
+                morphing: false,
                 drawn: None,
                 icons: Default::default(),
                 factory,
@@ -734,6 +751,10 @@ impl Renderer {
     /// Fills `r` (DIPs, in the content space) with the cover, or a dim
     /// square when there is none.
     fn draw_art(&mut self, track: &Track, r: Rect, radius: f32, alpha: f32, scale: f32) {
+        // The views leave the cover to the one travelling between them.
+        if self.morphing {
+            return;
+        }
         let rounded = D2D1_ROUNDED_RECT {
             rect: rf(r),
             radiusX: radius,
@@ -1045,7 +1066,7 @@ impl Renderer {
         };
         let p = layout::player(s.open);
         let art = shift(layout::ART, dx);
-        if self.accent.is_some() {
+        if self.accent.is_some() && !self.morphing {
             // A halo of the cover's color around it, soft at its edge.
             let theme = self.theme();
             for i in 1..=6 {
@@ -1219,15 +1240,19 @@ impl Renderer {
             Some(Before::Line(line)) if !same_song => {
                 self.peek_song(s, Some(line), dx, old_dy, old_a, old_a)
             }
-            Some(Before::Line(line)) => {
-                self.peek_text(&[(line.to_string(), false)], dx, old_dy, old_a)
-            }
+            Some(Before::Line(line)) => self.peek_text(
+                &[(line.to_string(), false)],
+                s.peek_width,
+                dx,
+                old_dy,
+                old_a,
+            ),
             Some(Before::Song) if !same_song => self.peek_song(s, None, dx, old_dy, old_a, old_a),
             Some(Before::Song) => {
                 let spans = s
                     .track
                     .map_or(vec![], |t| s.song.spans(&t.title, &t.artist));
-                self.peek_text(&spans, dx, old_dy, old_a);
+                self.peek_text(&spans, s.peek_width, dx, old_dy, old_a);
             }
             None => {}
         }
@@ -1244,9 +1269,9 @@ impl Renderer {
         self.peek_song(s, line, dx, new_dy, new_a, art_a);
     }
 
-    fn peek_text(&mut self, spans: &[(String, bool)], dx: f32, dy: f32, alpha: f32) {
+    fn peek_text(&mut self, spans: &[(String, bool)], width: f32, dx: f32, dy: f32, alpha: f32) {
         if alpha > 0.0 {
-            let r = lift(shift(layout::PEEK_TEXT, dx), dy);
+            let r = lift(shift(layout::peek_parts(width).1, dx), dy);
             self.song(spans, &self.text.peek, r, alpha);
         }
     }
@@ -1264,14 +1289,15 @@ impl Renderer {
     ) {
         let Some(t) = s.track else { return };
         if art_a > 0.0 {
-            self.draw_art(t, shift(layout::PEEK_ART, dx), 7.0, art_a, s.scale);
-            self.bars(t, shift(layout::PEEK_BARS, dx), art_a);
+            let (art, _, bars) = layout::peek_parts(s.peek_width);
+            self.draw_art(t, shift(art, dx), 7.0, art_a, s.scale);
+            self.bars(t, shift(bars, dx), art_a);
         }
         let spans = match line {
             Some(l) => vec![(l.to_string(), false)],
             None => s.song.spans(&t.title, &t.artist),
         };
-        self.peek_text(&spans, dx, dy, alpha);
+        self.peek_text(&spans, s.peek_width, dx, dy, alpha);
     }
 
     fn peek_notice(&mut self, n: &Notice, s: &Scene, dx: f32, dy: f32, alpha: f32) {
@@ -1475,11 +1501,32 @@ impl Renderer {
             }
             return;
         };
-        self.draw_art(t, shift(layout::SMALL_ART, dx), 5.0, alpha, s.scale);
+        let (art, text, bars) = layout::closed_parts(s.closed_width);
+        self.draw_art(t, shift(art, dx), 5.0, alpha, s.scale);
         let spans = s.song.spans(&t.title, &t.artist);
-        let text = shift(layout::CLOSED_TEXT, dx);
-        self.song(&spans, &self.text.closed, text, alpha);
-        self.bars(t, shift(layout::BARS, dx), alpha);
+        self.song(&spans, &self.text.closed, shift(text, dx), alpha);
+        self.bars(t, shift(bars, dx), alpha);
+    }
+
+    /// How wide a line of the closed island's text (`closed`) or of the
+    /// song's glance takes, in DIPs, on one line.
+    pub fn text_width(&self, spans: &[(String, bool)], closed: bool) -> f32 {
+        let text: Vec<u16> = spans.iter().flat_map(|s| s.0.encode_utf16()).collect();
+        let format = if closed {
+            &self.text.closed
+        } else {
+            &self.text.peek
+        };
+        unsafe {
+            let Ok(layout) = self.text.dw.CreateTextLayout(&text, format, 4000.0, 64.0) else {
+                return 0.0;
+            };
+            let mut m = DWRITE_TEXT_METRICS::default();
+            if layout.GetMetrics(&mut m).is_err() {
+                return 0.0;
+            }
+            m.widthIncludingTrailingWhitespace.ceil()
+        }
     }
 
     /// The bars are composition visuals (see `bars.rs`): here we only note
@@ -1500,8 +1547,50 @@ impl Renderer {
 
     /// Places the next view for its entrance at visibility `a`, scaled
     /// about (`cx`, 0) of the content; gives its opacity.
-    fn enter(&mut self, base: &Matrix3x2, cx: f32, a: f32) -> f32 {
+    /// Where the cover is while the island opens or closes (content DIPs)
+    /// and its corner; `None` at rest, or when one end has no cover (a
+    /// notice's glance, the focus page).
+    fn morph(&self, s: &Scene) -> Option<(Rect, f32)> {
+        let t = s.openness;
+        if s.track.is_none() || s.page != Page::Home || !(0.001..0.999).contains(&t) {
+            return None;
+        }
+        let (small, radius) = if s.peek_view {
+            if s.notice.is_some() {
+                return None;
+            }
+            let dx = (s.size.0 - s.peek_width) / 2.0;
+            (shift(layout::peek_parts(s.peek_width).0, dx), 7.0)
+        } else {
+            let dx = (s.size.0 - s.closed_width) / 2.0;
+            (shift(layout::closed_parts(s.closed_width).0, dx), 5.0)
+        };
+        // The player's cover where the open view, scaled to the body, has it.
+        let (cx, k) = (s.size.0 / 2.0, open_fit(s));
+        let big = Rect {
+            x: cx + ((s.size.0 - s.open.width) / 2.0 + layout::ART.x - cx) * k,
+            y: (pages::PAGE_Y + layout::ART.y) * k,
+            width: layout::ART.width * k,
+            height: layout::ART.height * k,
+        };
+        let e = t * t * (3.0 - 2.0 * t);
+        let mix = |a: f32, b: f32| a + (b - a) * e;
+        Some((
+            Rect {
+                x: mix(small.x, big.x),
+                y: mix(small.y, big.y),
+                width: mix(small.width, big.width),
+                height: mix(small.height, big.height),
+            },
+            mix(radius, 10.0),
+        ))
+    }
+
+    /// `fit` scales the view further, about the same point: the open one
+    /// grows with the body instead of showing at full size, cut by it.
+    fn enter(&mut self, base: &Matrix3x2, cx: f32, a: f32, fit: f32) -> f32 {
         let (opacity, k, drop) = layout::entrance(a);
+        let k = k * fit;
         self.view = (cx, k, drop);
         unsafe {
             self.dc
@@ -1691,23 +1780,33 @@ impl Renderer {
                 );
                 let [closed, peek, open] = s.alpha;
                 let cx = s.size.0 / 2.0;
+                // Opening or closing, the cover is one: it travels and grows
+                // between its small place and the player's, drawn once on
+                // top, instead of one fading out as the other fades in.
+                let morph = self.morph(s);
+                self.morphing = morph.is_some();
                 if closed > 0.0 {
                     let w = if s.track.is_some() {
-                        layout::CLOSED_MEDIA_WIDTH
+                        s.closed_width
                     } else {
                         CLOSED_W
                     };
-                    let a = self.enter(&base, cx, closed);
+                    let a = self.enter(&base, cx, closed, 1.0);
                     self.draw_closed(s, (s.size.0 - w) / 2.0, a);
                 }
                 if peek > 0.0 {
-                    let a = self.enter(&base, cx, peek);
-                    self.draw_peek(s, (s.size.0 - layout::PEEK.0) / 2.0, a);
+                    let a = self.enter(&base, cx, peek, 1.0);
+                    self.draw_peek(s, (s.size.0 - s.peek_width) / 2.0, a);
                 }
                 if open > 0.0 {
-                    let a = self.enter(&base, cx, open);
+                    let a = self.enter(&base, cx, open, open_fit(s));
                     let w = s.open.width;
                     self.draw_open(s, (s.size.0 - w) / 2.0, a);
+                }
+                self.morphing = false;
+                if let (Some((r, radius)), Some(t)) = (morph, s.track) {
+                    self.dc.SetTransform(&base);
+                    self.draw_art(t, r, radius, 1.0, s.scale);
                 }
                 self.view = (0.0, 1.0, 0.0);
                 self.dc.PopAxisAlignedClip();
