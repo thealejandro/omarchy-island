@@ -46,6 +46,7 @@ that isn't valid JSON is ignored until it is fixed.
 | `longBreakEvery` | 2 to 8 (rounds of focus) | `4` |
 | `volumeGlance` | `true`, `false` | `true` |
 | `privacyGlance` | `true`, `false` | `true` |
+| `bluetoothGlance` | `true`, `false` | `true` |
 
 While music plays (any app in Windows' media controls), the closed island
 shows the cover, the song and bars that move with the music; a new song
@@ -86,6 +87,11 @@ at it with the app's name (orange for the microphone, green for the
 camera), and again when the last one stops. It reads what Windows' privacy
 settings keep and waits on the registry's own notice of a change.
 `privacyGlance: false` turns it off.
+
+A paired Bluetooth device that connects or disconnects (headphones, a
+speaker, a keyboard) gets a glance with its name. Only paired devices are
+watched, so it never scans for new ones. `bluetoothGlance: false` turns it
+off.
 
 For trying things out, the command line wins over the file:
 `--placement`, `--monitor`, `--text-align`, `--song-text`, `--lyrics`,

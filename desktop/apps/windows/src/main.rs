@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod bars;
+mod bluetooth;
 mod lyrics;
 mod media;
 mod pacer;
@@ -15,6 +16,7 @@ mod volume;
 use std::cell::RefCell;
 use std::time::Instant;
 
+use island_core::bluetooth::Event as BtEvent;
 use island_core::focus::{self, Ended, Lengths, Phase};
 use island_core::glance;
 use island_core::media as layout;
@@ -95,6 +97,8 @@ const WM_APP_VOLUME: u32 = WM_APP + 7;
 const WM_APP_SPEAKERS: u32 = WM_APP + 8;
 /// Who uses the microphone or camera changed (see `privacy.rs`).
 const WM_APP_PRIVACY: u32 = WM_APP + 9;
+/// A Bluetooth device connected or disconnected (see `bluetooth.rs`).
+const WM_APP_BLUETOOTH: u32 = WM_APP + 10;
 
 /// A glance's content, kept until it ends.
 struct Notice {
@@ -213,6 +217,8 @@ struct App {
     /// and the apps last seen using each (`Device::ALL`'s order).
     privacy: Option<privacy::Privacy>,
     users: [Vec<String>; 2],
+    /// The watch on paired Bluetooth devices, while that glance is on.
+    bluetooth: Option<bluetooth::Bluetooth>,
 }
 
 thread_local! {
@@ -554,6 +560,27 @@ impl App {
             level: Some(if muted { 0.0 } else { level }),
         };
         self.notify(n, glance::LEVEL_MS);
+    }
+
+    /// A paired Bluetooth device connected or disconnected: a glance for
+    /// the last change told (a burst ends where it ended up).
+    fn bluetooth_changed(&mut self) {
+        let Some(e) = self.bluetooth.as_ref().and_then(|b| b.take().pop()) else {
+            return;
+        };
+        let t = self.texts;
+        let (title, name) = match e {
+            BtEvent::Connected(n) => (t.connected, n),
+            BtEvent::Disconnected(n) => (t.disconnected, n),
+        };
+        let n = Notice {
+            icon: island_core::bluetooth::ICON,
+            tint: island_core::bluetooth::TINT,
+            title,
+            detail: name,
+            level: None,
+        };
+        self.notify(n, PEEK_MS);
     }
 
     /// Who uses `Device::ALL[i]` may have changed: a glance if an app
@@ -951,6 +978,12 @@ impl App {
             // What is in use already was told by Windows' own light.
             self.users = Device::ALL.map(privacy::using);
         }
+        if s.bluetooth_glance != self.bluetooth.is_some() {
+            self.bluetooth = s
+                .bluetooth_glance
+                .then(|| bluetooth::Bluetooth::start(self.hwnd, WM_APP_BLUETOOTH).ok())
+                .flatten();
+        }
         self.lyrics_column = s.open_lyrics;
         self.open_width_setting = s.open_width();
         self.layout();
@@ -1255,6 +1288,7 @@ impl App {
             WM_TIMER if wp.0 == FOCUS_TIMER => self.focus_ended(),
             WM_APP_VOLUME if self.volume.is_some() => self.volume_changed(volume::read(wp, lp)),
             WM_APP_PRIVACY if self.privacy.is_some() => self.privacy_changed(wp.0),
+            WM_APP_BLUETOOTH => self.bluetooth_changed(),
             WM_APP_SPEAKERS => {
                 // New speakers come with their own volume: no glance for it.
                 if let Some(v) = &mut self.volume {
@@ -1572,6 +1606,7 @@ fn main() -> Result<()> {
             last_volume: None,
             privacy: None,
             users: Default::default(),
+            bluetooth: None,
         };
         APP.with_borrow_mut(|a| *a = Some(app));
         // A file with a typo at start: the defaults until it is fixed.
