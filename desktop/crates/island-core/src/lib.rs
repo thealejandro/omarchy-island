@@ -7,6 +7,7 @@
 
 pub mod lyrics;
 pub mod media;
+pub mod menu;
 pub mod monitor;
 pub mod settings;
 pub mod shape;
