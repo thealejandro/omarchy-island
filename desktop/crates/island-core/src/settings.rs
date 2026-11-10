@@ -69,7 +69,13 @@ pub struct Settings {
     pub privacy_glance: bool,
     /// A glance when a paired Bluetooth device connects or disconnects.
     pub bluetooth_glance: bool,
+    /// How late the lyrics follow the position the player tells, in ms:
+    /// the sound comes out later than that (more so over Bluetooth).
+    pub lyrics_delay: u32,
 }
+
+/// `lyricsDelay`'s range, in ms.
+pub const LYRICS_DELAY: (u32, u32) = (0, 2000);
 
 impl Default for Settings {
     fn default() -> Self {
@@ -87,6 +93,7 @@ impl Default for Settings {
             volume_glance: true,
             privacy_glance: true,
             bluetooth_glance: true,
+            lyrics_delay: 200,
         }
     }
 }
@@ -109,7 +116,8 @@ pub const TEMPLATE: &str = r#"{
   "longBreakEvery": 4,
   "volumeGlance": true,
   "privacyGlance": true,
-  "bluetoothGlance": true
+  "bluetoothGlance": true,
+  "lyricsDelay": 200
 }
 "#;
 
@@ -178,6 +186,7 @@ impl Settings {
             volume_glance: flag("volumeGlance", d.volume_glance),
             privacy_glance: flag("privacyGlance", d.privacy_glance),
             bluetooth_glance: flag("bluetoothGlance", d.bluetooth_glance),
+            lyrics_delay: minutes("lyricsDelay", LYRICS_DELAY, d.lyrics_delay),
         })
     }
 
@@ -281,6 +290,9 @@ mod tests {
         assert!(parse(r#"{"volumeGlance": 0}"#).volume_glance);
         assert!(!parse(r#"{"privacyGlance": false}"#).privacy_glance);
         assert!(!parse(r#"{"bluetoothGlance": false}"#).bluetooth_glance);
+        assert_eq!(parse(r#"{"lyricsDelay": 350}"#).lyrics_delay, 350);
+        assert_eq!(parse(r#"{"lyricsDelay": -5}"#).lyrics_delay, 200);
+        assert_eq!(parse(r#"{"lyricsDelay": 9000}"#).lyrics_delay, 200);
         // A BOM (Notepad's UTF-8) is fine.
         assert!(parse("\u{feff}{\"lyrics\": true}").lyrics);
         // Too big to be a settings file.

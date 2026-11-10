@@ -1,9 +1,10 @@
 //! Paired Bluetooth devices connecting and disconnecting, from the system's
 //! device watcher (only paired devices: it never scans for new ones). Its
 //! events come on the system's threads; they keep the list (see
-//! `island_core::bluetooth`) and post the window to read what changed.
+//! `island_core::bluetooth`) and post the window, which reads what held.
 
 use std::sync::{Arc, Mutex};
+use std::time::Instant;
 
 use island_core::bluetooth::{Event, Links};
 use windows::Devices::Enumeration::{
@@ -21,13 +22,6 @@ const FILTER: &str = "(System.Devices.Aep.ProtocolId:=\"{e0cbf06c-cd8b-4647-bb8a
      AND System.Devices.Aep.IsPaired:=System.StructuredQueryType.Boolean#True";
 const CONNECTED: &str = "System.Devices.Aep.IsConnected";
 
-#[derive(Default)]
-struct Shared {
-    links: Links,
-    /// Told, not yet read by the window.
-    events: Vec<Event>,
-}
-
 fn connected(props: &IMapView<HSTRING, IInspectable>) -> Option<bool> {
     let v = props.Lookup(&HSTRING::from(CONNECTED)).ok()?;
     v.cast::<IReference<bool>>().ok()?.Value().ok()
@@ -35,11 +29,13 @@ fn connected(props: &IMapView<HSTRING, IInspectable>) -> Option<bool> {
 
 pub struct Bluetooth {
     watcher: DeviceWatcher,
-    shared: Arc<Mutex<Shared>>,
+    links: Arc<Mutex<Links>>,
+    /// The clock the list's times are on.
+    start: Instant,
 }
 
 impl Bluetooth {
-    /// Each change goes to `hwnd` as `msg`; then call [`Bluetooth::take`].
+    /// Each change goes to `hwnd` as `msg`; then call [`Bluetooth::due`].
     pub fn start(hwnd: HWND, msg: u32) -> Result<Self> {
         let props: IIterable<HSTRING> = vec![HSTRING::from(CONNECTED)].into();
         let watcher = DeviceInformation::CreateWatcherWithKindAqsFilterAndAdditionalProperties(
@@ -47,72 +43,70 @@ impl Bluetooth {
             &props,
             DeviceInformationKind::AssociationEndpoint,
         )?;
-        let shared = Arc::new(Mutex::new(Shared::default()));
+        let links = Arc::new(Mutex::new(Links::default()));
+        let start = Instant::now();
         let hwnd = hwnd.0 as isize;
-        // Keeps `e` for the window and wakes it.
-        let tell = move |s: &mut Shared, e: Option<Event>| {
-            if let Some(e) = e {
-                s.events.push(e);
-                unsafe {
-                    let _ = PostMessageW(Some(HWND(hwnd as *mut _)), msg, WPARAM(0), LPARAM(0));
-                }
-            }
+        let at = move || start.elapsed().as_millis() as u64;
+        let wake = move || unsafe {
+            let _ = PostMessageW(Some(HWND(hwnd as *mut _)), msg, WPARAM(0), LPARAM(0));
         };
 
-        let s = shared.clone();
+        let l = links.clone();
         watcher.Added(&TypedEventHandler::<DeviceWatcher, DeviceInformation>::new(
             move |_, d| {
-                if let (Some(d), Ok(mut s)) = (d.as_ref(), s.lock()) {
+                if let (Some(d), Ok(mut l)) = (d.as_ref(), l.lock()) {
                     let on = d.Properties().ok().and_then(|p| connected(&p));
-                    let e = s.links.added(
-                        &d.Id()?.to_string(),
-                        &d.Name()?.to_string(),
-                        on.unwrap_or(false),
-                    );
-                    tell(&mut s, e);
+                    let (id, name) = (d.Id()?.to_string(), d.Name()?.to_string());
+                    l.added(&id, &name, on.unwrap_or(false), at());
+                    wake();
                 }
                 Ok(())
             },
         ))?;
-        let s = shared.clone();
+        let l = links.clone();
         watcher.Updated(
             &TypedEventHandler::<DeviceWatcher, DeviceInformationUpdate>::new(move |_, u| {
-                if let (Some(u), Ok(mut s)) = (u.as_ref(), s.lock()) {
+                if let (Some(u), Ok(mut l)) = (u.as_ref(), l.lock()) {
                     let on = u.Properties().ok().and_then(|p| connected(&p));
-                    let e = s.links.updated(&u.Id()?.to_string(), None, on);
-                    tell(&mut s, e);
+                    if on.is_some() {
+                        l.updated(&u.Id()?.to_string(), None, on, at());
+                        wake();
+                    }
                 }
                 Ok(())
             }),
         )?;
-        let s = shared.clone();
+        let l = links.clone();
         watcher.Removed(
             &TypedEventHandler::<DeviceWatcher, DeviceInformationUpdate>::new(move |_, u| {
-                if let (Some(u), Ok(mut s)) = (u.as_ref(), s.lock()) {
-                    s.links.removed(&u.Id()?.to_string());
+                if let (Some(u), Ok(mut l)) = (u.as_ref(), l.lock()) {
+                    l.removed(&u.Id()?.to_string());
                 }
                 Ok(())
             }),
         )?;
-        let s = shared.clone();
+        let l = links.clone();
         watcher.EnumerationCompleted(&TypedEventHandler::<DeviceWatcher, IInspectable>::new(
             move |_, _| {
-                if let Ok(mut s) = s.lock() {
-                    s.links.ready();
+                if let Ok(mut l) = l.lock() {
+                    l.ready();
                 }
                 Ok(())
             },
         ))?;
         watcher.Start()?;
-        Ok(Self { watcher, shared })
+        Ok(Self {
+            watcher,
+            links,
+            start,
+        })
     }
 
-    /// What was told since the last call.
-    pub fn take(&self) -> Vec<Event> {
-        self.shared
-            .lock()
-            .map(|mut s| std::mem::take(&mut s.events))
-            .unwrap_or_default()
+    /// The changes that have held since the last call, and in how many ms
+    /// to ask again for one still settling.
+    pub fn due(&self) -> (Vec<Event>, Option<u64>) {
+        let at = self.start.elapsed().as_millis() as u64;
+        self.links.lock().map(|mut l| l.due(at)).unwrap_or_default()
     }
 }
 
