@@ -1276,7 +1276,8 @@ fn locale() -> String {
 
 /// The time of day as the user's locale writes it, without seconds.
 fn time_of_day() -> String {
-    let mut buf = [0u16; 32];
+    // A custom format can take up to 80 characters (LOCALE_STIMEFORMAT).
+    let mut buf = [0u16; 81];
     let n = unsafe {
         GetTimeFormatEx(
             PCWSTR::null(),

@@ -139,7 +139,8 @@ impl Timer {
                 self.phase = if long { Phase::LongBreak } else { Phase::Break };
                 let ms = l.ms(self.phase);
                 self.left = ms;
-                self.until = Some(at + ms);
+                // A skip while paused leaves the break paused too.
+                self.until = self.until.map(|_| at + ms);
                 Ended::Focus {
                     break_minutes: l.minutes(self.phase),
                     long,
@@ -264,6 +265,20 @@ mod tests {
         assert_eq!(t.rounds, 1);
         t.reset(&l);
         assert_eq!(t, Timer::new(&l));
+    }
+
+    #[test]
+    fn a_skip_keeps_the_timer_running_or_paused() {
+        let l = Lengths::default();
+        let mut t = Timer::new(&l);
+        t.skip(0, &l);
+        assert!(!t.running());
+        assert_eq!(t.left_ms(MIN), 5 * MIN);
+        t.reset(&l);
+        t.toggle(0);
+        t.skip(MIN, &l);
+        assert_eq!(t.left_ms(MIN), 5 * MIN);
+        assert!(t.running());
     }
 
     #[test]
