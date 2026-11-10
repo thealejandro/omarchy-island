@@ -1,0 +1,15 @@
+[package]
+name = "island-core"
+description = "Platform-neutral logic of the island: lyrics, texts and settings"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+# regex-lite: small and enough here (the patterns' keywords are ASCII).
+regex-lite = "0.1"
+serde_json = "1"
+
+[lints]
+workspace = true
