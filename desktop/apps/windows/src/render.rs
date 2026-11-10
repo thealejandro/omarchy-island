@@ -29,6 +29,10 @@ use windows::Win32::Graphics::Direct2D::{
     ID2D1BitmapBrush1, ID2D1Brush, ID2D1DeviceContext, ID2D1Factory1, ID2D1Image,
     ID2D1PathGeometry, ID2D1RenderTarget, ID2D1SolidColorBrush,
 };
+use windows::Win32::Graphics::Direct2D::{
+    D2D1_ANTIALIAS_MODE_PER_PRIMITIVE, D2D1_LAYER_OPTIONS1_NONE, D2D1_LAYER_PARAMETERS1,
+    ID2D1Geometry, ID2D1Layer,
+};
 use windows::Win32::Graphics::Direct3D::{D3D_DRIVER_TYPE_HARDWARE, D3D_DRIVER_TYPE_WARP};
 use windows::Win32::Graphics::Direct3D11::{
     D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D11_SDK_VERSION, D3D11CreateDevice, ID3D11Device,
@@ -1332,10 +1336,33 @@ impl Renderer {
             return;
         }
         let head = at * total;
+        // Only inside the island: the light hugs its edge, never spills.
+        let params = D2D1_LAYER_PARAMETERS1 {
+            contentBounds: D2D_RECT_F {
+                left: f32::MIN,
+                top: f32::MIN,
+                right: f32::MAX,
+                bottom: f32::MAX,
+            },
+            geometricMask: std::mem::ManuallyDrop::new(geo.cast::<ID2D1Geometry>().ok()),
+            maskAntialiasMode: D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
+            maskTransform: Matrix3x2::identity(),
+            opacity: 1.0,
+            opacityBrush: std::mem::ManuallyDrop::new(None),
+            layerOptions: D2D1_LAYER_OPTIONS1_NONE,
+        };
+        unsafe { self.dc.PushLayer(&params, None::<&ID2D1Layer>) };
+        // (Each stroke shows its inner half: they are twice as wide.)
         for (width, tail, k, white) in [
-            (10.0, 0.34, 0.22, 0.0),
-            (4.0, 0.24, 0.55, 0.25),
-            (2.0, 0.14, 1.0, 0.6),
+            // A soft glow, stacked thin to fade off without edges...
+            (34.0, 0.3, 0.05, 0.0),
+            (26.0, 0.32, 0.06, 0.0),
+            (19.0, 0.34, 0.08, 0.0),
+            (13.0, 0.36, 0.11, 0.1),
+            (8.0, 0.36, 0.18, 0.2),
+            // ...and the line itself, bright near the head.
+            (4.5, 0.3, 0.55, 0.35),
+            (2.2, 0.16, 1.0, 0.75),
         ] {
             let w = width * scale;
             let len = (tail * period).min(period - w);
@@ -1351,7 +1378,7 @@ impl Renderer {
             let dashes = [len / w, (period - len) / w];
             let Ok(style) = (unsafe { self.factory.CreateStrokeStyle(&props, Some(&dashes)) })
             else {
-                return;
+                continue;
             };
             let [r, g, b] = color::toward_white(rgb, white);
             unsafe {
@@ -1359,6 +1386,8 @@ impl Renderer {
                 self.dc.DrawGeometry(geo, &self.ink, w, &style);
             }
         }
+        unsafe { self.dc.PopLayer() };
+        drop(std::mem::ManuallyDrop::into_inner(params.geometricMask));
     }
 
     fn draw_closed(&mut self, s: &Scene, dx: f32, alpha: f32) {

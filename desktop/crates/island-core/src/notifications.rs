@@ -73,11 +73,14 @@ pub fn ring(ms: f32) -> f32 {
 
 /// How long the light runs around the island's edge as one arrives (ms).
 pub const ORBIT_MS: f32 = 1500.0;
+/// It waits this long first, for the island to grow into the glance.
+pub const ORBIT_DELAY: f32 = 250.0;
 
 /// How far around the edge the light is, `ms` after it arrived (0 to 1:
 /// once around, fast at first and slowing to a stop), and how bright;
 /// `None` once it is done.
 pub fn orbit(ms: f32) -> Option<(f32, f32)> {
+    let ms = ms - ORBIT_DELAY;
     if !(0.0..ORBIT_MS).contains(&ms) {
         return None;
     }
@@ -236,6 +239,7 @@ mod tests {
 
     #[test]
     fn the_light_goes_once_around_and_fades() {
+        let orbit = |ms: f32| orbit(ms + ORBIT_DELAY);
         assert_eq!(orbit(-1.0), None);
         assert_eq!(orbit(ORBIT_MS), None);
         let (start, dark) = orbit(0.0).unwrap();
