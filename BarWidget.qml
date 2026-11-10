@@ -194,10 +194,15 @@ BarWidget {
 
   // ---------------------------------------------------------------- button
 
+  // While the island holds the notifications and Silence is on, the button
+  // says so, as Omarchy's own indicator would.
+  readonly property bool quiet: !!root.service && root.service.notificationsLive
+    && root.service.doNotDisturb
+
   Text {
     anchors.centerIn: parent
     visible: root.showIcon
-    text: "󰕮"
+    text: root.quiet ? "󰂛" : "󰕮"
     color: root.bar && root.bar.foreground.a > 0 ? root.bar.foreground : Commons.Color.bar.text
     font.family: Style.font.family
     font.pixelSize: Style.font.icon
