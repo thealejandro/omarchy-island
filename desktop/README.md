@@ -128,8 +128,12 @@ A click on the glance opens the app that sent it (Windows lets no other app
 click the notification itself). `windowsBanners: false` lets the island
 tell notifications alone: it turns off Windows' banner for each app (as
 the switch in Settings would; Windows' own alerts keep theirs), notes the
-ones it turned off in `%LOCALAPPDATA%islandanners.txt`, and turns
+ones it turned off in `%LOCALAPPDATA%\island\banners.txt`, and turns
 those back on when the island quits or the setting goes back to `true`.
+If the island crashed or was killed with them off, it turns them back on
+as it starts with `true`. Before uninstalling with `false`, set it to
+`true` (or quit the island) first; else turn them on again in Settings >
+System > Notifications.
 `notificationGlance: false` turns it off.
 
 The icons are filled ones from Microsoft's

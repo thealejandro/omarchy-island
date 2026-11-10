@@ -248,8 +248,10 @@ struct App {
     open_width: f32,
     /// The most the song's glance grows to on this screen.
     peek_most: f32,
-    /// Windows' banners are turned off for the island to tell alone.
-    banners_off: bool,
+    /// Windows' banners are turned off for the island to tell alone; `None`
+    /// before the first settings, which also bring back any a crashed
+    /// island left off.
+    banners_off: Option<bool>,
     /// The song's glance and the closed island with music, as wide as their
     /// text needs ([`layout::peek_width`], [`layout::closed_width`]).
     peek_w: f32,
@@ -764,7 +766,7 @@ impl App {
         }
         let t = a.toast;
         // An app new to the island: its next ones come without a banner.
-        if self.banners_off {
+        if self.banners_off == Some(true) {
             banners::quiet(&t.app_id);
         }
         let n = Notice {
@@ -1290,8 +1292,8 @@ impl App {
         }
         // Windows' banners off only while the island can tell them instead.
         let alone = !s.windows_banners && self.notifications.is_some();
-        if alone != self.banners_off {
-            self.banners_off = alone;
+        if Some(alone) != self.banners_off {
+            self.banners_off = Some(alone);
             if alone {
                 banners::quiet_all();
             } else {
@@ -1715,7 +1717,7 @@ impl App {
             }
             WM_DESTROY => {
                 // Gone, the island tells nothing: the banners come back.
-                if self.banners_off {
+                if self.banners_off == Some(true) {
                     banners::restore();
                 }
                 unsafe { PostQuitMessage(0) }
@@ -1947,7 +1949,7 @@ fn main() -> Result<()> {
             // Fitted to the screen by the first layout.
             open_width: defaults.open_width(),
             peek_most: layout::PEEK.0,
-            banners_off: false,
+            banners_off: None,
             peek_w: layout::PEEK.0,
             closed_w: layout::CLOSED_MEDIA_WIDTH,
             page: defaults.default_page,

@@ -9,6 +9,7 @@
 //! the notification center.
 
 use std::path::PathBuf;
+use std::sync::Mutex;
 
 use windows::Win32::Foundation::ERROR_SUCCESS;
 use windows::Win32::System::Registry::{
@@ -38,15 +39,19 @@ fn read_noted() -> Vec<String> {
         .unwrap_or_default()
 }
 
-fn write_noted(ids: &[String]) {
-    if let Some(p) = noted() {
-        if ids.is_empty() {
-            let _ = std::fs::remove_file(p);
-        } else {
-            let _ = std::fs::write(p, ids.join("\n") + "\n");
-        }
+/// Writes the notes; `false` if they couldn't be kept.
+fn write_noted(ids: &[String]) -> bool {
+    let Some(p) = noted() else { return false };
+    if ids.is_empty() {
+        let _ = std::fs::remove_file(p);
+        true
+    } else {
+        std::fs::write(p, ids.join("\n") + "\n").is_ok()
     }
 }
+
+/// One reader or writer of the notes at a time.
+static NOTES: Mutex<()> = Mutex::new(());
 
 /// An id that names a key under the settings, and nothing outside them.
 fn usable(app_id: &str) -> bool {
@@ -82,8 +87,14 @@ pub fn quiet(app_id: &str) {
     if !usable(app_id) || system(app_id) || show_banner(app_id) == Some(0) {
         return;
     }
+    let _notes = NOTES.lock().unwrap_or_else(|e| e.into_inner());
     let mut ids = read_noted();
     if ids.iter().any(|i| i == app_id) {
+        return;
+    }
+    // Noted first: an app turned off and not noted would stay so for good.
+    ids.push(app_id.to_string());
+    if !write_noted(&ids) {
         return;
     }
     let key = HSTRING::from(format!("{SETTINGS}\\{app_id}"));
@@ -98,8 +109,8 @@ pub fn quiet(app_id: &str) {
             4,
         )
     };
-    if e == ERROR_SUCCESS {
-        ids.push(app_id.to_string());
+    if e != ERROR_SUCCESS {
+        ids.pop();
         write_noted(&ids);
     }
 }
@@ -154,8 +165,10 @@ pub fn quiet_all() {
     }
 }
 
-/// Turns back on the banners turned off here, and forgets them.
+/// Turns back on the banners turned off here, and forgets them. Also at
+/// start, for those a crashed or killed island left off.
 pub fn restore() {
+    let _notes = NOTES.lock().unwrap_or_else(|e| e.into_inner());
     let ids = read_noted();
     if ids.is_empty() {
         return;
