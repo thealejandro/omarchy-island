@@ -29,7 +29,7 @@ Column {
       return [{ value: null, label: tr("opt_auto") }, { value: 1, label: tr("opt_mon") },
         { value: 6, label: tr("opt_sat") }, { value: 7, label: tr("opt_sun") }]
     return s.options.map(function(o) {
-      if (s.key === "language") return { value: o, label: o === "" ? tr("opt_auto") : (o === "es" ? "Español" : "English") }
+      if (s.key === "language") return { value: o, label: o === "" ? tr("opt_auto") : (o === "pt" ? "Português" : (o === "es" ? "Español" : "English")) }
       return { value: o, label: tr("opt_" + o) }
     })
   }

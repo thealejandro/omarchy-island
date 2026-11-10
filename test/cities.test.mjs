@@ -88,3 +88,10 @@ test("FALLBACK_ZONES: short and every entry valid", () => {
   assert.ok(IC.FALLBACK_ZONES.length <= 40)
   for (const z of IC.FALLBACK_ZONES) assert.ok(IC.isValidZone(z), z)
 })
+
+test("parseCities: a list that is not a JS array (from a QML signal) still counts", () => {
+  const IS = load("IslandSettings.js")
+  const seq = { 0: { name: "Pruebaville", zone: "Europe/Madrid" }, length: 1 }
+  assert.deepEqual(plain(IS.parseCities(seq)), [{ name: "Pruebaville", zone: "Europe/Madrid" }])
+  assert.deepEqual(plain(IS.withValue({}, "cities", seq, "x").cities), [{ name: "Pruebaville", zone: "Europe/Madrid" }])
+})
