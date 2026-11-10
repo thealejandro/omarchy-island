@@ -78,7 +78,7 @@ pub struct Scene<'a> {
     /// With synced lyrics: where the song is in them.
     pub lyrics: Option<LyricsView<'a>>,
     /// How the open island shows them beside the player (off without them).
-    pub column: layout::LyricsColumn,
+    pub open: layout::Open,
     /// The glance shows the line being sung instead of the song.
     pub glance: bool,
 }
@@ -103,7 +103,6 @@ impl LyricsView<'_> {
 
 /// The open and closed layouts are drawn at their full size, centered in
 /// the body, so they don't reflow while it grows.
-const OPEN_W: f32 = layout::OPEN_WIDTH;
 const CLOSED_W: f32 = 180.0;
 /// The note that stands in for a missing cover is laid out in a box this
 /// big (DIPs) and scaled to the cover's size.
@@ -611,13 +610,13 @@ impl Renderer {
             let all = Rect {
                 x: dx,
                 y: 0.0,
-                width: OPEN_W,
+                width: s.open.width,
                 height: s.size.1,
             };
             self.text(s.empty, &self.text.empty, all, 0.6 * alpha);
             return;
         };
-        let p = layout::player(s.column);
+        let p = layout::player(s.open);
         self.draw_art(t, shift(layout::ART, dx), 10.0, alpha, s.scale);
         self.text(&t.title, &self.text.title, shift(p.title, dx), alpha);
         let artist = if t.artist.is_empty() {
@@ -659,11 +658,11 @@ impl Renderer {
             (Button::Next, "\u{E893}", t.can_next),
         ] {
             let a = if on { 0.95 } else { 0.3 } * alpha;
-            let r = layout::button(b, s.column);
+            let r = layout::button(b, s.open);
             self.text(glyph, &self.text.icon, shift(r, dx), a);
         }
-        if let Some(l) = s.lyrics.filter(|_| s.column != layout::LyricsColumn::Off) {
-            self.draw_lyrics(&l, shift(s.column.rect(), dx), alpha);
+        if let (Some(l), Some(col)) = (s.lyrics, s.open.lyrics_rect()) {
+            self.draw_lyrics(&l, shift(col, dx), alpha);
         }
     }
 
@@ -921,7 +920,7 @@ impl Renderer {
                 }
                 if open > 0.0 {
                     let a = self.enter(&base, cx, open);
-                    let w = s.column.open_width();
+                    let w = s.open.width;
                     self.draw_open(s, (s.size.0 - w) / 2.0, a);
                 }
                 self.view = (0.0, 1.0, 0.0);

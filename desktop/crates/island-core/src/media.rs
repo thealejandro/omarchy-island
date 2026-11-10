@@ -146,75 +146,74 @@ const fn rect(x: f32, y: f32, width: f32, height: f32) -> Rect {
     }
 }
 
-// The open island, 560 x 180.
+// The open island, 180 tall; its width is a setting, in steps of 10.
 pub const OPEN_WIDTH: f32 = 560.0;
+/// The width by default with a column of lyrics.
+pub const OPEN_LYRICS_WIDTH: f32 = 720.0;
+pub const OPEN_WIDTH_MIN: f32 = 480.0;
+pub const OPEN_WIDTH_MAX: f32 = 960.0;
+const OPEN_WIDTH_STEP: f32 = 10.0;
 pub const ART: Rect = rect(24.0, 24.0, 88.0, 88.0);
 const TEXT_X: f32 = 128.0;
-const TEXT_WIDTH: f32 = 408.0;
+const MARGIN: f32 = 24.0;
 const BUTTON: f32 = 40.0;
 const BUTTONS_Y: f32 = 128.0;
 const BUTTONS_GAP: f32 = 64.0;
 
-// With synced lyrics the open island is wider, not taller: the lines run
-// in a column right of the player, as tall as it, so nothing is left empty.
+// With synced lyrics the open island is not taller: the lines run in a
+// column right of the player, as tall as it, so nothing is left empty.
 const LYRICS_TOP: f32 = 14.0;
 const LYRICS_HEIGHT: f32 = 152.0;
 const LYRICS_GAP_X: f32 = 20.0;
-const MARGIN: f32 = 24.0;
+/// The column's share of the room beside the cover.
+const LYRICS_SHARE: f32 = 0.42;
+/// Narrower than this the lines would break every few words: no column.
+const LYRICS_MIN_WIDTH: f32 = 180.0;
 
-/// Whether the open island shows the lyrics beside the player, and how
-/// much room they get. Compact narrows the player's text so the island only
-/// grows by what the column needs; wide keeps the player as it is.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub enum LyricsColumn {
-    Off,
-    #[default]
-    Compact,
-    Wide,
+/// The open island's width from a setting: a whole number of DIPs,
+/// rounded to a step of 10 and kept between the smallest and largest.
+pub fn parse_open_width(s: &str) -> Option<f32> {
+    let w: f32 = s.trim().parse().ok().filter(|w: &f32| w.is_finite())?;
+    let w = (w / OPEN_WIDTH_STEP).round() * OPEN_WIDTH_STEP;
+    Some(w.clamp(OPEN_WIDTH_MIN, OPEN_WIDTH_MAX))
 }
 
-impl LyricsColumn {
-    pub fn parse(s: &str) -> Option<Self> {
-        match s {
-            "off" => Some(Self::Off),
-            "compact" => Some(Self::Compact),
-            "wide" => Some(Self::Wide),
-            _ => None,
-        }
+/// How the open island is laid out: its width, and whether the lyrics
+/// take a column of it. The island keeps its width with or without lines,
+/// so it doesn't jump when they arrive; the player fills what's left.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Open {
+    pub width: f32,
+    pub lyrics: bool,
+}
+
+impl Open {
+    pub const fn new(width: f32, lyrics: bool) -> Self {
+        Self { width, lyrics }
     }
 
-    /// The player's text width beside it.
-    const fn text_width(self) -> f32 {
-        match self {
-            Self::Compact => 320.0,
-            Self::Off | Self::Wide => TEXT_WIDTH,
+    /// The column's width: a share of the room, in steps of 10; none if
+    /// that is too narrow to read.
+    fn column_width(self) -> f32 {
+        if !self.lyrics {
+            return 0.0;
         }
+        let room = self.width - TEXT_X - MARGIN - LYRICS_GAP_X;
+        let w = (room * LYRICS_SHARE / OPEN_WIDTH_STEP).round() * OPEN_WIDTH_STEP;
+        if w < LYRICS_MIN_WIDTH { 0.0 } else { w }
     }
 
-    const fn width(self) -> f32 {
-        match self {
-            Self::Off => 0.0,
-            Self::Compact => 228.0,
-            Self::Wide => 280.0,
-        }
+    /// The player's text width, beside the column if there is one.
+    fn text_width(self) -> f32 {
+        let col = self.column_width();
+        let beside = if col > 0.0 { col + LYRICS_GAP_X } else { 0.0 };
+        self.width - TEXT_X - MARGIN - beside
     }
 
-    /// Where the lines go in the open island (empty when off).
-    pub const fn rect(self) -> Rect {
-        rect(
-            TEXT_X + self.text_width() + LYRICS_GAP_X,
-            LYRICS_TOP,
-            self.width(),
-            LYRICS_HEIGHT,
-        )
-    }
-
-    /// The open island's width with it: 560 alone, 720 compact, 860 wide.
-    pub const fn open_width(self) -> f32 {
-        match self {
-            Self::Off => OPEN_WIDTH,
-            _ => self.rect().x + self.width() + MARGIN,
-        }
+    /// Where the lines go, if they have a column.
+    pub fn lyrics_rect(self) -> Option<Rect> {
+        let w = self.column_width();
+        (w > 0.0).then(|| rect(self.width - MARGIN - w, LYRICS_TOP, w, LYRICS_HEIGHT))
     }
 }
 
@@ -228,8 +227,8 @@ pub struct Player {
     buttons_center: f32,
 }
 
-pub const fn player(column: LyricsColumn) -> Player {
-    let w = column.text_width();
+pub fn player(open: Open) -> Player {
+    let w = open.text_width();
     Player {
         title: rect(TEXT_X, 26.0, w, 26.0),
         artist: rect(TEXT_X, 54.0, w, 22.0),
@@ -331,14 +330,14 @@ pub fn entrance(a: f32) -> (f32, f32, f32) {
     )
 }
 
-pub const fn button(b: Button, column: LyricsColumn) -> Rect {
+pub fn button(b: Button, open: Open) -> Rect {
     let dx = match b {
         Button::Prev => -BUTTONS_GAP,
         Button::PlayPause => 0.0,
         Button::Next => BUTTONS_GAP,
     };
     rect(
-        player(column).buttons_center + dx - BUTTON / 2.0,
+        player(open).buttons_center + dx - BUTTON / 2.0,
         BUTTONS_Y,
         BUTTON,
         BUTTON,
@@ -346,11 +345,11 @@ pub const fn button(b: Button, column: LyricsColumn) -> Rect {
 }
 
 /// The button under (`x`, `y`), if any.
-pub fn hit(x: f32, y: f32, column: LyricsColumn) -> Option<Button> {
+pub fn hit(x: f32, y: f32, open: Open) -> Option<Button> {
     [Button::Prev, Button::PlayPause, Button::Next]
         .into_iter()
         .find(|&b| {
-            let r = button(b, column);
+            let r = button(b, open);
             x >= r.x && x < r.x + r.width && y >= r.y && y < r.y + r.height
         })
 }
@@ -361,25 +360,48 @@ mod tests {
 
     #[test]
     fn lyrics_fill_the_open_island_beside_the_player() {
-        use LyricsColumn::*;
-        for c in [Compact, Wide] {
-            let (p, l) = (player(c), c.rect());
-            assert!(l.x >= p.bar.x + p.bar.width + 16.0, "{c:?}");
-            assert!(l.x + l.width <= c.open_width() - 20.0, "{c:?}");
-            // The open island's height (180).
-            assert!(l.y + l.height <= 180.0);
-            assert!(l.width >= 220.0, "{c:?}: room for a few words a line");
+        // Every width a setting can give, with and without lyrics.
+        let mut w = OPEN_WIDTH_MIN;
+        while w <= OPEN_WIDTH_MAX {
+            for lyrics in [false, true] {
+                let o = Open::new(w, lyrics);
+                let p = player(o);
+                assert!(p.bar.width >= 200.0, "{w}: room for the bar");
+                let end = p.bar.x + p.bar.width;
+                match o.lyrics_rect() {
+                    Some(l) => {
+                        assert!(lyrics);
+                        assert!(l.x >= end + 16.0, "{w}");
+                        assert_eq!(l.x + l.width, w - 24.0, "{w}");
+                        // The open island's height (180).
+                        assert!(l.y + l.height <= 180.0);
+                        assert!(l.width >= 180.0 && l.width % 10.0 == 0.0, "{w}");
+                    }
+                    None => assert_eq!(end, w - 24.0, "{w}"),
+                }
+            }
+            w += 10.0;
         }
-        assert_eq!(Off.open_width(), OPEN_WIDTH);
-        assert_eq!(Off.rect().width, 0.0);
-        assert!(player(Off).bar.x + player(Off).bar.width <= OPEN_WIDTH - 20.0);
-        // Compact stays close to the player alone; wide is a touch wider.
-        assert_eq!(Compact.open_width(), 720.0);
-        assert_eq!(Wide.open_width(), 860.0);
-        assert_eq!(LyricsColumn::default(), Compact);
-        assert_eq!(LyricsColumn::parse("wide"), Some(Wide));
-        assert_eq!(LyricsColumn::parse("off"), Some(Off));
-        assert_eq!(LyricsColumn::parse("big"), None);
+        // The default with lyrics: the player a bit narrower than alone.
+        let o = Open::new(OPEN_LYRICS_WIDTH, true);
+        assert_eq!(o.lyrics_rect().map(|l| l.width), Some(230.0));
+        assert_eq!(player(o).bar.width, 318.0);
+        assert_eq!(player(Open::new(OPEN_WIDTH, false)).bar.width, 408.0);
+        // Too narrow for a readable column: just the player.
+        assert_eq!(Open::new(540.0, true).lyrics_rect(), None);
+        assert!(Open::new(600.0, true).lyrics_rect().is_some());
+    }
+
+    #[test]
+    fn open_width_comes_in_steps_of_ten_within_limits() {
+        assert_eq!(parse_open_width("540"), Some(540.0));
+        assert_eq!(parse_open_width(" 724 "), Some(720.0));
+        assert_eq!(parse_open_width("725.5"), Some(730.0));
+        assert_eq!(parse_open_width("100"), Some(OPEN_WIDTH_MIN));
+        assert_eq!(parse_open_width("5000"), Some(OPEN_WIDTH_MAX));
+        assert_eq!(parse_open_width("ancho"), None);
+        assert_eq!(parse_open_width("NaN"), None);
+        assert_eq!(parse_open_width("inf"), None);
     }
 
     #[test]
@@ -510,24 +532,28 @@ mod tests {
 
     #[test]
     fn buttons_are_hit_inside_and_missed_between() {
-        use LyricsColumn::*;
-        assert_eq!(hit(332.0, 148.0, Off), Some(Button::PlayPause));
-        assert_eq!(hit(268.0, 148.0, Off), Some(Button::Prev));
-        assert_eq!(hit(396.0, 148.0, Off), Some(Button::Next));
-        assert_eq!(hit(300.0, 148.0, Off), None);
-        assert_eq!(hit(332.0, 60.0, Off), None);
-        assert_eq!(hit(332.0, 148.0, Wide), Some(Button::PlayPause));
-        // Compact, they follow the narrower bar's middle.
-        assert_eq!(hit(288.0, 148.0, Compact), Some(Button::PlayPause));
-        assert_eq!(hit(396.0, 148.0, Compact), None);
-        // They fit in the open island, left of the lyrics.
-        for c in [Off, Compact, Wide] {
-            let next = button(Button::Next, c);
-            assert!(next.y + next.height <= 180.0);
-            assert!(next.x + next.width <= c.open_width());
-            if c != Off {
-                assert!(next.x + next.width <= c.rect().x);
+        let alone = Open::new(OPEN_WIDTH, false);
+        assert_eq!(hit(332.0, 148.0, alone), Some(Button::PlayPause));
+        assert_eq!(hit(268.0, 148.0, alone), Some(Button::Prev));
+        assert_eq!(hit(396.0, 148.0, alone), Some(Button::Next));
+        assert_eq!(hit(300.0, 148.0, alone), None);
+        assert_eq!(hit(332.0, 60.0, alone), None);
+        // Beside lyrics, they follow the narrower bar's middle.
+        let beside = Open::new(OPEN_LYRICS_WIDTH, true);
+        assert_eq!(hit(287.0, 148.0, beside), Some(Button::PlayPause));
+        assert_eq!(hit(396.0, 148.0, beside), None);
+        // They fit in the open island, left of the lyrics, at any width.
+        let mut w = OPEN_WIDTH_MIN;
+        while w <= OPEN_WIDTH_MAX {
+            for lyrics in [false, true] {
+                let o = Open::new(w, lyrics);
+                let next = button(Button::Next, o);
+                assert!(next.y + next.height <= 180.0);
+                let end = o.lyrics_rect().map_or(w, |l| l.x);
+                assert!(next.x + next.width <= end, "{w}");
+                assert!(button(Button::Prev, o).x >= ART.x + ART.width, "{w}");
             }
+            w += 10.0;
         }
     }
 }
