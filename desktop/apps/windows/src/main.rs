@@ -14,16 +14,18 @@ use std::cell::RefCell;
 use std::time::Instant;
 
 use island_core::media as layout;
+use island_core::menu::{self, Kind as MenuKind};
 use island_core::monitor::{self, Monitor, MonitorChoice};
 use island_core::settings::Settings;
 use island_core::shape::{self, Placement, Rect};
 use island_core::spring::{self, Spring};
 use island_core::texts::{self, Texts};
 use serde_json::Value;
-use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
+use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::Globalization::GetUserDefaultLocaleName;
 use windows::Win32::Graphics::Gdi::{
-    CreateRectRgn, EnumDisplayMonitors, GetMonitorInfoW, HDC, HMONITOR, MONITORINFO, SetWindowRgn,
+    CreateRectRgn, EnumDisplayMonitors, GetMonitorInfoW, HDC, HMONITOR, MONITOR_DEFAULTTONEAREST,
+    MONITORINFO, MonitorFromPoint, SetWindowRgn,
 };
 use windows::Win32::System::Com::{COINIT_APARTMENTTHREADED, CoInitializeEx};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
@@ -31,19 +33,22 @@ use windows::Win32::UI::HiDpi::{
     DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, GetDpiForMonitor, MDT_EFFECTIVE_DPI,
     SetProcessDpiAwarenessContext,
 };
-use windows::Win32::UI::Input::KeyboardAndMouse::{TME_LEAVE, TRACKMOUSEEVENT, TrackMouseEvent};
+use windows::Win32::UI::Input::KeyboardAndMouse::{
+    TME_LEAVE, TRACKMOUSEEVENT, TrackMouseEvent, VK_ESCAPE,
+};
 use windows::Win32::UI::Shell::ShellExecuteW;
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetMessageW, HWND_TOPMOST,
-    IDC_ARROW, KillTimer, LoadCursorW, MA_NOACTIVATE, MONITORINFOF_PRIMARY, MSG, PostMessageW,
-    PostQuitMessage, RegisterClassW, RegisterWindowMessageW, SW_SHOWNOACTIVATE, SW_SHOWNORMAL,
-    SWP_NOACTIVATE, SetTimer, SetWindowPos, ShowWindow, TranslateMessage, WM_APP, WM_DESTROY,
-    WM_DISPLAYCHANGE, WM_DPICHANGED, WM_LBUTTONUP, WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_RBUTTONUP,
+    CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetCursorPos, GetMessageW,
+    HWND_TOPMOST, IDC_ARROW, KillTimer, LoadCursorW, MA_NOACTIVATE, MONITORINFOF_PRIMARY, MSG,
+    PostMessageW, PostQuitMessage, RegisterClassW, RegisterWindowMessageW, SW_SHOW,
+    SW_SHOWNOACTIVATE, SW_SHOWNORMAL, SWP_NOACTIVATE, SetForegroundWindow, SetTimer, SetWindowPos,
+    ShowWindow, TranslateMessage, WM_ACTIVATE, WM_APP, WM_CLOSE, WM_DESTROY, WM_DISPLAYCHANGE,
+    WM_DPICHANGED, WM_KEYDOWN, WM_LBUTTONUP, WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_RBUTTONUP,
     WM_TIMER, WNDCLASSW, WS_EX_NOACTIVATE, WS_EX_NOREDIRECTIONBITMAP, WS_EX_TOOLWINDOW,
     WS_EX_TOPMOST, WS_POPUP,
 };
 use windows::core::BOOL;
-use windows::core::{Error, HSTRING, Result, w};
+use windows::core::{Error, HSTRING, PCWSTR, Result, w};
 
 // Sizes in DIPs (1/96 inch); the springs run in DIPs too, so a DPI change
 // doesn't jolt the motion.
@@ -83,6 +88,22 @@ const MENU_OPEN_LYRICS: u32 = 2;
 const MENU_STARTUP: u32 = 3;
 const MENU_SETTINGS: u32 = 4;
 const MENU_QUIT: u32 = 5;
+const MENU_CLASS: PCWSTR = w!("IslandMenu");
+
+/// The menu window, while it is open.
+struct MenuWindow {
+    hwnd: HWND,
+    target: render::MenuTarget,
+    /// Its screen's scale, and its size in px.
+    scale: f32,
+    size: (u32, u32),
+    /// The entry under the pointer.
+    hover: Option<usize>,
+    /// WM_MOUSELEAVE is armed.
+    tracking: bool,
+    /// Starting with Windows is on (read from the registry on opening).
+    startup: bool,
+}
 // windows-rs only has it under the (big) Win32_UI_Controls feature.
 const WM_MOUSELEAVE: u32 = 0x02A3;
 
@@ -124,6 +145,8 @@ struct App {
     locale: String,
     texts: &'static Texts,
     tray: Option<tray::Tray>,
+    /// The menu, while open.
+    menu: Option<MenuWindow>,
     /// Sent to every window when Explorer (and the taskbar) restarts.
     taskbar_created: u32,
     song_text: layout::SongText,
@@ -634,38 +657,209 @@ impl App {
         }
     }
 
-    fn menu_items(&self) -> Vec<tray::Item<'static>> {
+    /// The menu's entries and what each does.
+    fn menu_rows(&self, startup_on: bool) -> Vec<(u32, render::MenuRow<'static>)> {
         let t = self.texts;
+        let row = |kind, label, on, enabled| render::MenuRow {
+            kind,
+            label,
+            on,
+            enabled,
+        };
+        let (toggle, action, line) = (MenuKind::Toggle, MenuKind::Action, MenuKind::Separator);
+        let lyrics = self.settings.lyrics;
         vec![
-            tray::Item::Check {
-                id: MENU_LYRICS,
-                text: t.lyrics,
-                checked: self.settings.lyrics,
-                enabled: true,
-            },
-            tray::Item::Check {
-                id: MENU_OPEN_LYRICS,
-                text: t.open_lyrics,
-                checked: self.settings.open_lyrics,
-                enabled: self.settings.lyrics,
-            },
-            tray::Item::Separator,
-            tray::Item::Check {
-                id: MENU_STARTUP,
-                text: t.start_with_windows,
-                checked: startup::is_on(),
-                enabled: true,
-            },
-            tray::Item::Action {
-                id: MENU_SETTINGS,
-                text: t.open_settings,
-            },
-            tray::Item::Separator,
-            tray::Item::Action {
-                id: MENU_QUIT,
-                text: t.quit,
-            },
+            (MENU_LYRICS, row(toggle, t.lyrics, lyrics, true)),
+            (
+                MENU_OPEN_LYRICS,
+                row(toggle, t.open_lyrics, self.settings.open_lyrics, lyrics),
+            ),
+            (0, row(line, "", false, false)),
+            (
+                MENU_STARTUP,
+                row(toggle, t.start_with_windows, startup_on, true),
+            ),
+            (MENU_SETTINGS, row(action, t.open_settings, false, true)),
+            (0, row(line, "", false, false)),
+            (MENU_QUIT, row(action, t.quit, false, true)),
         ]
+    }
+
+    /// Opens the menu at the pointer (or closes it, if open).
+    fn open_menu(&mut self) {
+        if self.menu.is_some() {
+            self.close_menu();
+            return;
+        }
+        let Some(renderer) = &self.renderer else {
+            return;
+        };
+        let startup_on = startup::is_on();
+        let kinds: Vec<MenuKind> = self
+            .menu_rows(startup_on)
+            .iter()
+            .map(|r| r.1.kind)
+            .collect();
+        unsafe {
+            let mut at = POINT::default();
+            let _ = GetCursorPos(&mut at);
+            let mon = MonitorFromPoint(at, MONITOR_DEFAULTTONEAREST);
+            let mut mi = MONITORINFO {
+                cbSize: size_of::<MONITORINFO>() as u32,
+                ..Default::default()
+            };
+            let _ = GetMonitorInfoW(mon, &mut mi);
+            let (mut dx, mut dy) = (96, 96);
+            let _ = GetDpiForMonitor(mon, MDT_EFFECTIVE_DPI, &mut dx, &mut dy);
+            let k = dx.max(96) as f32 / 96.0;
+            let w = mi.rcWork;
+            let work = Rect {
+                x: w.left as f32,
+                y: w.top as f32,
+                width: (w.right - w.left) as f32,
+                height: (w.bottom - w.top) as f32,
+            };
+            let size = ((menu::WIDTH * k).ceil(), (menu::height(&kinds) * k).ceil());
+            let (x, y) = menu::place(
+                (at.x as f32, at.y as f32),
+                size,
+                work,
+                menu::SCREEN_MARGIN * k,
+            );
+            let Ok(hwnd) = CreateWindowExW(
+                WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOREDIRECTIONBITMAP,
+                MENU_CLASS,
+                w!("Island menu"),
+                WS_POPUP,
+                x as i32,
+                y as i32,
+                size.0 as i32,
+                size.1 as i32,
+                None,
+                None,
+                None,
+                None,
+            ) else {
+                return;
+            };
+            let Ok(target) = renderer.menu_target(hwnd) else {
+                let _ = DestroyWindow(hwnd);
+                return;
+            };
+            self.menu = Some(MenuWindow {
+                hwnd,
+                target,
+                scale: k,
+                size: (size.0 as u32, size.1 as u32),
+                hover: None,
+                tracking: false,
+                startup: startup_on,
+            });
+            self.draw_menu();
+            let _ = ShowWindow(hwnd, SW_SHOW);
+            // Focused, so a click anywhere else (it loses the focus) or Esc
+            // closes it.
+            let _ = SetForegroundWindow(hwnd);
+        }
+    }
+
+    fn close_menu(&mut self) {
+        if let Some(m) = self.menu.take() {
+            unsafe {
+                let _ = DestroyWindow(m.hwnd);
+            }
+        }
+    }
+
+    fn draw_menu(&mut self) {
+        let rows: Vec<render::MenuRow> = match &self.menu {
+            Some(m) => self.menu_rows(m.startup).into_iter().map(|r| r.1).collect(),
+            None => return,
+        };
+        let (Some(r), Some(m)) = (&mut self.renderer, &mut self.menu) else {
+            return;
+        };
+        let view = render::MenuView {
+            width: m.size.0,
+            height: m.size.1,
+            scale: m.scale,
+            title: self.texts.name,
+            version: concat!("v", env!("CARGO_PKG_VERSION")),
+            rows: &rows,
+            hover: m.hover,
+        };
+        let _ = r.draw_menu(&mut m.target, &view);
+    }
+
+    /// The menu window's messages. `true` when it asks to open the
+    /// settings, which is done with nothing borrowed.
+    fn menu_message(&mut self, msg: u32, wp: WPARAM, lp: LPARAM) -> (Option<LRESULT>, bool) {
+        let Some(m) = &self.menu else {
+            return (None, false);
+        };
+        let (scale, startup, hwnd) = (m.scale, m.startup, m.hwnd);
+        let at = (
+            lp.0 as i16 as f32 / scale,
+            (lp.0 >> 16) as i16 as f32 / scale,
+        );
+        let kinds: Vec<MenuKind> = self.menu_rows(startup).iter().map(|r| r.1.kind).collect();
+        match msg {
+            WM_MOUSEMOVE => {
+                let m = self.menu.as_mut().unwrap();
+                if !m.tracking {
+                    let mut t = TRACKMOUSEEVENT {
+                        cbSize: size_of::<TRACKMOUSEEVENT>() as u32,
+                        dwFlags: TME_LEAVE,
+                        hwndTrack: m.hwnd,
+                        dwHoverTime: 0,
+                    };
+                    m.tracking = unsafe { TrackMouseEvent(&mut t) }.is_ok();
+                }
+                let hover = menu::hit(&kinds, at.0, at.1);
+                if hover != m.hover {
+                    m.hover = hover;
+                    self.draw_menu();
+                }
+            }
+            WM_MOUSELEAVE => {
+                let m = self.menu.as_mut().unwrap();
+                m.tracking = false;
+                if m.hover.take().is_some() {
+                    self.draw_menu();
+                }
+            }
+            WM_LBUTTONUP => {
+                let Some(i) = menu::hit(&kinds, at.0, at.1) else {
+                    return (Some(LRESULT(0)), false);
+                };
+                let (id, row) = self.menu_rows(startup).swap_remove(i);
+                if !row.enabled {
+                    return (Some(LRESULT(0)), false);
+                }
+                if row.kind == MenuKind::Toggle {
+                    // The switch flips; the menu stays to flip more.
+                    self.command(id);
+                    if let Some(m) = &mut self.menu {
+                        m.startup = startup::is_on();
+                    }
+                    self.draw_menu();
+                } else {
+                    self.close_menu();
+                    if id == MENU_SETTINGS {
+                        return (Some(LRESULT(0)), true);
+                    }
+                    self.command(id);
+                }
+            }
+            WM_KEYDOWN if wp.0 == VK_ESCAPE.0 as usize => self.close_menu(),
+            // Focus elsewhere: a click outside it.
+            WM_ACTIVATE if wp.0 & 0xFFFF == 0 => unsafe {
+                let _ = PostMessageW(Some(hwnd), WM_CLOSE, WPARAM(0), LPARAM(0));
+            },
+            WM_CLOSE => self.close_menu(),
+            _ => return (None, false),
+        }
+        (Some(LRESULT(0)), false)
     }
 
     /// What a menu item does. The switches go to the file, and take effect
@@ -808,6 +1002,12 @@ impl App {
                 }
                 self.reload();
             }
+            WM_RBUTTONUP => self.open_menu(),
+            WM_APP_TRAY => {
+                if matches!((lp.0 & 0xFFFF) as u32, WM_LBUTTONUP | WM_RBUTTONUP) {
+                    self.open_menu();
+                }
+            }
             WM_DESTROY => unsafe { PostQuitMessage(0) },
             _ if msg == self.taskbar_created && msg != 0 => {
                 if let Some(t) = &self.tray {
@@ -817,26 +1017,6 @@ impl App {
             _ => return None,
         }
         Some(LRESULT(0))
-    }
-}
-
-/// The menu, from the tray icon or a right click on the island. It is
-/// shown with the app not borrowed: while it is open the island's own
-/// messages (frames, timers, songs) keep being handled.
-fn show_menu(hwnd: HWND) {
-    let Some(items) = APP.with(|c| c.try_borrow().ok()?.as_ref().map(App::menu_items)) else {
-        return;
-    };
-    match tray::menu(hwnd, &items) {
-        Some(MENU_SETTINGS) => open_settings(),
-        Some(id) => APP.with(|c| {
-            if let Ok(mut app) = c.try_borrow_mut()
-                && let Some(a) = app.as_mut()
-            {
-                a.command(id);
-            }
-        }),
-        None => {}
     }
 }
 
@@ -862,13 +1042,21 @@ fn open_settings() {
     }
 }
 
-extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
-    let tray_click =
-        msg == WM_APP_TRAY && matches!((lp.0 & 0xFFFF) as u32, WM_LBUTTONUP | WM_RBUTTONUP);
-    if tray_click || msg == WM_RBUTTONUP {
-        show_menu(hwnd);
-        return LRESULT(0);
+/// The menu window's messages go to the app, like the island's.
+extern "system" fn menu_wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
+    let (handled, settings) = APP.with(|cell| match cell.try_borrow_mut() {
+        Ok(mut app) => app
+            .as_mut()
+            .map_or((None, false), |a| a.menu_message(msg, wp, lp)),
+        Err(_) => (None, false),
+    });
+    if settings {
+        open_settings();
     }
+    handled.unwrap_or_else(|| unsafe { DefWindowProcW(hwnd, msg, wp, lp) })
+}
+
+extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
     let handled = APP.with(|cell| match cell.try_borrow_mut() {
         Ok(mut app) => app.as_mut().and_then(|a| a.handle(msg, wp, lp)),
         // A message sent from inside a handler (SetWindowPos, DestroyWindow):
@@ -955,6 +1143,16 @@ fn main() -> Result<()> {
         if RegisterClassW(&wc) == 0 {
             return Err(Error::from_thread());
         }
+        let menu_class = WNDCLASSW {
+            lpfnWndProc: Some(menu_wndproc),
+            hInstance: instance.into(),
+            lpszClassName: MENU_CLASS,
+            hCursor: LoadCursorW(None, IDC_ARROW)?,
+            ..Default::default()
+        };
+        if RegisterClassW(&menu_class) == 0 {
+            return Err(Error::from_thread());
+        }
         let hwnd = CreateWindowExW(
             WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOACTIVATE | WS_EX_NOREDIRECTIONBITMAP,
             class,
@@ -998,6 +1196,7 @@ fn main() -> Result<()> {
             locale,
             texts,
             tray: Some(tray::Tray::new(hwnd, WM_APP_TRAY, texts.name)),
+            menu: None,
             taskbar_created: RegisterWindowMessageW(w!("TaskbarCreated")),
             song_text: defaults.song_text,
             // Started by the settings, if they turn them on.

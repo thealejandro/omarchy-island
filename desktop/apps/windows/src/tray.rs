@@ -1,6 +1,7 @@
-//! The tray icon and its menu: the island's way out and its switches.
+//! The tray icon. A click on it opens the island's menu (`menu` in the core,
+//! drawn like the island).
 
-use windows::Win32::Foundation::{HWND, LPARAM, POINT, WPARAM};
+use windows::Win32::Foundation::HWND;
 use windows::Win32::Graphics::Gdi::{
     BI_RGB, BITMAPINFO, BITMAPINFOHEADER, CreateBitmap, CreateDIBSection, DIB_RGB_COLORS,
     DeleteObject,
@@ -10,26 +11,8 @@ use windows::Win32::UI::Shell::{
     Shell_NotifyIconW,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    AppendMenuW, CreateIconIndirect, CreatePopupMenu, DestroyIcon, DestroyMenu, GetCursorPos,
-    GetSystemMetrics, HICON, ICONINFO, MF_CHECKED, MF_GRAYED, MF_SEPARATOR, MF_STRING,
-    PostMessageW, SM_CXSMICON, SetForegroundWindow, TPM_NONOTIFY, TPM_RETURNCMD, TPM_RIGHTBUTTON,
-    TrackPopupMenu, WM_NULL,
+    CreateIconIndirect, DestroyIcon, GetSystemMetrics, HICON, ICONINFO, SM_CXSMICON,
 };
-use windows::core::HSTRING;
-
-pub enum Item<'a> {
-    Check {
-        id: u32,
-        text: &'a str,
-        checked: bool,
-        enabled: bool,
-    },
-    Action {
-        id: u32,
-        text: &'a str,
-    },
-    Separator,
-}
 
 pub struct Tray {
     hwnd: HWND,
@@ -74,54 +57,6 @@ impl Tray {
                 let _ = Shell_NotifyIconW(NIM_MODIFY, &d);
             }
         }
-    }
-}
-
-/// Shows a menu at the pointer for `hwnd`; the chosen item's id, if any.
-/// It runs its own message loop until closed, so call it with nothing
-/// borrowed: the window's messages keep coming meanwhile.
-pub fn menu(hwnd: HWND, items: &[Item]) -> Option<u32> {
-    unsafe {
-        let menu = CreatePopupMenu().ok()?;
-        for item in items {
-            let _ = match item {
-                Item::Check {
-                    id,
-                    text,
-                    checked,
-                    enabled,
-                } => {
-                    let mut f = MF_STRING;
-                    if *checked {
-                        f |= MF_CHECKED;
-                    }
-                    if !enabled {
-                        f |= MF_GRAYED;
-                    }
-                    AppendMenuW(menu, f, *id as usize, &HSTRING::from(*text))
-                }
-                Item::Action { id, text } => {
-                    AppendMenuW(menu, MF_STRING, *id as usize, &HSTRING::from(*text))
-                }
-                Item::Separator => AppendMenuW(menu, MF_SEPARATOR, 0, None),
-            };
-        }
-        let mut at = POINT::default();
-        let _ = GetCursorPos(&mut at);
-        // Without it the menu doesn't close when clicking elsewhere.
-        let _ = SetForegroundWindow(hwnd);
-        let id = TrackPopupMenu(
-            menu,
-            TPM_RETURNCMD | TPM_NONOTIFY | TPM_RIGHTBUTTON,
-            at.x,
-            at.y,
-            None,
-            hwnd,
-            None,
-        );
-        let _ = PostMessageW(Some(hwnd), WM_NULL, WPARAM(0), LPARAM(0));
-        let _ = DestroyMenu(menu);
-        (id.0 > 0).then_some(id.0 as u32)
     }
 }
 
