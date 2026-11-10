@@ -267,7 +267,10 @@ fn windows_accent() -> [f32; 3] {
 /// How much the open view is scaled so it fits the body while the island
 /// grows to it or shrinks from it: 1 once open.
 fn open_fit(s: &Scene) -> f32 {
-    (s.size.0 / s.open.width).clamp(0.5, 1.0)
+    // By width and by height, so the controls at the bottom aren't cut
+    // while the body is still growing taller.
+    let k = (s.size.0 / s.open.width).min(s.size.1 / pages::OPEN_HEIGHT);
+    k.clamp(0.5, 1.0)
 }
 
 /// The system's accent color, brightened for the black island the way a
