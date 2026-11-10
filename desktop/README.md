@@ -44,6 +44,7 @@ that isn't valid JSON is ignored until it is fixed.
 | `breakMinutes` | 1 to 30 | `5` |
 | `longBreakMinutes` | 5 to 60 | `15` |
 | `longBreakEvery` | 2 to 8 (rounds of focus) | `4` |
+| `volumeGlance` | `true`, `false` | `true` |
 
 While music plays (any app in Windows' media controls), the closed island
 shows the cover, the song and bars that move with the music; a new song
@@ -73,6 +74,11 @@ click. The glance tells when each ends, and with nothing playing the closed
 island shows the time left. Before starting, the wheel over the time
 changes `focusMinutes` by 5. The island opens on `defaultPage`, then on the
 page last chosen.
+
+When the volume changes (keys, taskbar or any app), the closed island
+glances at it for a moment: the speaker, the percentage and a bar, or
+"Muted". It follows the default speakers when they change, and nothing
+runs while the volume stays put. `volumeGlance: false` turns it off.
 
 For trying things out, the command line wins over the file:
 `--placement`, `--monitor`, `--text-align`, `--song-text`, `--lyrics`,

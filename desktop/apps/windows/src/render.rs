@@ -2,6 +2,7 @@
 //! redirection bitmap and is transparent wherever the island isn't drawn.
 //! Text is DirectWrite; the cover is decoded with WIC.
 
+use island_core::glance;
 use island_core::lyrics::Line;
 use island_core::media::{self as layout, Button, SongText, TextAlign, fmt_time};
 use island_core::menu;
@@ -89,11 +90,22 @@ pub struct Scene<'a> {
     pub tabs_clock: &'a str,
     pub tabs_timer: bool,
     pub focus: FocusView<'a>,
-    /// A glance that tells something (the focus timer's end) instead of
-    /// the song: its title and what follows.
-    pub notice: Option<(&'a str, &'a str)>,
+    /// A glance that tells something (the volume, the focus timer's end)
+    /// instead of the song.
+    pub notice: Option<Notice<'a>>,
     /// With nothing playing, the closed island shows the focus timer.
     pub closed_timer: Option<&'a str>,
+}
+
+/// What a glance tells: an icon in its color, a title, a dimmer detail
+/// and, for a level (the volume), a bar.
+#[derive(Clone, Copy)]
+pub struct Notice<'a> {
+    pub icon: &'a str,
+    pub tint: [f32; 3],
+    pub title: &'a str,
+    pub detail: &'a str,
+    pub level: Option<f32>,
 }
 
 /// The focus page, ready to draw.
@@ -112,14 +124,16 @@ pub struct FocusView<'a> {
 }
 
 impl FocusView<'_> {
-    fn tint(&self) -> [f32; 3] {
+    pub fn tint(&self) -> [f32; 3] {
         if self.resting { BREAK_TINT } else { FOCUS_TINT }
     }
 }
 
 /// The focus timer's colors.
-const FOCUS_TINT: [f32; 3] = [1.0, 0.62, 0.32];
-const BREAK_TINT: [f32; 3] = [0.42, 0.86, 0.6];
+pub const FOCUS_TINT: [f32; 3] = [1.0, 0.62, 0.32];
+pub const BREAK_TINT: [f32; 3] = [0.42, 0.86, 0.6];
+/// Plain white, for glances with no color of their own.
+pub const WHITE: [f32; 3] = [1.0; 3];
 
 #[derive(Clone, Copy)]
 pub struct LyricsView<'a> {
@@ -927,11 +941,30 @@ impl Renderer {
     }
 
     fn draw_peek(&mut self, s: &Scene, dx: f32, alpha: f32) {
-        if let Some((title, more)) = s.notice {
+        if let Some(n) = s.notice {
             let icon = shift(layout::PEEK_ART, dx);
-            self.tinted("\u{E916}", &self.text.icon, icon, s.focus.tint(), alpha);
-            let spans = [(title.to_string(), false), (format!("  {more}"), true)];
-            self.song(&spans, &self.text.peek, shift(layout::PEEK_TEXT, dx), alpha);
+            self.tinted(n.icon, &self.text.icon, icon, n.tint, alpha);
+            let spans = [
+                (n.title.to_string(), false),
+                (format!("  {}", n.detail), true),
+            ];
+            let text = if n.level.is_some() {
+                glance::LEVEL_TEXT
+            } else {
+                layout::PEEK_TEXT
+            };
+            self.song(&spans, &self.text.peek, shift(text, dx), alpha);
+            if let Some(level) = n.level {
+                let bar = shift(glance::LEVEL_BAR, dx);
+                self.rounded(bar, bar.height / 2.0, 0.2 * alpha);
+                let done = Rect {
+                    width: bar.width * level.clamp(0.0, 1.0),
+                    ..bar
+                };
+                if done.width > 0.0 {
+                    self.tinted_rounded(done, bar.height / 2.0, n.tint, 0.95 * alpha);
+                }
+            }
             return;
         }
         let Some(t) = s.track else { return };
