@@ -40,17 +40,17 @@ impl Moment {
 }
 
 /// Whether a notification that just arrived gets a glance. Never while
-/// presenting, gaming, away or with Do Not Disturb (`quiet`); in full screen
-/// only if `in_full_screen` (the setting) allows. Windows' own banner plays
-/// no part: with an app's banners turned off, the island still shows its
-/// notifications.
+/// presenting, gaming or away; with Do Not Disturb (`quiet`) neither, but
+/// in full screen the setting (`in_full_screen`) decides: Windows 11 turns
+/// Do Not Disturb on by itself there, which is just when the island should
+/// still tell. Windows' own banner plays no part: with an app's banners
+/// turned off, the island still shows its notifications.
 pub fn glances(moment: Moment, quiet: bool, in_full_screen: bool) -> bool {
-    !quiet
-        && match moment {
-            Moment::Free => true,
-            Moment::FullScreen => in_full_screen,
-            Moment::Game | Moment::Presenting | Moment::Away | Moment::Quiet => false,
-        }
+    match moment {
+        Moment::Free => !quiet,
+        Moment::FullScreen => in_full_screen,
+        Moment::Game | Moment::Presenting | Moment::Away | Moment::Quiet => false,
+    }
 }
 
 /// A notification's glance: bigger than the song's, so it never passes for
@@ -229,6 +229,9 @@ mod tests {
             assert!(!glances(m, false, true));
         }
         assert!(!glances(Free, true, true));
+        // Windows 11 turns Do Not Disturb on by itself in full screen.
+        assert!(glances(FullScreen, true, true));
+        assert!(!glances(FullScreen, true, false));
         assert_eq!(Moment::from_state(2), FullScreen);
         assert_eq!(Moment::from_state(3), Game);
         assert_eq!(Moment::from_state(4), Presenting);

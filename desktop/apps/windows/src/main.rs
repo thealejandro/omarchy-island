@@ -54,11 +54,11 @@ use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetCursorPos, GetMessageW,
     HWND_TOPMOST, IDC_ARROW, KillTimer, LoadCursorW, MA_NOACTIVATE, MONITORINFOF_PRIMARY, MSG,
     PostMessageW, PostQuitMessage, RegisterClassW, RegisterWindowMessageW, SW_SHOW,
-    SW_SHOWNOACTIVATE, SW_SHOWNORMAL, SWP_NOACTIVATE, SetForegroundWindow, SetTimer, SetWindowPos,
-    ShowWindow, TranslateMessage, WM_ACTIVATE, WM_APP, WM_CLOSE, WM_DESTROY, WM_DISPLAYCHANGE,
-    WM_DPICHANGED, WM_KEYDOWN, WM_LBUTTONUP, WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_MOUSEWHEEL,
-    WM_RBUTTONUP, WM_TIMER, WNDCLASSW, WS_EX_NOACTIVATE, WS_EX_NOREDIRECTIONBITMAP,
-    WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
+    SW_SHOWNOACTIVATE, SW_SHOWNORMAL, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SetForegroundWindow,
+    SetTimer, SetWindowPos, ShowWindow, TranslateMessage, WM_ACTIVATE, WM_APP, WM_CLOSE,
+    WM_DESTROY, WM_DISPLAYCHANGE, WM_DPICHANGED, WM_KEYDOWN, WM_LBUTTONUP, WM_MOUSEACTIVATE,
+    WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_RBUTTONUP, WM_TIMER, WNDCLASSW, WS_EX_NOACTIVATE,
+    WS_EX_NOREDIRECTIONBITMAP, WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP,
 };
 use windows::core::BOOL;
 use windows::core::{Error, HSTRING, PCWSTR, Result, w};
@@ -714,6 +714,21 @@ impl App {
         let full_screen = self.settings.notifications_in_full_screen;
         if !island_core::notifications::glances(moment, notifications::quiet(), full_screen) {
             return;
+        }
+        if moment == island_core::notifications::Moment::FullScreen {
+            // A full-screen window may have gone over the island: on top
+            // again (without taking the focus).
+            unsafe {
+                let _ = SetWindowPos(
+                    self.hwnd,
+                    Some(HWND_TOPMOST),
+                    0,
+                    0,
+                    0,
+                    0,
+                    SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE,
+                );
+            }
         }
         let t = a.toast;
         let n = Notice {

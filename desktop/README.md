@@ -120,7 +120,8 @@ turn off "Show notification banners" for those apps under Settings >
 System > Notifications (they still go to the notification center, and the
 island still shows them). With an app in full screen the glance shows too
 (`notificationsInFullScreen: false` keeps it away then); never while
-presenting, in a game in exclusive full screen or with Do Not Disturb.
+presenting, in a game in exclusive full screen or with Do Not Disturb
+(except the one Windows 11 turns on by itself in full screen).
 `notificationGlance: false` turns it off.
 
 The icons are filled ones from Microsoft's
