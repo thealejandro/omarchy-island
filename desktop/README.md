@@ -39,6 +39,7 @@ that isn't valid JSON is ignored until it is fixed.
 | `lyrics` | `true`, `false` | `false` |
 | `openLyrics` | `true`, `false` | `true` |
 | `openWidth` | 480 to 960, in steps of 10, or `auto` | `auto` |
+| `islandScale` | 0.8 to 1.4 | `1.0` |
 | `defaultPage` | `home`, `focus` | `home` |
 | `focusMinutes` | 5 to 120 | `25` |
 | `breakMinutes` | 1 to 30 | `5` |
@@ -79,6 +80,12 @@ what the player can spare; below 500 there is no room for one and only the
 player shows. On small or scaled-up
 screens the island takes at most 60 % of the screen's width (610 on a
 1024-wide one, 760 on a 1280 x 1024 square monitor), down to 480.
+
+`islandScale` grows or shrinks the closed island and every glance (the
+song, the volume, Bluetooth, the microphone and camera, notifications) by
+a factor between 0.8 and 1.4, everything together; the open island keeps
+its size. It is applied where the island sits and as it moves, so changing
+it doesn't jolt the motion.
 
 The open island has tabs on top, with the time at the right: Home (the
 player) and Focus, a Pomodoro timer. A break starts by itself when focus

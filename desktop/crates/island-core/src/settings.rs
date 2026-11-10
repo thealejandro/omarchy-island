@@ -78,10 +78,15 @@ pub struct Settings {
     /// the sound comes out later than that (more so over Bluetooth).
     /// `None` ("auto"): by the speakers in use, see [`Settings::lyrics_delay`].
     pub lyrics_delay: Option<u32>,
+    /// How big the closed island and its glances are, times this; the open
+    /// island keeps its size.
+    pub island_scale: f32,
 }
 
 /// `lyricsDelay`'s range, in ms.
 pub const LYRICS_DELAY: (u32, u32) = (0, 2000);
+/// `islandScale`'s range: the closed island and its glances, times this.
+pub const ISLAND_SCALE: (f32, f32) = (0.8, 1.4);
 /// "auto" over Bluetooth speakers or headphones: what they add, about.
 /// Wired ones add next to nothing.
 pub const BLUETOOTH_DELAY: u32 = 200;
@@ -105,6 +110,7 @@ impl Default for Settings {
             notification_glance: true,
             notifications_in_full_screen: true,
             lyrics_delay: None,
+            island_scale: 1.0,
         }
     }
 }
@@ -121,6 +127,7 @@ pub const TEMPLATE: &str = r#"{
   "openLyrics": true,
   "openWidth": "auto",
   "defaultPage": "home",
+  "islandScale": 1.0,
   "focusMinutes": 25,
   "breakMinutes": 5,
   "longBreakMinutes": 15,
@@ -210,6 +217,13 @@ impl Settings {
                 .and_then(Value::as_u64)
                 .filter(|m| (u64::from(LYRICS_DELAY.0)..=u64::from(LYRICS_DELAY.1)).contains(m))
                 .map(|m| m as u32),
+            // A number is clamped into range; anything else: 1.0 (as made).
+            island_scale: o
+                .get("islandScale")
+                .and_then(Value::as_f64)
+                .map_or(d.island_scale, |v| {
+                    (v as f32).clamp(ISLAND_SCALE.0, ISLAND_SCALE.1)
+                }),
         })
     }
 
@@ -331,6 +345,19 @@ mod tests {
             assert_eq!(s.lyrics_delay(true), BLUETOOTH_DELAY, "{auto}");
             assert_eq!(s.lyrics_delay(false), 0, "{auto}");
         }
+        // The island's scale: a number is clamped into range; else 1.0.
+        assert_eq!(parse(r#"{"islandScale": 1.2}"#).island_scale, 1.2);
+        assert_eq!(
+            parse(r#"{"islandScale": 2.5}"#).island_scale,
+            ISLAND_SCALE.1
+        );
+        assert_eq!(
+            parse(r#"{"islandScale": 0.5}"#).island_scale,
+            ISLAND_SCALE.0
+        );
+        assert_eq!(parse(r#"{"islandScale": "big"}"#).island_scale, 1.0);
+        assert_eq!(parse(r#"{"islandScale": true}"#).island_scale, 1.0);
+        assert_eq!(Settings::default().island_scale, 1.0);
         // A BOM (Notepad's UTF-8) is fine.
         assert!(parse("\u{feff}{\"lyrics\": true}").lyrics);
         // Too big to be a settings file.
