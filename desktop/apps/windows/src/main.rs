@@ -249,6 +249,9 @@ struct App {
     open_width: f32,
     /// The most the song's glance grows to on this screen.
     peek_most: f32,
+    /// Windows' banners are off for the island to tell notifications alone
+    /// (chosen in the menu; kept, noted, across runs).
+    banners_quiet: bool,
     /// The song's glance and the closed island with music, as wide as their
     /// text needs ([`layout::peek_width`], [`layout::closed_width`]).
     peek_w: f32,
@@ -762,6 +765,10 @@ impl App {
             }
         }
         let t = a.toast;
+        // An app new to the island: its next ones come without a banner.
+        if self.banners_quiet {
+            banners::quiet(&t.app_id);
+        }
         let n = Notice {
             icon: island_core::notifications::ICON,
             tint: render::WHITE,
@@ -1319,9 +1326,9 @@ impl App {
             (
                 MENU_ONLY_ISLAND,
                 row(
-                    action,
+                    toggle,
                     t.only_island,
-                    false,
+                    self.banners_quiet,
                     self.settings.notification_glance,
                 ),
             ),
@@ -1520,18 +1527,14 @@ impl App {
         let (key, on) = match id {
             MENU_LYRICS => ("lyrics", &mut file.lyrics),
             MENU_OPEN_LYRICS => ("openLyrics", &mut file.open_lyrics),
-            // Windows' banners are its own to turn off: its settings open
-            // where it is done, app by app.
+            // Windows' banners off app by app (as the switch in its
+            // settings), or back on: kept as is until chosen again.
             MENU_ONLY_ISLAND => {
-                unsafe {
-                    ShellExecuteW(
-                        None,
-                        w!("open"),
-                        w!("ms-settings:notifications"),
-                        None,
-                        None,
-                        SW_SHOWNORMAL,
-                    );
+                self.banners_quiet = !self.banners_quiet;
+                if self.banners_quiet {
+                    std::thread::spawn(banners::quiet_all);
+                } else {
+                    std::thread::spawn(banners::restore);
                 }
                 return;
             }
@@ -1957,14 +1960,13 @@ fn main() -> Result<()> {
             notifications: None,
             swap: None,
             pulse: None,
+            banners_quiet: banners::active(),
         };
         APP.with_borrow_mut(|a| *a = Some(app));
         // A file with a typo at start: the defaults until it is fixed.
         let file = settings_file::load().unwrap_or_default();
         APP.with_borrow_mut(|a| a.as_mut().map(|a| a.apply(file)));
         settings_file::watch(hwnd, WM_APP_SETTINGS);
-        // Banners an earlier version turned off come back on.
-        std::thread::spawn(banners::restore);
         let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
         let mut msg = MSG::default();
         while GetMessageW(&mut msg, None, 0, 0).as_bool() {

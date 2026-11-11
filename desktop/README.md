@@ -116,20 +116,22 @@ glows softly until the glance ends, 5 seconds later. It reads them with Windows'
 (allowed under Privacy, "Notification access") and looks only when the
 shell's count of notifications changes, so nothing runs in between.
 
-It doesn't need Windows' banner: to see notifications only in the island,
-turn off "Show notification banners" for those apps under Settings >
-System > Notifications (they still go to the notification center, and the
-island still shows them); "Notifications only in the island…" in its menu
-opens that page. The island never changes them itself. With an app in
-full screen the glance shows too
+It doesn't need Windows' banner. "Notifications only in the island" in its
+menu turns off "Show notification banners" for every app that has sent
+notifications (as the switch under Settings > System > Notifications would;
+Windows' own alerts keep theirs), and for each new one as its first
+notification arrives; they still go to the notification center, and the
+island still shows them. It applies at once and stays so, also after
+restarting, until it is chosen again: then the banners it turned off (noted
+in `%LOCALAPPDATA%\island\banners.txt`) come back, but not those turned off
+by hand. Before uninstalling the island, choose it again; else turn them on
+in Settings > System > Notifications.
+With an app in full screen the glance shows too
 (`notificationsInFullScreen: false` keeps it away then); never while
 presenting, in a game in exclusive full screen or with Do Not Disturb
 (except the one Windows 11 turns on by itself in full screen).
 A click on the glance opens the app that sent it (Windows lets no other app
-click the notification itself). An earlier version could turn the banners
-off itself (`windowsBanners: false`); as it starts, the island turns back
-on the ones it left off then, noted in `%LOCALAPPDATA%\island\banners.txt`.
-`notificationGlance: false` turns it off.
+click the notification itself). `notificationGlance: false` turns it off.
 
 The icons are filled ones from Microsoft's
 [Fluent UI System Icons](https://github.com/microsoft/fluentui-system-icons)
