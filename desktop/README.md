@@ -124,8 +124,9 @@ notification arrives; they still go to the notification center, and the
 island still shows them. It applies at once and stays so, also after
 restarting, until it is chosen again: then the banners it turned off (noted
 in `%LOCALAPPDATA%\island\banners.txt`) come back, but not those turned off
-by hand. Before uninstalling the island, choose it again; else turn them on
-in Settings > System > Notifications.
+by hand. Before uninstalling the island, choose it again, or run
+`island.exe --restore-banners` (it does the same without opening the
+island); else turn them on in Settings > System > Notifications.
 With an app in full screen the glance shows too
 (`notificationsInFullScreen: false` keeps it away then); never while
 presenting, in a game in exclusive full screen or with Do Not Disturb

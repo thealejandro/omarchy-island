@@ -5,7 +5,8 @@
 //! "Show notification banners": the `ShowBanner` value under the app's key.
 //! Only the apps the island turned off are noted, in
 //! `%LOCALAPPDATA%\island\banners.txt`, and only those are turned back on;
-//! an app the user had turned off stays so. The notifications still go to
+//! an app the user had turned off stays so. `banners.on` beside it marks
+//! that the switch is chosen. The notifications still go to
 //! the notification center.
 
 use std::path::PathBuf;
@@ -160,24 +161,37 @@ fn known() -> Vec<String> {
 /// Turns off the banners of every app known so far (new ones as their
 /// first notification arrives, with [`quiet`]).
 pub fn quiet_all() {
+    // Chosen even with no app to turn off yet (all off by hand, or a new
+    // Windows): the next ones still are.
+    if let Some(m) = marker() {
+        let _ = std::fs::write(m, "");
+    }
     for id in known() {
         quiet(&id);
     }
 }
 
-/// Whether the banners are off here (some app is noted).
+/// The mark that "Notifications only in the island" is chosen.
+fn marker() -> Option<PathBuf> {
+    Some(noted()?.with_file_name("banners.on"))
+}
+
+/// Whether "Notifications only in the island" is chosen.
 pub fn active() -> bool {
-    let _notes = NOTES.lock().unwrap_or_else(|e| e.into_inner());
-    !read_noted().is_empty()
+    // Noted apps alone count too: chosen before the mark existed.
+    marker().is_some_and(|m| m.exists()) || {
+        let _notes = NOTES.lock().unwrap_or_else(|e| e.into_inner());
+        !read_noted().is_empty()
+    }
 }
 
 /// Turns back on the banners turned off here, and forgets them.
 pub fn restore() {
     let _notes = NOTES.lock().unwrap_or_else(|e| e.into_inner());
-    let ids = read_noted();
-    if ids.is_empty() {
-        return;
+    if let Some(m) = marker() {
+        let _ = std::fs::remove_file(m);
     }
+    let ids = read_noted();
     for id in &ids {
         // Only if still as the island left it: the user may have changed it.
         if show_banner(id) == Some(0) {

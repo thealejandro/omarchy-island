@@ -1854,6 +1854,11 @@ impl Overrides {
 }
 
 fn main() -> Result<()> {
+    // For uninstalling: Windows' banners back on, without the island open.
+    if std::env::args().any(|a| a == "--restore-banners") {
+        banners::restore();
+        return Ok(());
+    }
     unsafe {
         // One island per user session: a second start (the exe opened
         // twice, or by hand while it starts with Windows) just leaves. The
