@@ -4,6 +4,7 @@
 mod banners;
 mod bars;
 mod bluetooth;
+mod install;
 mod lyrics;
 mod media;
 mod notifications;
@@ -33,7 +34,7 @@ use island_core::spring::{self, Spring};
 use island_core::texts::{self, Texts};
 use serde_json::Value;
 use windows::Win32::Foundation::{
-    ERROR_ALREADY_EXISTS, GetLastError, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM,
+    E_FAIL, ERROR_ALREADY_EXISTS, GetLastError, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM,
 };
 use windows::Win32::Globalization::{GetTimeFormatEx, GetUserDefaultLocaleName, TIME_NOSECONDS};
 use windows::Win32::Graphics::Gdi::{
@@ -41,7 +42,9 @@ use windows::Win32::Graphics::Gdi::{
     MONITORINFO, MonitorFromPoint, ScreenToClient, SetWindowRgn,
 };
 use windows::Win32::System::Com::{COINIT_APARTMENTTHREADED, CoInitializeEx};
-use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::System::LibraryLoader::{
+    GetModuleHandleW, LOAD_LIBRARY_SEARCH_SYSTEM32, SetDefaultDllDirectories,
+};
 use windows::Win32::System::SystemInformation::GetLocalTime;
 use windows::Win32::System::Threading::CreateMutexW;
 use windows::Win32::UI::HiDpi::{
@@ -53,7 +56,8 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 };
 use windows::Win32::UI::Shell::{SHQueryUserNotificationState, ShellExecuteW};
 use windows::Win32::UI::WindowsAndMessaging::{
-    CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetCursorPos, GetMessageW,
+    AllowSetForegroundWindow, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW,
+    FindWindowExW, GetCursorPos, GetMessageW, GetWindowRect, GetWindowThreadProcessId,
     HWND_MESSAGE, HWND_TOPMOST, IDC_ARROW, IsWindow, KillTimer, LoadCursorW, MA_NOACTIVATE,
     MONITORINFOF_PRIMARY, MSG, PostMessageW, PostQuitMessage, RegisterClassW,
     RegisterWindowMessageW, SW_SHOW, SW_SHOWNORMAL, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
@@ -107,6 +111,12 @@ const WM_APP_BLUETOOTH: u32 = WM_APP + 10;
 const WM_APP_NOTIFICATION: u32 = WM_APP + 11;
 /// The `tema` theme changed (see `theme_file.rs`).
 const WM_APP_THEME: u32 = WM_APP + 12;
+/// The exe opened again while the island runs: its menu opens.
+const WM_APP_OPEN: u32 = WM_APP + 13;
+/// Installing or uninstalling: the island that runs ends.
+const WM_APP_QUIT: u32 = WM_APP + 14;
+/// The installed island's first start: a glance says it is installed.
+const WM_APP_INSTALLED: u32 = WM_APP + 15;
 
 const ISLAND_CLASS: PCWSTR = w!("IslandWindow");
 /// The hidden window the shared things talk to: the sources (media, volume,
@@ -1721,11 +1731,24 @@ impl App {
             }
             // Windows' colors may have changed: the accent is read again.
             WM_SETTINGCHANGE | WM_DWMCOLORIZATIONCOLORCHANGED => self.colors_changed(),
-            WM_RBUTTONUP => self.open_menu(),
+            WM_RBUTTONUP => self.open_menu(false),
             WM_APP_TRAY => {
                 if matches!((lp.0 & 0xFFFF) as u32, WM_LBUTTONUP | WM_RBUTTONUP) {
-                    self.open_menu();
+                    self.open_menu(false);
                 }
+            }
+            WM_APP_OPEN if self.menu.is_none() => self.open_menu(true),
+            WM_APP_QUIT => self.quit(),
+            WM_APP_INSTALLED => {
+                let n = Notice {
+                    icon: island_core::icons::Icon::Home,
+                    tint: render::WHITE,
+                    title: self.texts.installed.into(),
+                    detail: self.texts.in_start_menu.into(),
+                    level: None,
+                    ..Default::default()
+                };
+                self.notify(n, PEEK_MS);
             }
             WM_DESTROY => {
                 for sf in &self.surfaces {
@@ -1815,7 +1838,7 @@ impl App {
             WM_DPICHANGED | WM_DISPLAYCHANGE | WM_APP_LAYOUT => self.layout(),
             // Clicking the island never takes the focus from the app in use.
             WM_MOUSEACTIVATE => return Some(LRESULT(MA_NOACTIVATE as isize)),
-            WM_RBUTTONUP => self.open_menu(),
+            WM_RBUTTONUP => self.open_menu(false),
             WM_SETTINGCHANGE | WM_DWMCOLORIZATIONCOLORCHANGED => self.colors_changed(),
             // Asked to close (the anchor, message-only, never is): the app
             // ends.
@@ -1877,8 +1900,9 @@ impl App {
         ]
     }
 
-    /// Opens the menu at the pointer (or closes it, if open).
-    fn open_menu(&mut self) {
+    /// Opens the menu at the pointer, or `under_island` (the exe opened again,
+    /// from the Start menu say); or closes it, if open.
+    fn open_menu(&mut self, under_island: bool) {
         if self.menu.is_some() {
             self.close_menu();
             return;
@@ -1916,6 +1940,12 @@ impl App {
                 height: (w.bottom - w.top) as f32,
             };
             let size = ((menu::WIDTH * k).ceil(), (menu::height(&kinds) * k).ceil());
+            let mut r = RECT::default();
+            if under_island && GetWindowRect(owner, &mut r).is_ok() {
+                // Centred, just below the closed island.
+                at.x = (r.left + r.right) / 2 - size.0 as i32 / 2;
+                at.y = r.top + ((MARGIN * 2.0 + CLOSED.1) * k) as i32;
+            }
             let (x, y) = menu::place(
                 (at.x as f32, at.y as f32),
                 size,
@@ -2267,17 +2297,47 @@ impl Overrides {
 }
 
 fn main() -> Result<()> {
-    // For uninstalling: Windows' banners back on, without the island open.
-    if std::env::args().any(|a| a == "--restore-banners") {
+    // DLLs loaded from here on come from System32 only, never from the
+    // exe's folder (see build.rs for the ones it starts with).
+    unsafe {
+        let _ = SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_SYSTEM32);
+    }
+    let args: Vec<String> = std::env::args().collect();
+    // For uninstalling by hand: Windows' banners back on, without the island
+    // open.
+    if install::has(&args, "--restore-banners") {
         banners::restore();
         return Ok(());
     }
+    if install::is_finish(&args) {
+        install::finish(&args);
+        return Ok(());
+    }
+    for (arg, step) in [
+        (
+            "--install",
+            install::install as fn(PCWSTR, u32) -> std::io::Result<()>,
+        ),
+        ("--uninstall", install::uninstall),
+    ] {
+        if install::has(&args, arg) {
+            return step(ANCHOR_CLASS, WM_APP_QUIT).map_err(|e| Error::new(E_FAIL, e.to_string()));
+        }
+    }
     unsafe {
         // One island per user session: a second start (the exe opened
-        // twice, or by hand while it starts with Windows) just leaves. The
+        // twice, or from the Start menu while it starts with Windows) opens
+        // the running one's menu, so it is seen to be there, and leaves. The
         // handle lives as long as the process.
         let _single = CreateMutexW(None, false, w!("Local\\IslandDesktop"))?;
         if GetLastError() == ERROR_ALREADY_EXISTS {
+            if let Ok(anchor) = FindWindowExW(Some(HWND_MESSAGE), None, ANCHOR_CLASS, None) {
+                // This start was the user's: it may hand the focus on.
+                let mut pid = 0;
+                GetWindowThreadProcessId(anchor, Some(&mut pid));
+                let _ = AllowSetForegroundWindow(pid);
+                let _ = PostMessageW(Some(anchor), WM_APP_OPEN, WPARAM(0), LPARAM(0));
+            }
             return Ok(());
         }
         let _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
@@ -2383,6 +2443,9 @@ fn main() -> Result<()> {
         let file = settings_file::load().unwrap_or_default();
         APP.with_borrow_mut(|a| a.as_mut().map(|a| a.apply(file)));
         settings_file::watch(anchor, WM_APP_SETTINGS);
+        if install::has(&args, install::INSTALLED) {
+            let _ = PostMessageW(Some(anchor), WM_APP_INSTALLED, WPARAM(0), LPARAM(0));
+        }
         let mut msg = MSG::default();
         while GetMessageW(&mut msg, None, 0, 0).as_bool() {
             let _ = TranslateMessage(&msg);

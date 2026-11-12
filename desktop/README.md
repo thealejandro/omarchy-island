@@ -17,6 +17,20 @@ cargo test --workspace
 cargo build --release -p island-windows   # target/release/island.exe
 ```
 
+## Install
+
+`island.exe --install` installs it for this user, with no admin rights:
+
+- it copies itself to `%LOCALAPPDATA%\Programs\Island`;
+- it adds Island to the Start menu and to Settings > Apps > Installed apps;
+- it starts the installed copy, which says so with a glance.
+
+If "Start with Windows" was on, it now starts the installed copy. Opening
+the island again while it runs opens its menu. Uninstalling it from
+"Installed apps" (or `island.exe --uninstall`) first turns Windows'
+banners back on, then removes the Run value, the shortcut, the entry and
+the program's folder. The settings and the lyrics cache stay.
+
 The island lives in the tray: its menu (also a right click on the island)
 switches the lyrics and the lyrics column, starts it with Windows, opens
 the settings and quits. Starting with Windows is a value under the user's
@@ -156,4 +170,7 @@ For trying things out, the command line wins over the file:
 `--open-lyrics on|off`, `--open-width` and `--page home|focus`.
 CI builds with the MSVC toolchain. Without the Visual Studio Build Tools,
 the `stable-x86_64-pc-windows-gnullvm` toolchain works too:
-`cargo +stable-x86_64-pc-windows-gnullvm build`.
+`cargo +stable-x86_64-pc-windows-gnullvm build`. That build is for trying
+things out: only the MSVC one links with `/DEPENDENTLOADFLAG:0x800` (the
+DLLs it starts with come from System32 alone), so what is published is
+built by CI with MSVC.

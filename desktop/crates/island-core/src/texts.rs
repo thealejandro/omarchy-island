@@ -43,6 +43,9 @@ pub struct Texts {
     pub notification: &'static str,
     /// When a notification arrived: just now.
     pub now: &'static str,
+    /// After installing: the glance, and where the island now is.
+    pub installed: &'static str,
+    pub in_start_menu: &'static str,
 }
 
 pub const EN: Texts = Texts {
@@ -75,6 +78,8 @@ pub const EN: Texts = Texts {
     disconnected: "Disconnected",
     notification: "Notification",
     now: "now",
+    installed: "Island installed",
+    in_start_menu: "In the Start menu",
 };
 
 pub const ES: Texts = Texts {
@@ -107,6 +112,8 @@ pub const ES: Texts = Texts {
     disconnected: "Desconectado",
     notification: "Notificación",
     now: "ahora",
+    installed: "Isla instalada",
+    in_start_menu: "En el menú Inicio",
 };
 
 /// `text` with each `{}` replaced by the next of `args`.
@@ -189,6 +196,8 @@ mod tests {
                 t.camera_off,
                 t.connected,
                 t.disconnected,
+                t.installed,
+                t.in_start_menu,
             ] {
                 assert!(!s.trim().is_empty());
                 // The tray's tooltip and menu take up to 127 characters.

@@ -10,6 +10,12 @@ repository.workspace = true
 name = "island"
 path = "src/main.rs"
 
+[build-dependencies]
+# The exe's icon is drawn by the core's code.
+island-core = { path = "../../crates/island-core" }
+# Puts the icon and the version into the exe (rc.exe, or llvm-rc/windres).
+embed-resource = "3"
+
 [dependencies]
 island-core = { path = "../../crates/island-core" }
 serde_json = "1"

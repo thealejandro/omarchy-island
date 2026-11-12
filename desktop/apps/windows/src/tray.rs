@@ -72,14 +72,10 @@ impl Drop for Tray {
     }
 }
 
-/// The island as an icon: a dark pill with a light rim, seen on light and
-/// dark taskbars alike. Drawn here, so there is no file to ship.
+/// The island's pill (see `island_core::icon`) at the tray's size.
 fn pill_icon() -> Option<HICON> {
     let size = unsafe { GetSystemMetrics(SM_CXSMICON) }.clamp(16, 64);
-    let s = size as f32;
-    let pixels: Vec<u32> = (0..size * size)
-        .map(|i| pill_pixel((i % size) as f32 + 0.5, (i / size) as f32 + 0.5, s))
-        .collect();
+    let pixels = island_core::icon::pill(size as u32);
     unsafe {
         let info = BITMAPINFO {
             bmiHeader: BITMAPINFOHEADER {
@@ -110,21 +106,4 @@ fn pill_icon() -> Option<HICON> {
         let _ = DeleteObject(mask.into());
         icon.ok()
     }
-}
-
-/// One pixel of the pill, as BGRA with straight alpha.
-fn pill_pixel(x: f32, y: f32, s: f32) -> u32 {
-    let r = s * 0.22;
-    let half = s * 0.46 - r;
-    let (px, py) = (x - s / 2.0, y - s / 2.0);
-    let qx = (px.abs() - half).max(0.0);
-    // Distance to the pill's edge: negative inside.
-    let d = (qx * qx + py * py).sqrt() - r;
-    let rim = (s / 16.0).max(1.0);
-    let alpha = (0.5 - d).clamp(0.0, 1.0);
-    let body = (0.5 - (d + rim)).clamp(0.0, 1.0);
-    // Black body, light grey rim.
-    let c = (0xD8 as f32 * (1.0 - body)) as u32;
-    let a = (alpha * 255.0) as u32;
-    (a << 24) | (c << 16) | (c << 8) | c
 }
