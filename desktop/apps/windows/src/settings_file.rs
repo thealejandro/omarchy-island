@@ -5,7 +5,7 @@ use std::path::PathBuf;
 
 use island_core::settings::{self, Settings};
 use serde_json::Value;
-use windows::Win32::Foundation::{CloseHandle, HWND, LPARAM, WPARAM};
+use windows::Win32::Foundation::{CloseHandle, HANDLE, HWND, LPARAM, WPARAM};
 use windows::Win32::Storage::FileSystem::{
     CreateFileW, FILE_FLAG_BACKUP_SEMANTICS, FILE_LIST_DIRECTORY, FILE_NOTIFY_CHANGE_FILE_NAME,
     FILE_NOTIFY_CHANGE_LAST_WRITE, FILE_NOTIFY_INFORMATION, FILE_SHARE_DELETE, FILE_SHARE_READ,
@@ -69,25 +69,34 @@ pub fn ensure() -> std::io::Result<PathBuf> {
     Ok(path())
 }
 
-/// Posts `msg` to `hwnd` when `settings.json` changes. The thread sleeps in
-/// the kernel until then: nothing is polled.
+/// Posts `msg` to `hwnd` when `settings.json` changes.
 pub fn watch(hwnd: HWND, msg: u32) {
+    let _ = std::fs::create_dir_all(folder());
+    watch_file(folder(), NAME, hwnd, msg);
+}
+
+/// Posts `msg` to `hwnd` when the file `name` in `folder` changes. The
+/// thread sleeps in the kernel until then: nothing is polled. `false` when
+/// the folder can't be watched (it doesn't exist).
+pub fn watch_file(folder: PathBuf, name: &'static str, hwnd: HWND, msg: u32) -> bool {
     let hwnd = hwnd.0 as isize;
+    let Ok(dir) = (unsafe {
+        CreateFileW(
+            &HSTRING::from(folder.as_os_str()),
+            FILE_LIST_DIRECTORY.0,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            None,
+            OPEN_EXISTING,
+            FILE_FLAG_BACKUP_SEMANTICS,
+            None,
+        )
+    }) else {
+        return false;
+    };
+    // The handle crosses to the thread as a number.
+    let raw = dir.0 as isize;
     std::thread::spawn(move || {
-        let _ = std::fs::create_dir_all(folder());
-        let Ok(dir) = (unsafe {
-            CreateFileW(
-                &HSTRING::from(folder().as_os_str()),
-                FILE_LIST_DIRECTORY.0,
-                FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-                None,
-                OPEN_EXISTING,
-                FILE_FLAG_BACKUP_SEMANTICS,
-                None,
-            )
-        }) else {
-            return;
-        };
+        let dir = HANDLE(raw as *mut _);
         // u32s, so the records inside are aligned.
         let mut buf = [0u32; 1024];
         loop {
@@ -111,7 +120,7 @@ pub fn watch(hwnd: HWND, msg: u32) {
             if got == 0
                 || names(&buf, got)
                     .iter()
-                    .any(|n| n.eq_ignore_ascii_case(NAME))
+                    .any(|n| n.eq_ignore_ascii_case(name))
             {
                 let h = HWND(hwnd as *mut _);
                 if unsafe { PostMessageW(Some(h), msg, WPARAM(0), LPARAM(0)) }.is_err() {
@@ -123,6 +132,7 @@ pub fn watch(hwnd: HWND, msg: u32) {
             let _ = CloseHandle(dir);
         }
     });
+    true
 }
 
 /// The file names in a ReadDirectoryChangesW answer of `len` bytes.

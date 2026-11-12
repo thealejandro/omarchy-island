@@ -12,6 +12,7 @@ mod privacy;
 mod render;
 mod settings_file;
 mod startup;
+mod theme_file;
 mod tray;
 mod volume;
 
@@ -104,6 +105,8 @@ const WM_APP_PRIVACY: u32 = WM_APP + 9;
 const WM_APP_BLUETOOTH: u32 = WM_APP + 10;
 /// A notification showed (see `notifications.rs`).
 const WM_APP_NOTIFICATION: u32 = WM_APP + 11;
+/// The `tema` theme changed (see `theme_file.rs`).
+const WM_APP_THEME: u32 = WM_APP + 12;
 
 const ISLAND_CLASS: PCWSTR = w!("IslandWindow");
 /// The hidden window the shared things talk to: the sources (media, volume,
@@ -164,6 +167,11 @@ const SETTINGS_WAIT_MS: u32 = 150;
 const FOCUS_TIMER: usize = 7;
 /// When a Bluetooth change still settling will have held.
 const BLUETOOTH_TIMER: usize = 8;
+/// The theme's file is read this long after it changes, and again as long
+/// after a read that failed (another app had it open), a few times.
+const THEME_TIMER: usize = 9;
+const THEME_WAIT_MS: u32 = 150;
+const THEME_TRIES: u8 = 3;
 /// The wheel changes the focus length by this many minutes.
 const WHEEL_MINUTES: i32 = 5;
 // The menu's items.
@@ -465,6 +473,12 @@ struct App {
     /// The open island's width setting (DIPs, steps of 10): 560 by default,
     /// with the column or without.
     open_width_setting: f32,
+    /// The `tema` theme's colors, while a setting follows them.
+    theme: Option<island_core::theme::ThemeColors>,
+    /// Its `actual.json` is watched (from the first setting that follows it).
+    theme_watched: bool,
+    /// Reads of the theme's file that failed in a row.
+    theme_failed: u8,
     /// Windows' banners are off for the island to tell notifications alone
     /// (chosen in the menu; kept, noted, across runs).
     banners_quiet: bool,
@@ -1473,6 +1487,7 @@ impl App {
         self.placement = s.placement;
         self.monitor = s.monitor.clone();
         self.song_text = s.song_text;
+        self.recolor(false);
         if s.lyrics != self.lyrics.is_some() {
             self.lyrics = s
                 .lyrics
@@ -1520,6 +1535,57 @@ impl App {
         self.lyrics_column = s.open_lyrics;
         self.open_width_setting = s.open_width();
         self.layout();
+    }
+
+    /// The levels' and the body's colors from the settings and, when one
+    /// follows it, the `tema` theme (read again; kept while half written).
+    /// `redraw`: the islands at rest show them now.
+    fn recolor(&mut self, redraw: bool) {
+        use island_core::settings::{Accent, IslandColor};
+        use island_core::theme;
+        let s = &self.settings;
+        if s.accent == Accent::Theme || s.island_color == IslandColor::Theme {
+            if !self.theme_watched {
+                self.theme_watched = theme_file::watch(self.anchor, WM_APP_THEME);
+            }
+            match theme_file::load() {
+                Some(t) => {
+                    self.theme = Some(t);
+                    self.theme_failed = 0;
+                }
+                None if self.theme_failed < THEME_TRIES => {
+                    self.theme_failed += 1;
+                    unsafe {
+                        SetTimer(Some(self.anchor), THEME_TIMER, THEME_WAIT_MS, None);
+                    }
+                }
+                None => self.theme_failed = 0,
+            }
+        }
+        let t = self.theme.as_ref();
+        let body = theme::body(s.island_color, t);
+        render::choose_colors(theme::accent(s.accent, t, body), body);
+        if redraw {
+            for i in 0..self.surfaces.len() {
+                if self.surfaces[i].last_frame.is_none() {
+                    self.draw_surface(i);
+                }
+            }
+        }
+    }
+
+    /// Windows' colors may have changed: its accent is read again, and
+    /// `tema`, if it wasn't installed yet, may be now (it sets the Windows
+    /// theme too), so its file is looked for again.
+    fn colors_changed(&mut self) {
+        use island_core::settings::{Accent, IslandColor};
+        render::forget_accent();
+        let s = &self.settings;
+        if !self.theme_watched
+            && (s.accent == Accent::Theme || s.island_color == IslandColor::Theme)
+        {
+            self.recolor(true);
+        }
     }
 
     /// The file again, once it has changed; kept as is while it can't be
@@ -1613,6 +1679,17 @@ impl App {
             WM_APP_BLUETOOTH => self.bluetooth_changed(),
             WM_APP_NOTIFICATION => self.notified(),
             WM_APP_SPEAKERS => self.speakers_changed(),
+            // A move over it comes as a few changes: one read once they end.
+            WM_APP_THEME => unsafe {
+                self.theme_failed = 0;
+                SetTimer(Some(self.anchor), THEME_TIMER, THEME_WAIT_MS, None);
+            },
+            WM_TIMER if wp.0 == THEME_TIMER => {
+                unsafe {
+                    let _ = KillTimer(Some(self.anchor), THEME_TIMER);
+                }
+                self.recolor(true);
+            }
             WM_TIMER if wp.0 == PEEK_TIMER => {
                 // The lyrics' glance stays: the notice gives way to it.
                 if self.notice.is_some() && self.glance() {
@@ -1643,7 +1720,7 @@ impl App {
                 self.reload();
             }
             // Windows' colors may have changed: the accent is read again.
-            WM_SETTINGCHANGE | WM_DWMCOLORIZATIONCOLORCHANGED => render::forget_accent(),
+            WM_SETTINGCHANGE | WM_DWMCOLORIZATIONCOLORCHANGED => self.colors_changed(),
             WM_RBUTTONUP => self.open_menu(),
             WM_APP_TRAY => {
                 if matches!((lp.0 & 0xFFFF) as u32, WM_LBUTTONUP | WM_RBUTTONUP) {
@@ -1739,7 +1816,7 @@ impl App {
             // Clicking the island never takes the focus from the app in use.
             WM_MOUSEACTIVATE => return Some(LRESULT(MA_NOACTIVATE as isize)),
             WM_RBUTTONUP => self.open_menu(),
-            WM_SETTINGCHANGE | WM_DWMCOLORIZATIONCOLORCHANGED => render::forget_accent(),
+            WM_SETTINGCHANGE | WM_DWMCOLORIZATIONCOLORCHANGED => self.colors_changed(),
             // Asked to close (the anchor, message-only, never is): the app
             // ends.
             WM_CLOSE => self.quit(),
@@ -2280,6 +2357,9 @@ fn main() -> Result<()> {
             lyric_moved: None,
             lyrics_column: defaults.open_lyrics,
             open_width_setting: defaults.open_width(),
+            theme: None,
+            theme_watched: false,
+            theme_failed: 0,
             // Fitted to the screen by the first layout.
             peek_w: 0.0,
             closed_w: layout::CLOSED_MEDIA_WIDTH,

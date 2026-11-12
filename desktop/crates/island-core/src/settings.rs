@@ -8,6 +8,7 @@
 
 use serde_json::{Map, Value};
 
+use crate::color;
 use crate::focus::Lengths;
 use crate::media::{self, SongText, TextAlign};
 use crate::monitor::MonitorChoice;
@@ -42,6 +43,53 @@ impl Language {
             Self::System if locale.to_ascii_lowercase().starts_with("es") => Self::Es,
             Self::System => Self::En,
             chosen => chosen,
+        }
+    }
+}
+
+/// The color of the glances' levels (volume and the like) and of a
+/// notification with no logo of its own.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum Accent {
+    /// Windows' accent, followed when it changes.
+    #[default]
+    System,
+    White,
+    /// The accent of the Windows theme applied with `tema` (its
+    /// `actual.json`); the system's while there is none.
+    Theme,
+    /// `#rrggbb` or `#rgb`, as 0 to 1.
+    Color([f32; 3]),
+}
+
+impl Accent {
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "system" => Some(Self::System),
+            "white" => Some(Self::White),
+            "theme" => Some(Self::Theme),
+            _ => color::parse_hex(s).map(Self::Color),
+        }
+    }
+}
+
+/// The island's own color: black like a notch by default.
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
+pub enum IslandColor {
+    #[default]
+    Black,
+    /// The background of the Windows theme applied with `tema`; black
+    /// while there is none.
+    Theme,
+    Color([f32; 3]),
+}
+
+impl IslandColor {
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "black" => Some(Self::Black),
+            "theme" => Some(Self::Theme),
+            _ => color::parse_hex(s).map(Self::Color),
         }
     }
 }
@@ -81,6 +129,8 @@ pub struct Settings {
     /// How big the closed island and its glances are, times this; the open
     /// island keeps its size.
     pub island_scale: f32,
+    pub accent: Accent,
+    pub island_color: IslandColor,
 }
 
 /// `lyricsDelay`'s range, in ms.
@@ -111,6 +161,8 @@ impl Default for Settings {
             notifications_in_full_screen: true,
             lyrics_delay: None,
             island_scale: 1.0,
+            accent: Accent::System,
+            island_color: IslandColor::Black,
         }
     }
 }
@@ -128,6 +180,8 @@ pub const TEMPLATE: &str = r#"{
   "openWidth": "auto",
   "defaultPage": "home",
   "islandScale": 1.0,
+  "accent": "system",
+  "islandColor": "black",
   "focusMinutes": 25,
   "breakMinutes": 5,
   "longBreakMinutes": 15,
@@ -236,6 +290,10 @@ impl Settings {
                 .map_or(d.island_scale, |v| {
                     (v as f32).clamp(ISLAND_SCALE.0, ISLAND_SCALE.1)
                 }),
+            accent: text("accent").and_then(Accent::parse).unwrap_or(d.accent),
+            island_color: text("islandColor")
+                .and_then(IslandColor::parse)
+                .unwrap_or(d.island_color),
         })
     }
 
@@ -278,6 +336,45 @@ mod tests {
 
     fn parse(text: &str) -> Settings {
         Settings::parse(text).unwrap()
+    }
+
+    #[test]
+    fn the_accent_is_the_system_white_or_a_color() {
+        assert_eq!(Settings::default().accent, Accent::System);
+        assert_eq!(parse(r#"{"accent": "white"}"#).accent, Accent::White);
+        assert_eq!(parse(r#"{"accent": "theme"}"#).accent, Accent::Theme);
+        assert_eq!(Settings::default().island_color, IslandColor::Black);
+        assert_eq!(
+            parse(r#"{"islandColor": "Theme"}"#).island_color,
+            IslandColor::Theme
+        );
+        assert_eq!(
+            parse(r##"{"islandColor": "#102030"}"##).island_color,
+            IslandColor::Color([16.0 / 255.0, 32.0 / 255.0, 48.0 / 255.0])
+        );
+        assert_eq!(
+            parse(r#"{"islandColor": "white"}"#).island_color,
+            IslandColor::Black
+        );
+        assert_eq!(parse(r#"{"accent": " System "}"#).accent, Accent::System);
+        assert_eq!(
+            parse(r##"{"accent": "#ff8000"}"##).accent,
+            Accent::Color([1.0, 128.0 / 255.0, 0.0])
+        );
+        assert_eq!(
+            parse(r##"{"accent": "#0F0"}"##).accent,
+            Accent::Color([0.0, 1.0, 0.0])
+        );
+        for bad in [
+            r#""red""#,
+            r##""#12345""##,
+            r##""#gggggg""##,
+            "3",
+            r##""#+1+2+3""##,
+        ] {
+            let s = parse(&format!(r#"{{"accent": {bad}}}"#));
+            assert_eq!(s.accent, Accent::System, "{bad}");
+        }
     }
 
     #[test]

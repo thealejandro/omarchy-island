@@ -231,9 +231,29 @@ const DEFAULT_ACCENT: [f32; 3] = [0.3, 0.6, 1.0];
 /// Windows' accent exactly as its own volume flyout shows it on a dark
 /// background: the palette's lighter shade (`AccentPalette`, the second of
 /// its eight colors), else the accent itself (`AccentColorMenu`, ABGR).
+/// The `accent` setting overrides it.
 fn windows_accent() -> [f32; 3] {
-    let mut kept = ACCENT.lock().unwrap_or_else(|e| e.into_inner());
-    *kept.get_or_insert_with(read_accent)
+    chosen_accent().unwrap_or_else(|| {
+        let mut kept = ACCENT.lock().unwrap_or_else(|e| e.into_inner());
+        color::legible_on(*kept.get_or_insert_with(read_accent), body_color())
+    })
+}
+
+/// The colors the settings (and the `tema` theme) pick, resolved by
+/// `island_core::theme`: the levels' (`None`: the system's) and the body's.
+static CHOSEN: std::sync::Mutex<(Option<[f32; 3]>, [f32; 3])> =
+    std::sync::Mutex::new((None, [0.0; 3]));
+
+pub fn choose_colors(accent: Option<[f32; 3]>, body: [f32; 3]) {
+    *CHOSEN.lock().unwrap_or_else(|e| e.into_inner()) = (accent, body);
+}
+
+fn chosen_accent() -> Option<[f32; 3]> {
+    CHOSEN.lock().unwrap_or_else(|e| e.into_inner()).0
+}
+
+fn body_color() -> [f32; 3] {
+    CHOSEN.lock().unwrap_or_else(|e| e.into_inner()).1
 }
 
 /// The accent as last read, until Windows says it changed.
@@ -775,8 +795,10 @@ impl Renderer {
         let side = (TOAST_LOGO * scale).ceil();
         let logo = n.logo.and_then(|b| self.logo(b, side)).map(|a| a.accent);
         match logo {
-            Some(a) if a != [0.85; 3] => a,
-            _ => system_accent(),
+            Some(a) if a != [0.85; 3] => color::legible_on(a, body_color()),
+            _ => {
+                chosen_accent().unwrap_or_else(|| color::legible_on(system_accent(), body_color()))
+            }
         }
     }
 
@@ -1883,6 +1905,8 @@ impl Renderer {
                 self.dc.Clear(Some(&D2D1_COLOR_F::default()));
                 let (bx, by) = (ox + s.body.x, oy + s.body.y);
                 self.dc.SetTransform(&Matrix3x2::translation(bx, by));
+                let [r, g, b] = body_color();
+                self.fill.SetColor(&D2D1_COLOR_F { r, g, b, a: 1.0 });
                 self.dc.FillGeometry(&geo, &self.fill, None::<&ID2D1Brush>);
                 // A notification takes the glow over in its own color, with
                 // its ring; the cover's gives way as it comes in.
