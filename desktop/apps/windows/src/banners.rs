@@ -159,38 +159,46 @@ fn known() -> Vec<String> {
     out
 }
 
-/// What was chosen last, for [`set`].
+/// Whether the banners should be off now, for [`apply`].
 static WANT: AtomicBool = AtomicBool::new(false);
-/// One [`quiet_all`] or [`restore`] at a time.
+/// One turning off or back on at a time.
 static TURNING: Mutex<()> = Mutex::new(());
 
-/// Turns the banners off (`true`) or back on, on a thread of its own. Chosen
-/// twice in a row, quickly, the last choice is the one that holds: each
-/// thread waits for the one before and then applies what was chosen last,
-/// whichever of them the system runs first.
-pub fn set(on: bool) {
-    WANT.store(on, Ordering::SeqCst);
+/// Notes that "Notifications only in the island" is chosen (`true`) or not.
+/// It holds while the island is closed: the banners come back with it
+/// closed, and go again as it starts ([`apply`]).
+pub fn choose(on: bool) {
+    let Some(m) = marker() else { return };
+    let _ = if on {
+        std::fs::write(m, "")
+    } else {
+        std::fs::remove_file(m)
+    };
+}
+
+/// Turns the banners off (`true`) or back on, on a thread of its own. Asked
+/// twice in a row, quickly, the last one is what holds: each thread waits
+/// for the one before and then does what was asked last, whichever of them
+/// the system runs first.
+pub fn apply(off: bool) {
+    WANT.store(off, Ordering::SeqCst);
     std::thread::spawn(|| {
         let _turning = TURNING.lock().unwrap_or_else(|e| e.into_inner());
         if WANT.load(Ordering::SeqCst) {
-            quiet_all();
+            for id in known() {
+                quiet(&id);
+            }
         } else {
-            restore();
+            turn_back_on();
         }
     });
 }
 
-/// Turns off the banners of every app known so far (new ones as their
-/// first notification arrives, with [`quiet`]).
-fn quiet_all() {
-    // Chosen even with no app to turn off yet (all off by hand, or a new
-    // Windows): the next ones still are.
-    if let Some(m) = marker() {
-        let _ = std::fs::write(m, "");
-    }
-    for id in known() {
-        quiet(&id);
-    }
+/// The banners back on now, before the island closes; the choice stays.
+pub fn pause() {
+    WANT.store(false, Ordering::SeqCst);
+    let _turning = TURNING.lock().unwrap_or_else(|e| e.into_inner());
+    turn_back_on();
 }
 
 /// The mark that "Notifications only in the island" is chosen.
@@ -207,12 +215,15 @@ pub fn active() -> bool {
     }
 }
 
-/// Turns back on the banners turned off here, and forgets them.
+/// Not chosen any more, and the banners back on.
 pub fn restore() {
+    choose(false);
+    pause();
+}
+
+/// Turns back on the banners turned off here, and forgets them.
+fn turn_back_on() {
     let _notes = NOTES.lock().unwrap_or_else(|e| e.into_inner());
-    if let Some(m) = marker() {
-        let _ = std::fs::remove_file(m);
-    }
     let ids = read_noted();
     for id in &ids {
         // Only if still as the island left it: the user may have changed it.

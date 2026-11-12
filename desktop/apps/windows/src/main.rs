@@ -69,10 +69,10 @@ use windows::Win32::UI::WindowsAndMessaging::{
     PostMessageW, PostQuitMessage, RegisterClassW, RegisterWindowMessageW, SW_SHOW, SW_SHOWNORMAL,
     SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SetForegroundWindow, SetTimer, SetWindowPos,
     ShowWindow, TranslateMessage, WM_ACTIVATE, WM_APP, WM_CLOSE, WM_COPYDATA, WM_DESTROY,
-    WM_DISPLAYCHANGE, WM_DPICHANGED, WM_DWMCOLORIZATIONCOLORCHANGED, WM_KEYDOWN, WM_LBUTTONUP,
-    WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_RBUTTONUP, WM_SETTINGCHANGE, WM_TIMER,
-    WNDCLASSW, WS_EX_NOACTIVATE, WS_EX_NOREDIRECTIONBITMAP, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
-    WS_POPUP, WS_VISIBLE,
+    WM_DISPLAYCHANGE, WM_DPICHANGED, WM_DWMCOLORIZATIONCOLORCHANGED, WM_ENDSESSION, WM_KEYDOWN,
+    WM_LBUTTONUP, WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_RBUTTONUP, WM_SETTINGCHANGE,
+    WM_TIMER, WNDCLASSW, WS_EX_NOACTIVATE, WS_EX_NOREDIRECTIONBITMAP, WS_EX_TOOLWINDOW,
+    WS_EX_TOPMOST, WS_POPUP, WS_VISIBLE,
 };
 use windows::core::BOOL;
 use windows::core::{Error, HSTRING, PCWSTR, Result, w};
@@ -533,8 +533,11 @@ struct App {
     /// Reads of the theme's file that failed in a row.
     theme_failed: u8,
     /// Windows' banners are off for the island to tell notifications alone
-    /// (chosen in the menu; kept, noted, across runs).
+    /// (chosen in the menu; the choice kept across runs).
     banners_quiet: bool,
+    /// Whether they are off now: only while the island runs and can tell
+    /// notifications (`None` before it first looks).
+    banners_off: Option<bool>,
     /// When the island last played the notification sound: a burst of them
     /// sounds once.
     last_sound: Option<Instant>,
@@ -1103,7 +1106,7 @@ impl App {
         }
         let t = a.toast;
         // An app new to the island: its next ones come without a banner.
-        if self.banners_quiet {
+        if self.banners_off == Some(true) {
             banners::quiet(&t.app_id);
             // Windows is silent with the banners off: the island isn't.
             let quiet_since = self
@@ -1627,9 +1630,25 @@ impl App {
                 })
                 .flatten();
         }
+        self.banners_follow();
         self.lyrics_column = s.open_lyrics;
         self.open_width_setting = s.open_width();
         self.layout();
+    }
+
+    /// Windows' banners off while "Notifications only in the island" is
+    /// chosen and the island can tell notifications; back on otherwise.
+    fn banners_follow(&mut self) {
+        let off = self.banners_quiet && self.notifications.is_some();
+        // Chosen before the mark existed (noted apps alone): marked now, as
+        // the notes go when the island closes.
+        if self.banners_off.is_none() && self.banners_quiet {
+            banners::choose(true);
+        }
+        if self.banners_off != Some(off) {
+            self.banners_off = Some(off);
+            banners::apply(off);
+        }
     }
 
     /// The levels' and the body's colors from the settings and, when one
@@ -1968,6 +1987,9 @@ impl App {
             // Asked to close (the anchor, message-only, never is): the app
             // ends.
             WM_CLOSE => self.quit(),
+            // Signing out or shutting down ends the app with no WM_CLOSE:
+            // the banners come back first.
+            WM_ENDSESSION if wp.0 != 0 => banners::pause(),
             // Destroyed from outside the app: it goes from the list (its
             // pacer's thread ends with it).
             WM_DESTROY => {
@@ -2324,6 +2346,8 @@ impl App {
     fn quit(&mut self) {
         self.close_menu();
         self.keys = None;
+        // Windows' banners back while the island is closed.
+        banners::pause();
         // The icon goes first: the taskbar keeps a dead one otherwise.
         self.tray = None;
         // The anchor's own WM_DESTROY can't run now (the app is borrowed),
@@ -2348,7 +2372,8 @@ impl App {
             // settings), or back on: kept as is until chosen again.
             MENU_ONLY_ISLAND => {
                 self.banners_quiet = !self.banners_quiet;
-                banners::set(self.banners_quiet);
+                banners::choose(self.banners_quiet);
+                self.banners_follow();
                 return;
             }
             MENU_STARTUP => {
@@ -2717,6 +2742,7 @@ fn main() -> Result<()> {
             notifications: None,
             pulse: None,
             banners_quiet: banners::active(),
+            banners_off: None,
             offer: None,
             offer_from: None,
             offer_found: false,

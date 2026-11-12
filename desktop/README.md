@@ -203,12 +203,14 @@ menu turns off "Show notification banners" for every app that has sent
 notifications (as the switch under Settings > System > Notifications would;
 Windows' own alerts keep theirs), and for each new one as its first
 notification arrives; they still go to the notification center, and the
-island still shows them. It applies at once and stays so, also after
-restarting, until it is chosen again: then the banners it turned off (noted
-in `%LOCALAPPDATA%\island\banners.txt`) come back, but not those turned off
-by hand. Before uninstalling the island, choose it again, or run
-`island.exe --restore-banners` (it does the same without opening the
-island); else turn them on in Settings > System > Notifications.
+island still shows them. It applies at once and only while the island
+runs and can tell notifications: quitting it, signing out or shutting down
+(or `notificationGlance: false`, or no "Notification access") brings the
+banners it turned off (noted in `%LOCALAPPDATA%\island\banners.txt`) back,
+and starting it turns them off again, until it is chosen again. Those
+turned off by hand stay so. Ended by force, the island leaves them off
+until it quits the next time, or until `island.exe --restore-banners` (it
+does the same without opening the island; uninstalling does it too).
 With the banners off, the island plays Windows' own notification sound
 when one arrives, since Windows itself no longer does
 (`notificationSound: false` keeps it silent).
