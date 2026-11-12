@@ -2,6 +2,9 @@
 //! redirection bitmap and is transparent wherever the island isn't drawn.
 //! Text is DirectWrite; the cover is decoded with WIC.
 
+use std::cell::RefCell;
+use std::rc::{Rc, Weak};
+
 use island_core::color;
 use island_core::glance;
 use island_core::icons::{self, Icon};
@@ -26,7 +29,7 @@ use windows::Win32::Graphics::Direct2D::{
     D2D1_FACTORY_TYPE_SINGLE_THREADED, D2D1_GAMMA_2_2, D2D1_INTERPOLATION_MODE_LINEAR,
     D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES, D2D1_ROUNDED_RECT, D2D1_STROKE_STYLE_PROPERTIES1,
     D2D1_SWEEP_DIRECTION_CLOCKWISE, D2D1_SWEEP_DIRECTION_COUNTER_CLOCKWISE, D2D1CreateFactory,
-    ID2D1BitmapBrush1, ID2D1Brush, ID2D1DeviceContext, ID2D1Factory1, ID2D1Image,
+    ID2D1BitmapBrush1, ID2D1Brush, ID2D1Device, ID2D1DeviceContext, ID2D1Factory1, ID2D1Image,
     ID2D1PathGeometry, ID2D1RenderTarget, ID2D1SolidColorBrush,
 };
 use windows::Win32::Graphics::Direct2D::{
@@ -381,8 +384,10 @@ pub struct Renderer {
     ink: ID2D1SolidColorBrush,
     /// The artist next to the title.
     dim: ID2D1SolidColorBrush,
-    text: Text,
+    text: Rc<Text>,
     wic: IWICImagingFactory,
+    /// The shared device this renderer was made on.
+    gpu: Rc<Gpu>,
     art: Option<Art>,
     /// The logo of the app whose notification shows (cached apart from the
     /// cover, so the two never evict each other).
@@ -536,16 +541,81 @@ impl Text {
     }
 }
 
-impl Renderer {
-    pub fn new(hwnd: HWND) -> Result<Self> {
+/// What every island draws with: one device, one composition, one set of
+/// fonts. Each screen's island adds only its window's target and surface
+/// (a device of its own cost ~7 MB more per screen).
+struct Gpu {
+    factory: ID2D1Factory1,
+    d2d: ID2D1Device,
+    dcomp: IDCompositionDevice,
+    wic: IWICImagingFactory,
+    text: Rc<Text>,
+}
+
+thread_local! {
+    /// The device in use while some island holds it.
+    static GPU: RefCell<Weak<Gpu>> = const { RefCell::new(Weak::new()) };
+}
+
+impl Gpu {
+    fn new() -> Result<Self> {
         let dxgi: IDXGIDevice = d3d_device()?.cast()?;
         unsafe {
             let factory: ID2D1Factory1 =
                 D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, None)?;
-            let dc = factory
-                .CreateDevice(&dxgi)?
+            Ok(Self {
+                d2d: factory.CreateDevice(&dxgi)?,
+                factory,
+                dcomp: DCompositionCreateDevice(&dxgi)?,
+                wic: CoCreateInstance(&CLSID_WICImagingFactory, None, CLSCTX_INPROC_SERVER)?,
+                text: Rc::new(Text::new()?),
+            })
+        }
+    }
+
+    /// The device the islands share, made on first use.
+    fn shared() -> Result<Rc<Self>> {
+        GPU.with(|g| {
+            if let Some(gpu) = g.borrow().upgrade() {
+                return Ok(gpu);
+            }
+            let gpu = Rc::new(Self::new()?);
+            *g.borrow_mut() = Rc::downgrade(&gpu);
+            Ok(gpu)
+        })
+    }
+}
+
+/// `lost` failed to draw (a driver update, a GPU reset): the next renderer
+/// gets a new device, unless another island already got one.
+pub fn forget_device(lost: Option<&Renderer>) {
+    GPU.with(|g| {
+        let now = g.borrow().upgrade();
+        if let (Some(now), Some(lost)) = (now, lost)
+            && Rc::ptr_eq(&now, &lost.gpu)
+        {
+            *g.borrow_mut() = Weak::new();
+        }
+    });
+}
+
+impl Renderer {
+    /// On the shared device; if it can't be used (lost before any island
+    /// failed to draw on it), once more on a new one.
+    pub fn new(hwnd: HWND) -> Result<Self> {
+        Self::on(hwnd, Gpu::shared()?).or_else(|_| {
+            GPU.with(|g| *g.borrow_mut() = Weak::new());
+            Self::on(hwnd, Gpu::shared()?)
+        })
+    }
+
+    fn on(hwnd: HWND, gpu: Rc<Gpu>) -> Result<Self> {
+        unsafe {
+            let factory = gpu.factory.clone();
+            let dc = gpu
+                .d2d
                 .CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE)?;
-            let dcomp: IDCompositionDevice = DCompositionCreateDevice(&dxgi)?;
+            let dcomp = gpu.dcomp.clone();
             let target = dcomp.CreateTargetForHwnd(hwnd, true)?;
             let visual = dcomp.CreateVisual()?;
             target.SetRoot(&visual)?;
@@ -574,8 +644,9 @@ impl Renderer {
                 fill,
                 ink,
                 dim,
-                text: Text::new()?,
-                wic: CoCreateInstance(&CLSID_WICImagingFactory, None, CLSCTX_INPROC_SERVER)?,
+                text: gpu.text.clone(),
+                wic: gpu.wic.clone(),
+                gpu,
                 art: None,
                 logo: None,
                 accent: None,

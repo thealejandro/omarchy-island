@@ -46,7 +46,7 @@ impl Language {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct Settings {
     pub language: Language,
     pub placement: Placement,
@@ -175,10 +175,22 @@ impl Settings {
             placement: text("placement")
                 .and_then(Placement::parse)
                 .unwrap_or(d.placement),
-            // A screen's number may come as a number or as text.
+            // A screen's number may come as a number or as text; "all" or
+            // a list ([1, 3] in JSON, "1,3" as text) puts an island on each.
             monitor: match o.get("monitor") {
                 Some(Value::String(s)) => MonitorChoice::parse(s),
                 Some(Value::Number(n)) => MonitorChoice::parse(&n.to_string()),
+                Some(Value::Array(a)) => {
+                    let ns: Option<Vec<usize>> = a
+                        .iter()
+                        .map(|v| {
+                            v.as_u64()
+                                .and_then(|n| usize::try_from(n).ok())
+                                .filter(|n| *n >= 1)
+                        })
+                        .collect();
+                    ns.filter(|ns| !ns.is_empty()).map(MonitorChoice::List)
+                }
                 _ => None,
             }
             .unwrap_or(d.monitor),
@@ -363,6 +375,45 @@ mod tests {
         // Too big to be a settings file.
         let huge = format!("{{\"lyrics\": true, \"x\": \"{}\"}}", "a".repeat(MAX_FILE));
         assert_eq!(Settings::parse(&huge), None);
+    }
+
+    #[test]
+    fn the_monitor_takes_a_number_all_or_a_list() {
+        assert_eq!(
+            parse(r#"{"monitor": "primary"}"#).monitor,
+            MonitorChoice::Primary
+        );
+        assert_eq!(parse(r#"{"monitor": 2}"#).monitor, MonitorChoice::Number(2));
+        assert_eq!(parse(r#"{"monitor": "all"}"#).monitor, MonitorChoice::All);
+        // A list: an array in JSON, comma-separated as text.
+        assert_eq!(
+            parse(r#"{"monitor": [1, 3]}"#).monitor,
+            MonitorChoice::List(vec![1, 3])
+        );
+        assert_eq!(
+            parse(r#"{"monitor": "1,3"}"#).monitor,
+            MonitorChoice::List(vec![1, 3])
+        );
+        assert_eq!(
+            parse(r#"{"monitor": "2, 1"}"#).monitor,
+            MonitorChoice::List(vec![2, 1])
+        );
+        // A bad value is the default alone.
+        for bad in [
+            r#""0""#,
+            r#""nope""#,
+            r#""1,0""#,
+            r#""1,x""#,
+            "-1",
+            "1.5",
+            "[]",
+            "[0]",
+            r#"[1, "a"]"#,
+            "true",
+        ] {
+            let s = parse(&format!(r#"{{"monitor": {bad}}}"#));
+            assert_eq!(s.monitor, MonitorChoice::Primary, "{bad}");
+        }
     }
 
     #[test]
