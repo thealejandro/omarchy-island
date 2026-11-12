@@ -1,5 +1,8 @@
 //! Starting with Windows: a value under the user's own Run key (no admin,
-//! nothing installed). It is only written when chosen from the tray.
+//! nothing installed). It is only written when chosen from the tray, or
+//! moved to the installed exe when installing.
+
+use std::path::Path;
 
 use windows::Win32::Foundation::ERROR_SUCCESS;
 use windows::Win32::System::Registry::{
@@ -13,11 +16,11 @@ const VALUE: PCWSTR = w!("Island");
 /// The command the Run key should hold: this exe, quoted.
 fn command() -> Option<String> {
     let exe = std::env::current_exe().ok()?;
-    Some(format!("\"{}\"", exe.display()))
+    Some(island_core::install::quoted(&exe))
 }
 
-/// On only if it starts this very exe (a moved one counts as off).
-pub fn is_on() -> bool {
+/// What the Run value holds, if there is one.
+pub fn value() -> Option<String> {
     let mut buf = [0u16; 1024];
     let mut size = size_of_val(&buf) as u32;
     let read = unsafe {
@@ -32,11 +35,22 @@ pub fn is_on() -> bool {
         )
     };
     if read != ERROR_SUCCESS {
-        return false;
+        return None;
     }
     let n = (size as usize / 2).min(buf.len());
-    let got = String::from_utf16_lossy(&buf[..n]);
-    command().is_some_and(|c| got.trim_end_matches('\0').eq_ignore_ascii_case(&c))
+    Some(
+        String::from_utf16_lossy(&buf[..n])
+            .trim_end_matches('\0')
+            .to_string(),
+    )
+}
+
+/// On only if it starts this very exe (a moved one counts as off).
+pub fn is_on() -> bool {
+    let (Some(got), Some(cmd)) = (value(), command()) else {
+        return false;
+    };
+    got.eq_ignore_ascii_case(&cmd)
 }
 
 pub fn set(on: bool) -> windows::core::Result<()> {
@@ -52,6 +66,15 @@ pub fn set(on: bool) -> windows::core::Result<()> {
     let Some(cmd) = command() else {
         return Err(windows::core::Error::from_thread());
     };
+    write(&cmd)
+}
+
+/// Starts `exe` with Windows instead.
+pub fn point_to(exe: &Path) -> windows::core::Result<()> {
+    write(&island_core::install::quoted(exe))
+}
+
+fn write(cmd: &str) -> windows::core::Result<()> {
     let data: Vec<u16> = cmd.encode_utf16().chain([0]).collect();
     unsafe {
         RegSetKeyValueW(
