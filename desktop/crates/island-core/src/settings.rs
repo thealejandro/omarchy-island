@@ -8,8 +8,10 @@
 
 use serde_json::{Map, Value};
 
+use crate::focus::Lengths;
 use crate::media::{self, SongText, TextAlign};
 use crate::monitor::MonitorChoice;
+use crate::pages::Page;
 use crate::shape::Placement;
 
 /// Bigger than any real settings file: anything past it is not read.
@@ -57,6 +59,10 @@ pub struct Settings {
     pub open_lyrics: bool,
     /// The open island's width; `None`: by whether there is a column.
     pub open_width: Option<f32>,
+    /// The page the island opens on, until another is chosen.
+    pub default_page: Page,
+    /// The focus timer's lengths.
+    pub focus: Lengths,
 }
 
 impl Default for Settings {
@@ -70,6 +76,8 @@ impl Default for Settings {
             lyrics: false,
             open_lyrics: true,
             open_width: None,
+            default_page: Page::default(),
+            focus: Lengths::default(),
         }
     }
 }
@@ -84,7 +92,12 @@ pub const TEMPLATE: &str = r#"{
   "songText": "title-artist",
   "lyrics": false,
   "openLyrics": true,
-  "openWidth": "auto"
+  "openWidth": "auto",
+  "defaultPage": "home",
+  "focusMinutes": 25,
+  "breakMinutes": 5,
+  "longBreakMinutes": 15,
+  "longBreakEvery": 4
 }
 "#;
 
@@ -107,6 +120,14 @@ impl Settings {
         };
         let text = |k: &str| o.get(k).and_then(Value::as_str);
         let flag = |k: &str, def: bool| o.get(k).and_then(Value::as_bool).unwrap_or(def);
+        // Whole minutes in range; anything else is the default.
+        let minutes = |k: &str, (lo, hi): (u32, u32), def: u32| {
+            o.get(k)
+                .and_then(Value::as_u64)
+                .filter(|m| (u64::from(lo)..=u64::from(hi)).contains(m))
+                .map_or(def, |m| m as u32)
+        };
+        let df = d.focus;
         Some(Self {
             language: text("language")
                 .and_then(Language::parse)
@@ -133,6 +154,15 @@ impl Settings {
                 .get("openWidth")
                 .and_then(Value::as_f64)
                 .and_then(|w| media::parse_open_width(&w.to_string())),
+            default_page: text("defaultPage")
+                .and_then(Page::parse)
+                .unwrap_or(d.default_page),
+            focus: Lengths {
+                focus: minutes("focusMinutes", Lengths::FOCUS, df.focus),
+                short: minutes("breakMinutes", Lengths::SHORT, df.short),
+                long: minutes("longBreakMinutes", Lengths::LONG, df.long),
+                every: minutes("longBreakEvery", Lengths::EVERY, df.every),
+            },
         })
     }
 
@@ -216,6 +246,22 @@ mod tests {
             parse(r#"{"monitor": "1"}"#).monitor,
             MonitorChoice::Number(1)
         );
+        // The focus timer: whole minutes in range, each on its own.
+        let s = parse(
+            r#"{"defaultPage": "focus", "focusMinutes": 50, "breakMinutes": 0,
+                "longBreakMinutes": 20.5, "longBreakEvery": 3}"#,
+        );
+        assert_eq!(s.default_page, Page::Focus);
+        assert_eq!(
+            s.focus,
+            Lengths {
+                focus: 50,
+                short: 5,
+                long: 15,
+                every: 3
+            }
+        );
+        assert_eq!(parse(r#"{"defaultPage": "nope"}"#).default_page, Page::Home);
         // A BOM (Notepad's UTF-8) is fine.
         assert!(parse("\u{feff}{\"lyrics\": true}").lyrics);
         // Too big to be a settings file.

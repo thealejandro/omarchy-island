@@ -5,10 +5,12 @@
 //! It mirrors the pure JavaScript of the Omarchy plugin at the repo root
 //! (`LyricsModel.js`, `IslandSettings.js`); both sides keep the same limits.
 
+pub mod focus;
 pub mod lyrics;
 pub mod media;
 pub mod menu;
 pub mod monitor;
+pub mod pages;
 pub mod settings;
 pub mod shape;
 pub mod spring;
