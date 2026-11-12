@@ -98,9 +98,105 @@ pub fn run_points_elsewhere(run_value: &str, installed_exe: &Path) -> bool {
     !path.is_empty() && !same_path(Path::new(path), installed_exe)
 }
 
+/// What the island offers when it is opened from outside its install
+/// folder (the exe just downloaded, say).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Offer {
+    /// Nothing installed yet.
+    Install,
+    /// An older one is installed.
+    Update,
+}
+
+/// The offer for this exe, if any: none for the installed one itself, for
+/// one no newer than what is installed, or for the very version the user
+/// chose to use without installing (a newer one asks again).
+pub fn offer(
+    is_installed: bool,
+    installed: Option<&str>,
+    this: &str,
+    declined: Option<&str>,
+) -> Option<Offer> {
+    if is_installed || declined.is_some_and(|d| d.trim() == this) {
+        return None;
+    }
+    match installed {
+        None => Some(Offer::Install),
+        Some(v) if newer(this, v) => Some(Offer::Update),
+        Some(_) => None,
+    }
+}
+
+/// What a newer exe tells the installed island that is running, so that one
+/// offers the update: its version and where it is.
+pub fn offer_text(version: &str, exe: &str) -> String {
+    format!("{version}\n{exe}")
+}
+
+/// The version and the exe in an `offer_text`.
+pub fn read_offer_text(s: &str) -> Option<(&str, &str)> {
+    let (v, exe) = s.split_once('\n')?;
+    (!v.trim().is_empty() && !exe.trim().is_empty()).then_some((v.trim(), exe.trim()))
+}
+
+/// Whether version `a` comes after `b` (`0.10.0` after `0.9.3`); parts that
+/// aren't numbers count as 0.
+pub fn newer(a: &str, b: &str) -> bool {
+    let parts = |v: &str| -> Vec<u32> {
+        v.trim()
+            .split(['.', '-', '+'])
+            .take(3)
+            .map(|p| p.parse().unwrap_or(0))
+            .collect()
+    };
+    let (mut a, mut b) = (parts(a), parts(b));
+    a.resize(3, 0);
+    b.resize(3, 0);
+    a > b
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn it_offers_to_install_or_update_only_when_it_helps() {
+        assert_eq!(offer(false, None, "0.1.0", None), Some(Offer::Install));
+        assert_eq!(
+            offer(false, Some("0.1.0"), "0.2.0", None),
+            Some(Offer::Update)
+        );
+        assert_eq!(offer(false, Some("0.2.0"), "0.2.0", None), None);
+        assert_eq!(offer(false, Some("0.3.0"), "0.2.0", None), None);
+        assert_eq!(offer(true, None, "0.1.0", None), None);
+        // "Use without installing" holds for that version only.
+        assert_eq!(offer(false, None, "0.1.0", Some("0.1.0\n")), None);
+        assert_eq!(
+            offer(false, None, "0.2.0", Some("0.1.0")),
+            Some(Offer::Install)
+        );
+    }
+
+    #[test]
+    fn the_offer_text_goes_and_comes_back() {
+        let t = offer_text("0.2.0", r"C:\Descargas\island.exe");
+        assert_eq!(
+            read_offer_text(&t),
+            Some(("0.2.0", r"C:\Descargas\island.exe"))
+        );
+        assert_eq!(read_offer_text("0.2.0"), None);
+        assert_eq!(read_offer_text("\nC:\\island.exe"), None);
+        assert_eq!(read_offer_text("0.2.0\n "), None);
+    }
+
+    #[test]
+    fn versions_compare_by_number() {
+        assert!(newer("0.10.0", "0.9.3"));
+        assert!(newer("1.0", "0.9.9"));
+        assert!(!newer("0.1.0", "0.1.0"));
+        assert!(!newer("0.1.0", "0.1.1"));
+        assert!(newer("0.1.1", "junk"));
+    }
 
     fn l() -> Layout {
         layout(

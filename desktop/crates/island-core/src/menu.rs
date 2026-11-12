@@ -3,20 +3,20 @@
 
 use crate::shape::Rect;
 
-pub const WIDTH: f32 = 224.0;
+pub const WIDTH: f32 = 360.0;
 /// Around the rows, inside the panel.
-pub const PAD: f32 = 5.0;
+pub const PAD: f32 = 10.0;
 /// The name and version on top.
-pub const HEADER: f32 = 30.0;
-pub const ROW: f32 = 30.0;
-pub const SEPARATOR: f32 = 7.0;
-pub const RADIUS: f32 = 12.0;
+pub const HEADER: f32 = 52.0;
+pub const ROW: f32 = 46.0;
+pub const SEPARATOR: f32 = 13.0;
+pub const RADIUS: f32 = 14.0;
 /// The highlight under the pointer.
-pub const ROW_RADIUS: f32 = 7.0;
+pub const ROW_RADIUS: f32 = 10.0;
 /// Where a row's words start.
-pub const TEXT_X: f32 = 13.0;
-const SWITCH: (f32, f32) = (30.0, 17.0);
-const KNOB_INSET: f32 = 2.0;
+pub const TEXT_X: f32 = 22.0;
+const SWITCH: (f32, f32) = (46.0, 26.0);
+const KNOB_INSET: f32 = 3.0;
 /// Between the menu and the edges of the screen's work area.
 pub const SCREEN_MARGIN: f32 = 8.0;
 
@@ -66,7 +66,7 @@ pub fn hit(kinds: &[Kind], x: f32, y: f32) -> Option<usize> {
 /// A toggle row's switch, at its right end.
 pub fn switch(row: Rect) -> Rect {
     Rect {
-        x: row.x + row.width - 8.0 - SWITCH.0,
+        x: row.x + row.width - 14.0 - SWITCH.0,
         y: row.y + (row.height - SWITCH.1) / 2.0,
         width: SWITCH.0,
         height: SWITCH.1,

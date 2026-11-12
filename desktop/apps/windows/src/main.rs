@@ -18,11 +18,13 @@ mod tray;
 mod volume;
 
 use std::cell::RefCell;
+use std::path::PathBuf;
 use std::time::Instant;
 
 use island_core::bluetooth::Event as BtEvent;
 use island_core::focus::{self, Ended, Lengths, Phase};
 use island_core::glance;
+use island_core::install::Offer;
 use island_core::media as layout;
 use island_core::menu::{self, Kind as MenuKind};
 use island_core::monitor::{self, Monitor, MonitorChoice};
@@ -57,15 +59,15 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 use windows::Win32::UI::Shell::{SHQueryUserNotificationState, ShellExecuteW};
 use windows::Win32::UI::WindowsAndMessaging::{
     AllowSetForegroundWindow, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW,
-    FindWindowExW, GetCursorPos, GetMessageW, GetWindowRect, GetWindowThreadProcessId,
-    HWND_MESSAGE, HWND_TOPMOST, IDC_ARROW, IsWindow, KillTimer, LoadCursorW, MA_NOACTIVATE,
-    MONITORINFOF_PRIMARY, MSG, PostMessageW, PostQuitMessage, RegisterClassW,
-    RegisterWindowMessageW, SW_SHOW, SW_SHOWNORMAL, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
-    SetForegroundWindow, SetTimer, SetWindowPos, ShowWindow, TranslateMessage, WM_ACTIVATE, WM_APP,
-    WM_CLOSE, WM_DESTROY, WM_DISPLAYCHANGE, WM_DPICHANGED, WM_DWMCOLORIZATIONCOLORCHANGED,
-    WM_KEYDOWN, WM_LBUTTONUP, WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_RBUTTONUP,
-    WM_SETTINGCHANGE, WM_TIMER, WNDCLASSW, WS_EX_NOACTIVATE, WS_EX_NOREDIRECTIONBITMAP,
-    WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP, WS_VISIBLE,
+    FindWindowExW, GetCursorPos, GetMessageW, GetWindowThreadProcessId, HWND_MESSAGE, HWND_TOPMOST,
+    IDC_ARROW, IsWindow, KillTimer, LoadCursorW, MA_NOACTIVATE, MONITORINFOF_PRIMARY, MSG,
+    PostMessageW, PostQuitMessage, RegisterClassW, RegisterWindowMessageW, SW_SHOW, SW_SHOWNORMAL,
+    SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SetForegroundWindow, SetTimer, SetWindowPos,
+    ShowWindow, TranslateMessage, WM_ACTIVATE, WM_APP, WM_CLOSE, WM_COPYDATA, WM_DESTROY,
+    WM_DISPLAYCHANGE, WM_DPICHANGED, WM_DWMCOLORIZATIONCOLORCHANGED, WM_KEYDOWN, WM_LBUTTONUP,
+    WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_RBUTTONUP, WM_SETTINGCHANGE, WM_TIMER,
+    WNDCLASSW, WS_EX_NOACTIVATE, WS_EX_NOREDIRECTIONBITMAP, WS_EX_TOOLWINDOW, WS_EX_TOPMOST,
+    WS_POPUP, WS_VISIBLE,
 };
 use windows::core::BOOL;
 use windows::core::{Error, HSTRING, PCWSTR, Result, w};
@@ -117,6 +119,11 @@ const WM_APP_OPEN: u32 = WM_APP + 13;
 const WM_APP_QUIT: u32 = WM_APP + 14;
 /// The installed island's first start: a glance says it is installed.
 const WM_APP_INSTALLED: u32 = WM_APP + 15;
+/// Opened from outside its install folder: the offer to install, under the
+/// island.
+const WM_APP_OFFER: u32 = WM_APP + 16;
+/// Started again after `--install` failed: it says so.
+const WM_APP_INSTALL_FAILED: u32 = WM_APP + 17;
 
 const ISLAND_CLASS: PCWSTR = w!("IslandWindow");
 /// The hidden window the shared things talk to: the sources (media, volume,
@@ -191,6 +198,8 @@ const MENU_STARTUP: u32 = 3;
 const MENU_SETTINGS: u32 = 4;
 const MENU_QUIT: u32 = 5;
 const MENU_ONLY_ISLAND: u32 = 6;
+const MENU_INSTALL: u32 = 7;
+const MENU_PORTABLE: u32 = 8;
 const MENU_CLASS: PCWSTR = w!("IslandMenu");
 
 /// The menu window, while it is open.
@@ -463,6 +472,10 @@ struct App {
     tray: Option<tray::Tray>,
     /// The menu, while open.
     menu: Option<MenuWindow>,
+    /// While the menu shows the offer to install (see `install::offer`).
+    offer: Option<Offer>,
+    /// The version and exe that offer is for (this one, or a newer one).
+    offer_from: Option<(String, PathBuf)>,
     /// Sent to the anchor when Explorer (and the taskbar) restarts.
     taskbar_created: u32,
     song_text: layout::SongText,
@@ -1739,6 +1752,30 @@ impl App {
             }
             WM_APP_OPEN if self.menu.is_none() => self.open_menu(true),
             WM_APP_QUIT => self.quit(),
+            WM_APP_OFFER if self.menu.is_none() => {
+                if let (Some(offer), Ok(me)) = (install::offer(), std::env::current_exe()) {
+                    self.show_offer(offer, env!("CARGO_PKG_VERSION").to_owned(), me);
+                }
+            }
+            // A newer exe opened while this one runs: this one offers it,
+            // and keeps running until the user chooses.
+            WM_COPYDATA => {
+                let (version, exe) = unsafe { install::read_offer(lp) }?;
+                self.close_menu();
+                self.show_offer(Offer::Update, version, exe);
+                return Some(LRESULT(self.menu.is_some() as isize));
+            }
+            WM_APP_INSTALL_FAILED => {
+                let n = Notice {
+                    icon: island_core::icons::Icon::Home,
+                    tint: render::WHITE,
+                    title: self.texts.install_failed.into(),
+                    detail: self.texts.still_portable.into(),
+                    level: None,
+                    ..Default::default()
+                };
+                self.notify(n, PEEK_MS);
+            }
             WM_APP_INSTALLED => {
                 let n = Notice {
                     icon: island_core::icons::Icon::Home,
@@ -1873,6 +1910,16 @@ impl App {
             enabled,
         };
         let (toggle, action, line) = (MenuKind::Toggle, MenuKind::Action, MenuKind::Separator);
+        if let Some(offer) = self.offer {
+            let install = match offer {
+                Offer::Install => t.install,
+                Offer::Update => t.update,
+            };
+            return vec![
+                (MENU_INSTALL, row(action, install, false, true)),
+                (MENU_PORTABLE, row(action, t.portable, false, true)),
+            ];
+        }
         let lyrics = self.settings.lyrics;
         vec![
             (MENU_LYRICS, row(toggle, t.lyrics, lyrics, true)),
@@ -1900,17 +1947,28 @@ impl App {
         ]
     }
 
-    /// Opens the menu at the pointer, or `under_island` (the exe opened again,
-    /// from the Start menu say); or closes it, if open.
-    fn open_menu(&mut self, under_island: bool) {
+    /// Opens the menu at the pointer, or `centered` on its screen (the exe
+    /// opened again, from the Start menu say); or closes it, if open.
+    fn open_menu(&mut self, centered: bool) {
         if self.menu.is_some() {
             self.close_menu();
             return;
         }
+        // The screen in use: the pointer's. Its island draws it, if it has
+        // one; else any island.
+        let mut at = POINT::default();
+        let active = unsafe {
+            let _ = GetCursorPos(&mut at);
+            MonitorFromPoint(at, MONITOR_DEFAULTTONEAREST)
+        };
+        let drawn = |s: &Surface| s.renderer.is_some();
         let Some((owner, renderer)) = self
             .surfaces
             .iter()
-            .find_map(|s| s.renderer.as_ref().map(|r| (s.hwnd, r)))
+            .filter(|s| drawn(s))
+            .find(|s| s.mon == active)
+            .or_else(|| self.surfaces.iter().find(|s| drawn(s)))
+            .and_then(|s| s.renderer.as_ref().map(|r| (s.hwnd, r)))
         else {
             return;
         };
@@ -1921,9 +1979,7 @@ impl App {
             .map(|r| r.1.kind)
             .collect();
         unsafe {
-            let mut at = POINT::default();
-            let _ = GetCursorPos(&mut at);
-            let mon = MonitorFromPoint(at, MONITOR_DEFAULTTONEAREST);
+            let mon = active;
             let mut mi = MONITORINFO {
                 cbSize: size_of::<MONITORINFO>() as u32,
                 ..Default::default()
@@ -1940,11 +1996,10 @@ impl App {
                 height: (w.bottom - w.top) as f32,
             };
             let size = ((menu::WIDTH * k).ceil(), (menu::height(&kinds) * k).ceil());
-            let mut r = RECT::default();
-            if under_island && GetWindowRect(owner, &mut r).is_ok() {
-                // Centred, just below the closed island.
-                at.x = (r.left + r.right) / 2 - size.0 as i32 / 2;
-                at.y = r.top + ((MARGIN * 2.0 + CLOSED.1) * k) as i32;
+            if centered {
+                // In the middle of the screen in use, where it is seen.
+                at.x = w.left + (w.right - w.left - size.0 as i32) / 2;
+                at.y = w.top + (w.bottom - w.top - size.1 as i32) / 2;
             }
             let (x, y) = menu::place(
                 (at.x as f32, at.y as f32),
@@ -1990,7 +2045,20 @@ impl App {
         }
     }
 
+    /// The offer, under the island: to install `exe` (`version`).
+    fn show_offer(&mut self, offer: Offer, version: String, exe: PathBuf) {
+        self.offer = Some(offer);
+        self.offer_from = Some((version, exe));
+        self.open_menu(true);
+        // No island to show it under: the usual menu stays as it is.
+        if self.menu.is_none() {
+            self.offer = None;
+        }
+    }
+
     fn close_menu(&mut self) {
+        // The offer is made once: the next menu is the usual one.
+        self.offer = None;
         if let Some(m) = self.menu.take() {
             unsafe {
                 let _ = DestroyWindow(m.hwnd);
@@ -2137,6 +2205,22 @@ impl App {
             }
             MENU_QUIT => {
                 self.quit();
+                return;
+            }
+            // The installer closes this island, then starts the installed
+            // one.
+            MENU_INSTALL => {
+                if let Some((_, exe)) = self.offer_from.take()
+                    && install::start_install(&exe).is_ok()
+                {
+                    self.quit();
+                }
+                return;
+            }
+            MENU_PORTABLE => {
+                if let Some((version, _)) = self.offer_from.take() {
+                    install::decline(&version);
+                }
                 return;
             }
             _ => return,
@@ -2321,7 +2405,18 @@ fn main() -> Result<()> {
         ("--uninstall", install::uninstall),
     ] {
         if install::has(&args, arg) {
-            return step(ANCHOR_CLASS, WM_APP_QUIT).map_err(|e| Error::new(E_FAIL, e.to_string()));
+            let done = step(ANCHOR_CLASS, WM_APP_QUIT);
+            // The island it closed comes back, from this exe, and says so:
+            // never left with none and no word.
+            if done.is_err()
+                && arg == "--install"
+                && let Ok(me) = std::env::current_exe()
+            {
+                let _ = std::process::Command::new(me)
+                    .arg(install::INSTALL_FAILED)
+                    .spawn();
+            }
+            return done.map_err(|e| Error::new(E_FAIL, e.to_string()));
         }
     }
     unsafe {
@@ -2330,15 +2425,31 @@ fn main() -> Result<()> {
         // the running one's menu, so it is seen to be there, and leaves. The
         // handle lives as long as the process.
         let _single = CreateMutexW(None, false, w!("Local\\IslandDesktop"))?;
-        if GetLastError() == ERROR_ALREADY_EXISTS {
-            if let Ok(anchor) = FindWindowExW(Some(HWND_MESSAGE), None, ANCHOR_CLASS, None) {
+        // A newer exe than the installed one that is running: that one goes,
+        // so this one can offer the update.
+        let running = GetLastError() == ERROR_ALREADY_EXISTS;
+        if running {
+            let update = install::offer() == Some(Offer::Update);
+            let anchor = FindWindowExW(Some(HWND_MESSAGE), None, ANCHOR_CLASS, None).ok();
+            if let Some(anchor) = anchor {
                 // This start was the user's: it may hand the focus on.
                 let mut pid = 0;
                 GetWindowThreadProcessId(anchor, Some(&mut pid));
                 let _ = AllowSetForegroundWindow(pid);
-                let _ = PostMessageW(Some(anchor), WM_APP_OPEN, WPARAM(0), LPARAM(0));
             }
-            return Ok(());
+            // A newer exe: the running island offers it, and keeps running
+            // until the user chooses.
+            let offered = update && anchor.is_some_and(install::send_offer);
+            if update && !offered {
+                // One from before this message can't: only by taking its
+                // place can the update be offered.
+                install::close_running(ANCHOR_CLASS, WM_APP_QUIT);
+            } else {
+                if let (Some(anchor), false) = (anchor, offered) {
+                    let _ = PostMessageW(Some(anchor), WM_APP_OPEN, WPARAM(0), LPARAM(0));
+                }
+                return Ok(());
+            }
         }
         let _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
         // WIC is COM; the UI thread is its apartment.
@@ -2437,6 +2548,8 @@ fn main() -> Result<()> {
             notifications: None,
             pulse: None,
             banners_quiet: banners::active(),
+            offer: None,
+            offer_from: None,
         };
         APP.with_borrow_mut(|a| *a = Some(app));
         // A file with a typo at start: the defaults until it is fixed.
@@ -2445,6 +2558,10 @@ fn main() -> Result<()> {
         settings_file::watch(anchor, WM_APP_SETTINGS);
         if install::has(&args, install::INSTALLED) {
             let _ = PostMessageW(Some(anchor), WM_APP_INSTALLED, WPARAM(0), LPARAM(0));
+        } else if install::has(&args, install::INSTALL_FAILED) {
+            let _ = PostMessageW(Some(anchor), WM_APP_INSTALL_FAILED, WPARAM(0), LPARAM(0));
+        } else {
+            let _ = PostMessageW(Some(anchor), WM_APP_OFFER, WPARAM(0), LPARAM(0));
         }
         let mut msg = MSG::default();
         while GetMessageW(&mut msg, None, 0, 0).as_bool() {

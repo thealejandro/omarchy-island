@@ -355,6 +355,7 @@ struct Text {
     closed: IDWriteTextFormat,
     menu: IDWriteTextFormat,
     menu_head: IDWriteTextFormat,
+    menu_version: IDWriteTextFormat,
     clock: IDWriteTextFormat,
     big: IDWriteTextFormat,
     next: IDWriteTextFormat,
@@ -462,10 +463,10 @@ fn v(p: Point) -> Vector2 {
 
 /// The menu's panel.
 const MENU_PANEL: D2D1_COLOR_F = D2D1_COLOR_F {
-    r: 0.17,
-    g: 0.17,
-    b: 0.18,
-    a: 0.97,
+    r: 0.11,
+    g: 0.11,
+    b: 0.12,
+    a: 1.0,
 };
 
 fn white(a: f32) -> D2D1_COLOR_F {
@@ -549,8 +550,9 @@ impl Text {
                 empty: format(ui, n, 14.0, DWRITE_TEXT_ALIGNMENT_CENTER)?,
                 peek: format(ui, b, 13.0, DWRITE_TEXT_ALIGNMENT_LEADING)?,
                 closed: format(ui, b, 12.0, DWRITE_TEXT_ALIGNMENT_LEADING)?,
-                menu: format(ui, n, 12.0, DWRITE_TEXT_ALIGNMENT_LEADING)?,
-                menu_head: format(ui, b, 12.0, DWRITE_TEXT_ALIGNMENT_LEADING)?,
+                menu: format(ui, n, 17.0, DWRITE_TEXT_ALIGNMENT_LEADING)?,
+                menu_head: format(ui, b, 18.0, DWRITE_TEXT_ALIGNMENT_LEADING)?,
+                menu_version: format(ui, n, 14.0, DWRITE_TEXT_ALIGNMENT_TRAILING)?,
                 clock: format(ui, b, 12.0, DWRITE_TEXT_ALIGNMENT_TRAILING)?,
                 big: format(ui, b, 42.0, DWRITE_TEXT_ALIGNMENT_LEADING)?,
                 next: format(ui, n, 12.0, DWRITE_TEXT_ALIGNMENT_TRAILING)?,
@@ -2100,7 +2102,7 @@ impl Renderer {
             // system's own flyouts; a light rim keeps its edge.
             self.ink.SetColor(&MENU_PANEL);
             self.dc.FillRoundedRectangle(&panel, &self.ink);
-            self.ink.SetColor(&white(0.16));
+            self.ink.SetColor(&white(0.3));
             self.dc
                 .DrawRoundedRectangle(&panel, &self.ink, 1.0 / m.scale, None);
         }
@@ -2110,8 +2112,8 @@ impl Renderer {
             width: w - 2.0 * menu::TEXT_X,
             height: menu::HEADER,
         };
-        self.text(m.title, &self.text.menu_head, head, 0.95);
-        self.text(m.version, &self.text.time_end, head, 0.4);
+        self.text(m.title, &self.text.menu_head, head, 1.0);
+        self.text(m.version, &self.text.menu_version, head, 0.6);
         let kinds: Vec<menu::Kind> = m.rows.iter().map(|r| r.kind).collect();
         for (i, (row, r)) in m.rows.iter().zip(menu::rows(&kinds)).enumerate() {
             if row.kind == menu::Kind::Separator {
@@ -2121,12 +2123,12 @@ impl Renderer {
                     width: w - 2.0 * (menu::TEXT_X - 2.0),
                     height: 1.0 / m.scale,
                 };
-                self.rounded(line, 0.0, 0.1);
+                self.rounded(line, 0.0, 0.2);
                 continue;
             }
-            let a = if row.enabled { 1.0 } else { 0.35 };
+            let a = if row.enabled { 1.0 } else { 0.4 };
             if m.hover == Some(i) && row.enabled {
-                self.rounded(r, menu::ROW_RADIUS, 0.09);
+                self.rounded(r, menu::ROW_RADIUS, 0.15);
             }
             let switch = (row.kind == menu::Kind::Toggle).then(|| menu::switch(r));
             let label = Rect {
@@ -2135,19 +2137,19 @@ impl Renderer {
                 width: switch.map_or(r.x + r.width, |s| s.x - 8.0) - menu::TEXT_X,
                 height: r.height,
             };
-            self.text(row.label, &self.text.menu, label, 0.92 * a);
+            self.text(row.label, &self.text.menu, label, a);
             if let Some(s) = switch {
                 let radius = s.height / 2.0;
                 let knob = menu::knob(s, if row.on { 1.0 } else { 0.0 });
                 if row.on {
                     // On: a white track, the knob in the panel's grey.
-                    self.rounded(s, radius, 0.92 * a);
+                    self.rounded(s, radius, a);
                     unsafe {
                         self.ink.SetColor(&MENU_PANEL);
                         self.dc.FillEllipse(&ellipse(knob), &self.ink);
                     }
                 } else {
-                    self.rounded(s, radius, 0.16 * a);
+                    self.rounded(s, radius, 0.3 * a);
                     unsafe {
                         self.ink.SetColor(&white(0.85 * a));
                         self.dc.FillEllipse(&ellipse(knob), &self.ink);
