@@ -55,7 +55,7 @@ pub fn glances(moment: Moment, quiet: bool, in_full_screen: bool) -> bool {
 
 /// A notification's glance: bigger than the song's, so it never passes for
 /// it, with room for the app's logo and two lines (DIPs).
-pub const SIZE: (f32, f32) = (420.0, 76.0);
+pub const SIZE: (f32, f32) = (460.0, 84.0);
 
 /// How long the ring around the island pulses as one arrives, in ms.
 pub const PULSE_MS: f32 = 1800.0;
@@ -103,7 +103,7 @@ pub struct ToastLayout {
 }
 
 pub fn layout((w, h): (f32, f32), has_body: bool) -> ToastLayout {
-    let (pad, side) = (16.0, 44.0);
+    let (pad, side) = (18.0, 48.0);
     let logo = Rect {
         x: pad,
         y: (h - side) / 2.0,
@@ -113,7 +113,7 @@ pub fn layout((w, h): (f32, f32), has_body: bool) -> ToastLayout {
     let x = pad + side + 12.0;
     let right = w - 18.0;
     // The lines, centered as a block.
-    let (app_h, title_h) = (16.0, 20.0);
+    let (app_h, title_h) = (17.0, 22.0);
     let body_h = if has_body { 18.0 } else { 0.0 };
     let top = (h - app_h - title_h - body_h) / 2.0;
     let when = Rect {

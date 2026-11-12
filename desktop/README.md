@@ -87,6 +87,7 @@ that isn't valid JSON is ignored until it is fixed.
 | `bluetoothGlance` | `true`, `false` | `true` |
 | `notificationGlance` | `true`, `false` | `true` |
 | `notificationsInFullScreen` | `true`, `false` | `true` |
+| `notificationSound` | `true`, `false` | `true` |
 | `lyricsDelay` | `auto`, or 0 to 2000 (ms) | `auto` |
 
 While music plays (any app in Windows' media controls), the closed island
@@ -190,6 +191,9 @@ in `%LOCALAPPDATA%\island\banners.txt`) come back, but not those turned off
 by hand. Before uninstalling the island, choose it again, or run
 `island.exe --restore-banners` (it does the same without opening the
 island); else turn them on in Settings > System > Notifications.
+With the banners off, the island plays Windows' own notification sound
+when one arrives, since Windows itself no longer does
+(`notificationSound: false` keeps it silent).
 With an app in full screen the glance shows too
 (`notificationsInFullScreen: false` keeps it away then); never while
 presenting, in a game in exclusive full screen or with Do Not Disturb

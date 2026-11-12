@@ -125,6 +125,9 @@ pub struct Settings {
     /// Those glances while an app is in full screen too (never while
     /// presenting or in a game).
     pub notifications_in_full_screen: bool,
+    /// Windows' notification sound when a glance shows while the banners
+    /// are off ("Notifications only in the island").
+    pub notification_sound: bool,
     /// How late the lyrics follow the position the player tells, in ms:
     /// the sound comes out later than that (more so over Bluetooth).
     /// `None` ("auto"): by the speakers in use, see [`Settings::lyrics_delay`].
@@ -163,6 +166,7 @@ impl Default for Settings {
             bluetooth_glance: true,
             notification_glance: true,
             notifications_in_full_screen: true,
+            notification_sound: true,
             lyrics_delay: None,
             island_scale: 1.0,
             accent: Accent::System,
@@ -196,6 +200,7 @@ pub const TEMPLATE: &str = r#"{
   "bluetoothGlance": true,
   "notificationGlance": true,
   "notificationsInFullScreen": true,
+  "notificationSound": true,
   "lyricsDelay": "auto"
 }
 "#;
@@ -283,6 +288,7 @@ impl Settings {
                 "notificationsInFullScreen",
                 d.notifications_in_full_screen,
             ),
+            notification_sound: flag("notificationSound", d.notification_sound),
             // A number in range; "auto" or anything else: by the speakers.
             lyrics_delay: o
                 .get("lyricsDelay")
@@ -453,6 +459,8 @@ mod tests {
         assert!(!parse(r#"{"bluetoothGlance": false}"#).bluetooth_glance);
         assert!(!parse(r#"{"notificationGlance": false}"#).notification_glance);
         assert!(!parse(r#"{"notificationsInFullScreen": false}"#).notifications_in_full_screen);
+        assert!(!parse(r#"{"notificationSound": false}"#).notification_sound);
+        assert!(parse(r#"{"notificationSound": "no"}"#).notification_sound);
         // The lyrics' delay: a number wins over the speakers; else by them.
         let s = parse(r#"{"lyricsDelay": 350}"#);
         assert_eq!((s.lyrics_delay(true), s.lyrics_delay(false)), (350, 350));
