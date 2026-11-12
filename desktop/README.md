@@ -193,10 +193,11 @@ settings keep and waits on the registry's own notice of a change.
 `privacyGlance: false` turns it off.
 
 A paired Bluetooth device that connects or disconnects (headphones, a
-speaker, a keyboard) gets a glance with its name, once the change has held
-for 5 seconds (some devices, phones above all, connect for a moment on
-their own). Only paired devices are watched, so it never scans for new
-ones. `bluetoothGlance: false` turns it
+speaker, a keyboard) gets a glance with its name, once the change has held:
+5 seconds for a connection (some devices, phones above all, connect for a
+moment on their own) and 30 for a disconnection (Low Energy devices drop
+for a few seconds while idle and come back). Only paired devices are
+watched, so it never scans for new ones. `bluetoothGlance: false` turns it
 off.
 
 When a notification pops up, the island grows into a glance of its own,
