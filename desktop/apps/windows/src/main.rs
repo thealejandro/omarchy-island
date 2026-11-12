@@ -53,14 +53,14 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 use windows::Win32::UI::Shell::{SHQueryUserNotificationState, ShellExecuteW};
 use windows::Win32::UI::WindowsAndMessaging::{
     CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW, GetCursorPos, GetMessageW,
-    HWND_TOPMOST, IDC_ARROW, KillTimer, LoadCursorW, MA_NOACTIVATE, MONITORINFOF_PRIMARY, MSG,
-    PostMessageW, PostQuitMessage, RegisterClassW, RegisterWindowMessageW, SW_SHOW,
-    SW_SHOWNOACTIVATE, SW_SHOWNORMAL, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE, SetForegroundWindow,
-    SetTimer, SetWindowPos, ShowWindow, TranslateMessage, WM_ACTIVATE, WM_APP, WM_CLOSE,
-    WM_DESTROY, WM_DISPLAYCHANGE, WM_DPICHANGED, WM_DWMCOLORIZATIONCOLORCHANGED, WM_KEYDOWN,
-    WM_LBUTTONUP, WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_RBUTTONUP, WM_SETTINGCHANGE,
-    WM_TIMER, WNDCLASSW, WS_EX_NOACTIVATE, WS_EX_NOREDIRECTIONBITMAP, WS_EX_TOOLWINDOW,
-    WS_EX_TOPMOST, WS_POPUP,
+    HWND_MESSAGE, HWND_TOPMOST, IDC_ARROW, IsWindow, KillTimer, LoadCursorW, MA_NOACTIVATE,
+    MONITORINFOF_PRIMARY, MSG, PostMessageW, PostQuitMessage, RegisterClassW,
+    RegisterWindowMessageW, SW_SHOW, SW_SHOWNORMAL, SWP_NOACTIVATE, SWP_NOMOVE, SWP_NOSIZE,
+    SetForegroundWindow, SetTimer, SetWindowPos, ShowWindow, TranslateMessage, WM_ACTIVATE, WM_APP,
+    WM_CLOSE, WM_DESTROY, WM_DISPLAYCHANGE, WM_DPICHANGED, WM_DWMCOLORIZATIONCOLORCHANGED,
+    WM_KEYDOWN, WM_LBUTTONUP, WM_MOUSEACTIVATE, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_RBUTTONUP,
+    WM_SETTINGCHANGE, WM_TIMER, WNDCLASSW, WS_EX_NOACTIVATE, WS_EX_NOREDIRECTIONBITMAP,
+    WS_EX_TOOLWINDOW, WS_EX_TOPMOST, WS_POPUP, WS_VISIBLE,
 };
 use windows::core::BOOL;
 use windows::core::{Error, HSTRING, PCWSTR, Result, w};
@@ -77,7 +77,7 @@ const HOVER_DELAY_MS: u32 = 120;
 const HOVER_TIMER: usize = 1;
 /// Moves the progress bar on, once a second while open and playing.
 const TICK_TIMER: usize = 3;
-/// Ends the glance on a new song.
+/// Ends the glance on a new song (one for all the islands).
 const PEEK_TIMER: usize = 4;
 /// How long that glance stays (`peekDuration` in the plugin).
 const PEEK_MS: u32 = 3500;
@@ -88,7 +88,7 @@ const WM_APP_LAYOUT: u32 = WM_APP + 1;
 const WM_APP_MEDIA: u32 = WM_APP + 2;
 /// The lyrics thread has an answer.
 const WM_APP_LYRICS: u32 = WM_APP + 3;
-/// Time for a frame, while the island moves (see `pacer.rs`).
+/// Time for a frame, while an island moves (see `pacer.rs`).
 const WM_APP_FRAME: u32 = WM_APP + 4;
 /// `settings.json` changed.
 const WM_APP_SETTINGS: u32 = WM_APP + 5;
@@ -105,10 +105,17 @@ const WM_APP_BLUETOOTH: u32 = WM_APP + 10;
 /// A notification showed (see `notifications.rs`).
 const WM_APP_NOTIFICATION: u32 = WM_APP + 11;
 
+const ISLAND_CLASS: PCWSTR = w!("IslandWindow");
+/// The hidden window the shared things talk to: the sources (media, volume,
+/// privacy, Bluetooth, notifications), the settings file's watch, the tray
+/// and the glance and focus timers that belong to no single island.
+const ANCHOR_CLASS: PCWSTR = w!("IslandAnchor");
+
 /// How long the glance's content takes to change in place, in ms.
 const SWAP_MS: f32 = 300.0;
 
 /// What the glance showed before a change in place (see `render::Before`).
+#[derive(Clone)]
 enum Before {
     Notice(Notice),
     Line(String),
@@ -172,6 +179,8 @@ const MENU_CLASS: PCWSTR = w!("IslandMenu");
 struct MenuWindow {
     hwnd: HWND,
     target: render::MenuTarget,
+    /// The island whose renderer made `target`: only that one draws it.
+    owner: HWND,
     /// Its screen's scale, and its size in px.
     scale: f32,
     size: (u32, u32),
@@ -185,35 +194,246 @@ struct MenuWindow {
 // windows-rs only has it under the (big) Win32_UI_Controls feature.
 const WM_MOUSELEAVE: u32 = 0x02A3;
 
-struct App {
+/// One island window: everything that is its own, per screen. What an
+/// island shows (the song, the glances, the page) is shared in `App`; how
+/// its body moves and where it lives is here.
+struct Surface {
     hwnd: HWND,
-    placement: Placement,
-    monitor: MonitorChoice,
+    /// The screen the window is on, to find it again on the next layout.
+    mon: HMONITOR,
+    monitor: Monitor,
     scale: f32,
     /// The window on screen, in px: sized for the open island.
     window: Rect,
     width: Spring,
     height: Spring,
     open: bool,
-    /// Glancing at a new song.
-    peek: bool,
     /// The glance is what shows (or fades) while not open: from when it
-    /// starts until the island opens or has closed.
+    /// starts until this island opens or has closed.
     peek_view: bool,
-    /// Title and artist of the song on screen, to tell a new one.
-    song: Option<(String, String)>,
-    /// The pointer is over the island (WM_MOUSELEAVE is armed).
+    /// The pointer is over this island (WM_MOUSELEAVE is armed).
     tracking: bool,
     /// The window region last set, in px: left, top, right, bottom.
     region: [i32; 4],
-    /// While springs move: the last frame. `None`: no frames asked for.
+    /// While this island's springs move: the last frame. `None`: no frames
+    /// asked for.
     last_frame: Option<Instant>,
     pacer: pacer::Pacer,
     /// The body is on its way to a smaller size.
     shrinking: bool,
     renderer: Option<render::Renderer>,
+    /// The open island's width setting as it fits this screen.
+    open_width: f32,
+    /// The most the song's glance grows to on this screen.
+    peek_most: f32,
+    /// What this island's glance is changing from in place, and since when.
+    swap: Option<(Before, Instant)>,
+}
+
+impl Surface {
+    /// A window on `monitor`, its renderer and its frame pacer.
+    fn new(mon: HMONITOR, monitor: Monitor, scale: f32) -> Option<Self> {
+        let hwnd = unsafe {
+            CreateWindowExW(
+                WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOACTIVATE | WS_EX_NOREDIRECTIONBITMAP,
+                ISLAND_CLASS,
+                w!("Island"),
+                WS_POPUP | WS_VISIBLE,
+                0,
+                0,
+                1,
+                1,
+                None,
+                None,
+                GetModuleHandleW(None).ok().map(|h| h.into()),
+                None,
+            )
+        }
+        .ok()?;
+        Some(Self {
+            hwnd,
+            mon,
+            monitor,
+            scale,
+            window: Rect::default(),
+            width: Spring::at(CLOSED.0),
+            height: Spring::at(CLOSED.1),
+            open: false,
+            peek_view: false,
+            tracking: false,
+            region: [0; 4],
+            last_frame: None,
+            pacer: pacer::Pacer::new(hwnd, WM_APP_FRAME),
+            shrinking: false,
+            renderer: render::Renderer::new(hwnd).ok(),
+            // Fitted to the screen by the first place().
+            open_width: layout::OPEN_WIDTH,
+            peek_most: layout::PEEK.0,
+            swap: None,
+        })
+    }
+
+    /// The window is sized for the widest this island gets: the open one,
+    /// or a glance at `islandScale`.
+    fn widest(&self, k: f32) -> f32 {
+        self.open_width.max(self.peek_most * k)
+    }
+
+    /// Places the window on its screen at that screen's scale.
+    fn place(&mut self, placement: Placement, open_width_setting: f32, k: f32) {
+        // Small or scaled-up screens get a narrower open island.
+        let screen = self.monitor.rect.width / self.scale;
+        self.open_width = layout::fit_open_width(open_width_setting, screen);
+        self.peek_most = layout::fit_open_width(layout::PEEK_MOST, screen);
+        let s = self.scale;
+        let r = shape::window_rect(
+            placement,
+            self.monitor.rect,
+            self.widest(k) * s,
+            OPEN.1 * s,
+            EAR * s,
+            MARGIN * s,
+        );
+        let r = Rect {
+            x: r.x.round(),
+            y: r.y.round(),
+            width: r.width.ceil(),
+            height: r.height.ceil(),
+        };
+        if r != self.window {
+            self.window = r;
+            unsafe {
+                let _ = SetWindowPos(
+                    self.hwnd,
+                    Some(HWND_TOPMOST),
+                    r.x as i32,
+                    r.y as i32,
+                    r.width as i32,
+                    r.height as i32,
+                    SWP_NOACTIVATE,
+                );
+            }
+        }
+    }
+
+    /// The open island: the same width with or without lines.
+    fn open_size(&self) -> (f32, f32) {
+        (self.open_width, OPEN.1)
+    }
+
+    /// From window px to the open layout's DIPs: it is centered in the
+    /// body; y from the island's top.
+    fn to_open(&self, placement: Placement, x: f32, y: f32) -> (f32, f32) {
+        let s = self.scale;
+        let body = shape::body_rect(
+            placement,
+            self.window.width,
+            self.width.value * s,
+            self.height.value * s,
+            EAR * s,
+        );
+        let lx = (x - body.x - shape::ear_room(placement, EAR * s)) / s
+            - (self.width.value - self.open_size().0) / 2.0;
+        (lx, (y - body.y) / s)
+    }
+}
+
+/// How open a body is, from the small view it grows from (the closed island
+/// or the glance, both at `islandScale`) to the open one: 0 to 1.
+fn openness(sf: &Surface, k: f32, peek_h: f32) -> f32 {
+    let small = if sf.peek_view { peek_h } else { CLOSED.1 * k };
+    ((sf.height.value - small) / (OPEN.1 - small)).clamp(0.0, 1.0)
+}
+
+/// How visible the closed, glance and open contents are, from the body's
+/// height: each one fades as the body leaves its size.
+fn alphas(sf: &Surface, k: f32, peek_h: f32) -> [f32; 3] {
+    let h = sf.height.value;
+    let closed_h = CLOSED.1 * k;
+    let open = ((h - closed_h) / (OPEN.1 - closed_h)).clamp(0.0, 1.0);
+    // The closed content leaves fast; the open one comes in once there
+    // is room for it. It shrinks with the body (scaled to it), so
+    // closing it can stay until the body is small, while the cover
+    // travels on its own.
+    let open_a = if sf.shrinking {
+        (open - 0.3) / 0.45
+    } else {
+        (open - 0.25) / 0.55
+    }
+    .clamp(0.0, 1.0);
+    // The small views leave fast as the body grows; shrinking, they come
+    // back only once it is nearly their size, not over a tall body.
+    let pace = if sf.shrinking { 2.4 } else { 3.0 };
+    let leaving = (1.0 - open * pace).clamp(0.0, 1.0);
+    if sf.peek_view {
+        // One gives way to the other halfway, so they never overlap. A
+        // taller glance (a notification's) is fully there by the song's
+        // glance's height, so growing from that one never shows the
+        // closed island in between; the body uncovers the rest.
+        let small_h = peek_h.min(layout::PEEK.1 * k);
+        let grown = ((h - closed_h) / (small_h - closed_h)).clamp(0.0, 1.0);
+        let peek = ((grown - 0.5) * 2.0).clamp(0.0, 1.0);
+        let closed = ((0.5 - grown) * 2.0).clamp(0.0, 1.0);
+        // It leaves as the body grows past its own height, not the
+        // closed one: at rest it is fully visible.
+        let past = ((h - peek_h) / (OPEN.1 - peek_h)).clamp(0.0, 1.0);
+        let leaving = (1.0 - past * pace).clamp(0.0, 1.0);
+        [closed, peek * leaving, open_a]
+    } else {
+        [leaving, 0.0, open_a]
+    }
+}
+
+/// The glance's size before `islandScale`, in DIPs: a fixed one for a
+/// notice (a notification's, a level's, or the song's), as wide as the line
+/// needs for the song (see `layout::peek_width`).
+fn peek_unscaled(notice: &Option<Notice>, glance_on: bool, song_w: f32) -> (f32, f32) {
+    let level = notice.as_ref().is_some_and(|n| n.level.is_some());
+    if notice.as_ref().is_some_and(|n| n.toast) {
+        island_core::notifications::SIZE
+    } else if level && !glance_on {
+        glance::LEVEL
+    } else if notice.is_some() {
+        layout::PEEK
+    } else {
+        (song_w, layout::PEEK.1)
+    }
+}
+
+/// The glance's content is about to change: if this island's glance is out
+/// and at rest, `before` fades out as the new content comes in. (Growing
+/// or shrinking, the body's own move carries the change.) `peek_h` is the
+/// glance's height on screen now.
+fn swap_from(sf: &mut Surface, k: f32, peek_h: f32, before: Before) {
+    let at_rest = !sf.open
+        && sf.peek_view
+        && sf.height.target > CLOSED.1 * k
+        && (sf.height.value - sf.height.target).abs() < 0.5
+        && alphas(sf, k, peek_h)[1] > 0.99;
+    if !at_rest {
+        return;
+    }
+    sf.swap = Some((before, Instant::now()));
+    if sf.last_frame.is_none() {
+        sf.last_frame = Some(Instant::now());
+        sf.pacer.start();
+    }
+}
+
+struct App {
+    /// The hidden window the sources, the tray and the shared timers post
+    /// to (see `ANCHOR_CLASS`).
+    anchor: HWND,
+    /// One island per chosen screen ([`monitor::pick_all`]).
+    surfaces: Vec<Surface>,
+    placement: Placement,
+    monitor: MonitorChoice,
     media: media::Media,
     track: Option<media::Track>,
+    /// Title and artist of the song on screen, to tell a new one.
+    song: Option<(String, String)>,
+    /// A glance is being shown (its timer is running): on every island.
+    peek: bool,
     /// As `settings.json` has them, and as they are in use (with what the
     /// command line sets on top).
     file: Settings,
@@ -225,7 +445,7 @@ struct App {
     tray: Option<tray::Tray>,
     /// The menu, while open.
     menu: Option<MenuWindow>,
-    /// Sent to every window when Explorer (and the taskbar) restarts.
+    /// Sent to the anchor when Explorer (and the taskbar) restarts.
     taskbar_created: u32,
     song_text: layout::SongText,
     /// `None` while lyrics are off (the default: they send the song's name
@@ -245,16 +465,14 @@ struct App {
     /// The open island's width setting (DIPs, steps of 10): 560 by default,
     /// with the column or without.
     open_width_setting: f32,
-    /// That width as it fits the screen now ([`layout::fit_open_width`]).
-    open_width: f32,
-    /// The most the song's glance grows to on this screen.
-    peek_most: f32,
     /// Windows' banners are off for the island to tell notifications alone
     /// (chosen in the menu; kept, noted, across runs).
     banners_quiet: bool,
-    /// The song's glance and the closed island with music, as wide as their
-    /// text needs ([`layout::peek_width`], [`layout::closed_width`]).
+    /// The song's glance text width as measured (each island caps it to its
+    /// screen, see `Surface::peek_most`).
     peek_w: f32,
+    /// The closed island with music, as wide as the song's name needs
+    /// ([`layout::closed_width`]); the same on every screen.
     closed_w: f32,
     /// The open island's page: the one last chosen (while the app runs).
     page: Page,
@@ -279,8 +497,6 @@ struct App {
     /// The watch on notifications, while that glance is on and Windows
     /// lets the island read them.
     notifications: Option<notifications::Notifications>,
-    /// The glance's content being left in place, and since when.
-    swap: Option<(Before, Instant)>,
     /// When the last notification arrived: its ring beats for a moment.
     pulse: Option<Instant>,
 }
@@ -334,84 +550,124 @@ fn monitors() -> Vec<(HMONITOR, Monitor)> {
     list
 }
 
-/// The chosen screen and its scale; the primary when it is gone.
-fn screen(choice: MonitorChoice) -> (Rect, f32) {
-    let list = monitors();
-    let mons: Vec<Monitor> = list.iter().map(|m| m.1).collect();
-    let Some(i) = monitor::pick(&mons, choice) else {
-        return (
-            Rect {
-                x: 0.0,
-                y: 0.0,
-                width: 1920.0,
-                height: 1080.0,
-            },
-            1.0,
-        );
-    };
+/// A screen's scale (DIPs to px); 1.0 without a usable answer.
+fn monitor_scale(mon: HMONITOR) -> f32 {
     let (mut dx, mut dy) = (96, 96);
     unsafe {
-        let _ = GetDpiForMonitor(list[i].0, MDT_EFFECTIVE_DPI, &mut dx, &mut dy);
+        let _ = GetDpiForMonitor(mon, MDT_EFFECTIVE_DPI, &mut dx, &mut dy);
     }
-    (mons[i].rect, dx.max(96) as f32 / 96.0)
+    dx.max(96) as f32 / 96.0
 }
 
 impl App {
-    /// Places the window on its screen at that screen's scale, and redraws.
-    /// Runs again when screens are added, removed, moved or rescaled.
+    /// One island per chosen screen: keeps the windows whose screen is
+    /// still chosen, creates the missing ones and destroys the surplus.
+    /// Runs again when screens are added, removed, moved or rescaled, and
+    /// when the `monitor` setting changes.
     fn layout(&mut self) {
-        let (mon, scale) = screen(self.monitor);
-        self.scale = scale;
-        // Small or scaled-up screens get a narrower open island.
-        let fit = layout::fit_open_width(self.open_width_setting, mon.width / scale);
-        self.peek_most = layout::fit_open_width(layout::PEEK_MOST, mon.width / scale);
-        if fit != self.open_width {
-            self.open_width = fit;
-            if self.open {
-                self.retarget();
+        let list = monitors();
+        let mons: Vec<Monitor> = list.iter().map(|m| m.1).collect();
+        let mut want: Vec<(HMONITOR, Monitor)> = monitor::pick_all(&mons, &self.monitor)
+            .iter()
+            .map(|&i| list[i])
+            .collect();
+        if want.is_empty() {
+            // No screens at all: a made-up one, so the app keeps a window.
+            want.push((
+                HMONITOR::default(),
+                Monitor {
+                    rect: Rect {
+                        x: 0.0,
+                        y: 0.0,
+                        width: 1920.0,
+                        height: 1080.0,
+                    },
+                    primary: true,
+                },
+            ));
+        }
+        let mut old = std::mem::take(&mut self.surfaces);
+        // A window destroyed behind the app's back is made anew.
+        old.retain(|s| unsafe { IsWindow(Some(s.hwnd)) }.as_bool());
+        let mut surfaces = Vec::with_capacity(want.len());
+        for (mon, m) in want {
+            let scale = monitor_scale(mon);
+            let sf = match old.iter().position(|s| s.mon == mon) {
+                Some(pos) => {
+                    let mut sf = old.remove(pos);
+                    sf.monitor = m;
+                    sf.scale = scale;
+                    Some(sf)
+                }
+                None => Surface::new(mon, m, scale),
+            };
+            if let Some(sf) = sf {
+                surfaces.push(sf);
             }
         }
-        let s = self.scale;
-        let r = shape::window_rect(
-            self.placement,
-            mon,
-            self.widest() * s,
-            OPEN.1 * s,
-            EAR * s,
-            MARGIN * s,
-        );
-        let r = Rect {
-            x: r.x.round(),
-            y: r.y.round(),
-            width: r.width.ceil(),
-            height: r.height.ceil(),
-        };
-        if r != self.window {
-            self.window = r;
+        for sf in old {
             unsafe {
-                let _ = SetWindowPos(
-                    self.hwnd,
-                    Some(HWND_TOPMOST),
-                    r.x as i32,
-                    r.y as i32,
-                    r.width as i32,
-                    r.height as i32,
-                    SWP_NOACTIVATE,
-                );
+                let _ = DestroyWindow(sf.hwnd);
             }
         }
-        self.draw();
+        self.surfaces = surfaces;
+        // The menu draws with its island's renderer: gone with it.
+        if let Some(m) = &self.menu
+            && !self.surfaces.iter().any(|s| s.hwnd == m.owner)
+        {
+            self.close_menu();
+        }
+        // New islands too take the song's alignment.
+        let align = self.settings.text_align;
+        for sf in &self.surfaces {
+            if let Some(r) = &sf.renderer {
+                let _ = r.align_song(align);
+            }
+        }
+        for i in 0..self.surfaces.len() {
+            let (placement, setting, k) = (
+                self.placement,
+                self.open_width_setting,
+                self.settings.island_scale,
+            );
+            self.surfaces[i].place(placement, setting, k);
+        }
+        self.fit_text();
+        self.retarget_all();
+        for i in 0..self.surfaces.len() {
+            if self.surfaces[i].last_frame.is_none() {
+                self.draw_surface(i);
+            }
+        }
     }
 
-    fn draw(&mut self) {
-        let s = self.scale;
-        let (w, h) = (
-            self.width.value.max(0.0) * s,
-            self.height.value.max(0.0) * s,
-        );
+    /// Draws one island's window from the shared state and its own.
+    fn draw_surface(&mut self, i: usize) {
+        let k = self.settings.island_scale;
+        let placement = self.placement;
+        let now = self.now_ms();
+        let peek_u = self.peek_unscaled_at(i);
+        let peek_h = peek_u.1 * k;
+        let alpha = alphas(&self.surfaces[i], k, peek_h);
+        let open_a = openness(&self.surfaces[i], k, peek_h);
+        let glance_on = self.glance();
+        let scroll = self.lyric_scroll();
+        let ring = self
+            .pulse
+            .map_or(f32::MAX, |t| t.elapsed().as_secs_f32() * 1000.0);
+        let ring = island_core::notifications::ring(ring);
+        let orbit = self
+            .pulse
+            .and_then(|t| island_core::notifications::orbit(t.elapsed().as_secs_f32() * 1000.0));
+        let when = self.texts.now;
+        let lyrics_filled = !self.lines.is_empty();
+
+        let sf = &mut self.surfaces[i];
+        let s = sf.scale;
+        let (w, h) = (sf.width.value.max(0.0) * s, sf.height.value.max(0.0) * s);
         let (ear, radius) = (EAR * s, RADIUS * s);
-        let body = shape::body_rect(self.placement, self.window.width, w, h, ear);
-        let outline = if self.placement.hangs() {
+        let body = shape::body_rect(placement, sf.window.width, w, h, ear);
+        let outline = if placement.hangs() {
             shape::hanging(w, h, radius, ear)
         } else {
             shape::floating(w, h, radius)
@@ -421,32 +677,37 @@ impl App {
         // the bigger of the size now and the target, so it changes only when
         // the island starts to open and when it has finished closing.
         let (rw, rh) = (
-            self.width.value.max(self.width.target) * s,
-            self.height.value.max(self.height.target) * s,
+            sf.width.value.max(sf.width.target) * s,
+            sf.height.value.max(sf.height.target) * s,
         );
-        let inset = shape::ear_room(self.placement, ear);
-        let rb = shape::body_rect(self.placement, self.window.width, rw, rh, ear);
+        let inset = shape::ear_room(placement, ear);
+        let rb = shape::body_rect(placement, sf.window.width, rw, rh, ear);
         let region = [
             (rb.x + inset).floor() as i32,
             0,
             (rb.x + rb.width - inset).ceil() as i32,
             rh.ceil() as i32,
         ];
-        if region != self.region {
-            self.region = region;
+        if region != sf.region {
+            sf.region = region;
             unsafe {
                 let rgn = CreateRectRgn(region[0], region[1], region[2], region[3]);
-                SetWindowRgn(self.hwnd, Some(rgn), false);
+                SetWindowRgn(sf.hwnd, Some(rgn), false);
             }
         }
-        let scroll = self.lyric_scroll();
-        let lyrics = (!self.lines.is_empty()).then_some(render::LyricsView {
+        let lyrics = lyrics_filled.then_some(render::LyricsView {
             lines: &self.lines,
             index: self.lyric_index,
             scroll,
         });
+        // As `lyrics` moves into the scene: the line being sung, as the
+        // glance would tell it.
+        let glance_filled = glance_on
+            && self
+                .lyric_index
+                .and_then(|x| self.lines.get(x))
+                .is_some_and(|l| !l.text.trim().is_empty());
         // The focus timer's words, for this frame.
-        let now = self.now_ms();
         let (t, tm, l) = (self.texts, &self.timer, &self.settings.focus);
         let left = focus::clock(tm.left_ms(now));
         let active = tm.active(l);
@@ -480,13 +741,6 @@ impl App {
             running: tm.running(),
             resting: tm.phase != Phase::Focus,
         };
-        let ring = island_core::notifications::ring(
-            self.pulse
-                .map_or(f32::MAX, |t| t.elapsed().as_secs_f32() * 1000.0),
-        );
-        let orbit = self
-            .pulse
-            .and_then(|t| island_core::notifications::orbit(t.elapsed().as_secs_f32() * 1000.0));
         fn shown<'a>(
             n: &'a Notice,
             when: &'a str,
@@ -507,7 +761,6 @@ impl App {
                 orbit,
             }
         }
-        let when = self.texts.now;
         let view = |n| shown(n, when, ring, orbit);
         let scene = render::Scene {
             page: self.page,
@@ -516,7 +769,7 @@ impl App {
             focus: focus_view,
             notice: self.notice.as_ref().map(view),
             closed_timer: (active && self.track.is_none()).then_some(left.as_str()),
-            swap: self.swap.as_ref().map(|(b, at)| render::Swap {
+            swap: sf.swap.as_ref().map(|(b, at)| render::Swap {
                 before: match b {
                     Before::Notice(n) => render::Before::Notice(view(n)),
                     Before::Line(l) => render::Before::Line(l),
@@ -527,69 +780,71 @@ impl App {
                     1.0 - (1.0 - x).powi(3)
                 },
             }),
-            width: self.window.width as u32,
-            height: self.window.height as u32,
+            width: sf.window.width as u32,
+            height: sf.window.height as u32,
             body,
             outline: &outline,
             scale: s,
-            inset: shape::ear_room(self.placement, ear),
-            size: (self.width.value.max(0.0), self.height.value.max(0.0)),
-            alpha: self.alphas(),
+            inset: shape::ear_room(placement, ear),
+            size: (sf.width.value.max(0.0), sf.height.value.max(0.0)),
+            alpha,
             track: self.track.as_ref(),
             position_ms: self.track.as_ref().map_or(0, |t| t.position_now()),
             empty: self.texts.nothing_playing,
             song: self.song_text,
             lyrics,
-            open: self.open_layout(),
-            glance: self.glance() && lyrics.is_some_and(|l| !l.current().trim().is_empty()),
-            peek_width: self.peek_unscaled().0,
+            open: layout::Open::new(sf.open_width, self.lyrics_column && lyrics_filled),
+            glance: glance_filled,
+            peek_width: peek_u.0,
             closed_width: self.closed_w,
-            openness: self.openness(),
-            peek_view: self.peek_view,
-            island_scale: self.settings.island_scale,
+            openness: open_a,
+            peek_view: sf.peek_view,
+            island_scale: k,
         };
-        let drawn = match &mut self.renderer {
+        let drawn = match &mut sf.renderer {
             Some(r) => r.draw(&scene),
             None => Ok(()),
         };
         // A lost device (driver update, GPU reset): start over once.
         if drawn.is_err() {
-            self.renderer = render::Renderer::new(self.hwnd).ok();
-            if let Some(r) = &mut self.renderer {
+            render::forget_device(sf.renderer.take().as_ref());
+            sf.renderer = render::Renderer::new(sf.hwnd).ok();
+            if let Some(r) = &mut sf.renderer {
                 let _ = r.draw(&scene);
             }
         }
     }
 
-    /// Wakes up when what is shown changes, only while it is on screen: the
-    /// song's second (open, on Home), the focus timer's second, or the
-    /// minute of the clock on the tabs.
-    fn tick(&self) {
+    /// Wakes one island up when what is shown changes, only while it is on
+    /// screen: the song's second (open, on Home), the focus timer's second,
+    /// or the minute of the clock on the tabs.
+    fn tick_surface(&self, i: usize) {
+        let hwnd = self.surfaces[i].hwnd;
         unsafe {
-            let _ = KillTimer(Some(self.hwnd), TICK_TIMER);
+            let _ = KillTimer(Some(hwnd), TICK_TIMER);
         }
         let mut wait: Option<u32> = None;
         let mut sooner = |ms: u32| wait = Some(wait.map_or(ms, |w| w.min(ms)));
         if let Some(t) = &self.track
-            && self.open
+            && self.surfaces[i].open
             && self.page == Page::Home
             && t.playing
             && t.duration_ms > 0
         {
             sooner(1000 - (t.position_now() % 1000) as u32 + 15);
         }
-        let shown = self.open || self.track.is_none();
+        let shown = self.surfaces[i].open || self.track.is_none();
         if self.timer.running() && shown {
             // It shows the second rounded up: it changes on a whole one.
             let left = self.timer.left_ms(self.now_ms());
             sooner((left % 1000) as u32 + 15);
-        } else if self.open {
+        } else if self.surfaces[i].open {
             let t = unsafe { GetLocalTime() };
             let into = u32::from(t.wSecond) * 1000 + u32::from(t.wMilliseconds);
             sooner(60_000u32.saturating_sub(into) + 15);
         }
         if let Some(ms) = wait {
-            unsafe { SetTimer(Some(self.hwnd), TICK_TIMER, ms.max(16), None) };
+            unsafe { SetTimer(Some(hwnd), TICK_TIMER, ms.max(16), None) };
         }
     }
 
@@ -601,10 +856,10 @@ impl App {
     /// One timer for when the focus phase ends, while it runs.
     fn arm_focus(&self) {
         unsafe {
-            let _ = KillTimer(Some(self.hwnd), FOCUS_TIMER);
+            let _ = KillTimer(Some(self.anchor), FOCUS_TIMER);
             if let Some(at) = self.timer.ends_at() {
                 let ms = at.saturating_sub(self.now_ms()).min(u32::MAX as u64 / 2) as u32;
-                SetTimer(Some(self.hwnd), FOCUS_TIMER, ms + 5, None);
+                SetTimer(Some(self.anchor), FOCUS_TIMER, ms + 5, None);
             }
         }
     }
@@ -635,7 +890,7 @@ impl App {
             );
         }
         self.arm_focus();
-        self.redraw();
+        self.redraw_all();
     }
 
     /// What the glance shows now, to change from in place.
@@ -651,39 +906,24 @@ impl App {
         line.map_or(Before::Song, Before::Line)
     }
 
-    /// The glance's content is about to change: if the glance is out and
-    /// at rest, `before` fades out as the new content comes in. (Growing
-    /// or shrinking, the body's own move carries the change.)
-    fn swap_from(&mut self, before: Before) {
-        let at_rest = !self.open
-            && self.peek_view
-            && self.height.target > CLOSED.1 * self.settings.island_scale
-            && (self.height.value - self.height.target).abs() < 0.5
-            && self.alphas()[1] > 0.99;
-        if !at_rest {
-            return;
-        }
-        self.swap = Some((before, Instant::now()));
-        if self.last_frame.is_none() {
-            self.last_frame = Some(Instant::now());
-            self.pacer.start();
-        }
-    }
-
     /// A glance that tells something, for `ms` after its last change.
     fn notify(&mut self, n: Notice, ms: u32) {
         // A notice of the same kind (the volume again) just updates.
         let before = self.showing();
         if !matches!(&before, Before::Notice(b) if b.title == n.title && b.icon == n.icon) {
-            self.swap_from(before);
+            let k = self.settings.island_scale;
+            for i in 0..self.surfaces.len() {
+                let peek_h = self.peek_unscaled_at(i).1 * k;
+                swap_from(&mut self.surfaces[i], k, peek_h, before.clone());
+            }
         }
         self.notice = Some(n);
         unsafe {
-            let _ = KillTimer(Some(self.hwnd), PEEK_TIMER);
-            SetTimer(Some(self.hwnd), PEEK_TIMER, ms, None);
+            let _ = KillTimer(Some(self.anchor), PEEK_TIMER);
+            SetTimer(Some(self.anchor), PEEK_TIMER, ms, None);
         }
         self.peek = true;
-        self.retarget();
+        self.retarget_all();
     }
 
     /// The volume changed: a glance, if it's a change worth one.
@@ -716,9 +956,9 @@ impl App {
         let Some(b) = &self.bluetooth else { return };
         let (mut told, next) = b.due();
         unsafe {
-            let _ = KillTimer(Some(self.hwnd), BLUETOOTH_TIMER);
+            let _ = KillTimer(Some(self.anchor), BLUETOOTH_TIMER);
             if let Some(ms) = next {
-                SetTimer(Some(self.hwnd), BLUETOOTH_TIMER, ms as u32 + 20, None);
+                SetTimer(Some(self.anchor), BLUETOOTH_TIMER, ms as u32 + 20, None);
             }
         }
         let Some(e) = told.pop() else { return };
@@ -751,18 +991,20 @@ impl App {
             return;
         }
         if moment == island_core::notifications::Moment::FullScreen {
-            // A full-screen window may have gone over the island: on top
+            // A full-screen window may have gone over an island: on top
             // again (without taking the focus).
-            unsafe {
-                let _ = SetWindowPos(
-                    self.hwnd,
-                    Some(HWND_TOPMOST),
-                    0,
-                    0,
-                    0,
-                    0,
-                    SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE,
-                );
+            for sf in &self.surfaces {
+                unsafe {
+                    let _ = SetWindowPos(
+                        sf.hwnd,
+                        Some(HWND_TOPMOST),
+                        0,
+                        0,
+                        0,
+                        0,
+                        SWP_NOACTIVATE | SWP_NOMOVE | SWP_NOSIZE,
+                    );
+                }
             }
         }
         let t = a.toast;
@@ -829,27 +1071,15 @@ impl App {
         self.notify(n, PEEK_MS);
     }
 
-    fn redraw(&mut self) {
-        if self.last_frame.is_none() {
-            self.draw();
+    /// Redraws the islands that are at rest; each one keeps asking for
+    /// frames on its own while it moves.
+    fn redraw_all(&mut self) {
+        for i in 0..self.surfaces.len() {
+            if self.surfaces[i].last_frame.is_none() {
+                self.draw_surface(i);
+            }
+            self.tick_surface(i);
         }
-        self.tick();
-    }
-
-    /// From window px to the open layout's DIPs: it is centered in the
-    /// body; y from the island's top.
-    fn to_open(&self, x: f32, y: f32) -> (f32, f32) {
-        let s = self.scale;
-        let body = shape::body_rect(
-            self.placement,
-            self.window.width,
-            self.width.value * s,
-            self.height.value * s,
-            EAR * s,
-        );
-        let lx = (x - body.x - shape::ear_room(self.placement, EAR * s)) / s
-            - (self.width.value - self.open_size().0) / 2.0;
-        (lx, (y - body.y) / s)
     }
 
     /// A notification's glance is out (not yet giving way).
@@ -857,23 +1087,23 @@ impl App {
         self.peek && self.notice.as_ref().is_some_and(|n| n.toast)
     }
 
-    fn click(&mut self, x: f32, y: f32) {
+    fn click(&mut self, i: usize, x: f32, y: f32) {
         // On a notification: its app, and the glance has done its job.
-        if !self.open && self.toast_shown() {
+        if !self.surfaces[i].open && self.toast_shown() {
             if let Some(n) = &self.notice {
                 open_app(&n.app_id);
             }
             self.set_peek(false);
             return;
         }
-        if !self.open {
+        if !self.surfaces[i].open {
             return;
         }
-        let (lx, ly) = self.to_open(x, y);
+        let (lx, ly) = self.surfaces[i].to_open(self.placement, x, y);
         if let Some(page) = pages::hit_tab(lx, ly) {
             if page != self.page {
                 self.page = page;
-                self.redraw();
+                self.redraw_all();
             }
             return;
         }
@@ -884,7 +1114,11 @@ impl App {
                 if self.track.is_none() {
                     return;
                 }
-                let cmd = match layout::hit(lx, py, self.open_layout()) {
+                let open = layout::Open::new(
+                    self.surfaces[i].open_width,
+                    self.lyrics_column && !self.lines.is_empty(),
+                );
+                let cmd = match layout::hit(lx, py, open) {
                     Some(layout::Button::Prev) => media::Command::Prev,
                     Some(layout::Button::PlayPause) => media::Command::PlayPause,
                     Some(layout::Button::Next) => media::Command::Next,
@@ -894,7 +1128,7 @@ impl App {
             }
             Page::Focus => {
                 let (now, l) = (self.now_ms(), self.settings.focus);
-                match pages::hit_focus(lx, py, self.open_width) {
+                match pages::hit_focus(lx, py, self.surfaces[i].open_width) {
                     Some(FocusButton::PlayPause) => self.timer.toggle(now),
                     Some(FocusButton::Reset) => self.timer.reset(&l),
                     Some(FocusButton::Skip) => {
@@ -903,23 +1137,26 @@ impl App {
                     None => return,
                 }
                 self.arm_focus();
-                self.redraw();
+                self.redraw_all();
             }
         }
     }
 
     /// The wheel over the focus time, before a session starts: its length,
     /// kept in `settings.json`.
-    fn wheel(&mut self, x: i32, y: i32, delta: i16) {
-        if !self.open || self.page != Page::Focus || self.timer.active(&self.settings.focus) {
+    fn wheel(&mut self, i: usize, x: i32, y: i32, delta: i16) {
+        if !self.surfaces[i].open
+            || self.page != Page::Focus
+            || self.timer.active(&self.settings.focus)
+        {
             return;
         }
         let mut p = POINT { x, y };
         unsafe {
-            let _ = ScreenToClient(self.hwnd, &mut p);
+            let _ = ScreenToClient(self.surfaces[i].hwnd, &mut p);
         }
-        let (lx, ly) = self.to_open(p.x as f32, p.y as f32);
-        if !pages::over_time(lx, ly - pages::PAGE_Y, self.open_width) {
+        let (lx, ly) = self.surfaces[i].to_open(self.placement, p.x as f32, p.y as f32);
+        if !pages::over_time(lx, ly - pages::PAGE_Y, self.surfaces[i].open_width) {
             return;
         }
         let step = if delta > 0 {
@@ -931,74 +1168,47 @@ impl App {
         if minutes == self.settings.focus.focus {
             return;
         }
-        let mut file = self.file;
+        let mut file = self.file.clone();
         file.focus.focus = minutes;
         let _ = settings_file::set("focusMinutes", Value::from(minutes));
         self.apply(file);
     }
 
-    /// How open the body is, from the small view it grows from (the closed
-    /// island or the glance, both at `islandScale`) to the open one: 0 to 1.
-    fn openness(&self) -> f32 {
-        let small = if self.peek_view {
-            self.peek_size().1
-        } else {
-            CLOSED.1 * self.settings.island_scale
-        };
-        ((self.height.value - small) / (OPEN.1 - small)).clamp(0.0, 1.0)
+    /// The lyrics' glance: while synced lyrics play, the closed island
+    /// shows the line being sung (`lyricsPeek` in the plugin).
+    fn glance(&self) -> bool {
+        self.lyrics.is_some()
+            && !self.lines.is_empty()
+            && self.track.as_ref().is_some_and(|t| t.playing)
     }
 
-    /// How visible the closed, glance and open contents are, from the
-    /// body's height: each one fades as the body leaves its size.
-    fn alphas(&self) -> [f32; 3] {
-        let h = self.height.value;
-        let closed_h = CLOSED.1 * self.settings.island_scale;
-        let open = ((h - closed_h) / (OPEN.1 - closed_h)).clamp(0.0, 1.0);
-        // The closed content leaves fast; the open one comes in once there
-        // is room for it. It shrinks with the body (scaled to it), so
-        // closing it can stay until the body is small, while the cover
-        // travels on its own.
-        let open_a = if self.shrinking {
-            (open - 0.3) / 0.45
-        } else {
-            (open - 0.25) / 0.55
-        }
-        .clamp(0.0, 1.0);
-        // The small views leave fast as the body grows; shrinking, they come
-        // back only once it is nearly their size, not over a tall body.
-        let pace = if self.shrinking { 2.4 } else { 3.0 };
-        let leaving = (1.0 - open * pace).clamp(0.0, 1.0);
-        if self.peek_view {
-            let peek_h = self.peek_size().1;
-            // One gives way to the other halfway, so they never overlap. A
-            // taller glance (a notification's) is fully there by the song's
-            // glance's height, so growing from that one never shows the
-            // closed island in between; the body uncovers the rest.
-            let small_h = peek_h.min(layout::PEEK.1 * self.settings.island_scale);
-            let grown = ((h - closed_h) / (small_h - closed_h)).clamp(0.0, 1.0);
-            let peek = ((grown - 0.5) * 2.0).clamp(0.0, 1.0);
-            let closed = ((0.5 - grown) * 2.0).clamp(0.0, 1.0);
-            // It leaves as the body grows past its own height, not the
-            // closed one: at rest it is fully visible.
-            let past = ((h - peek_h) / (OPEN.1 - peek_h)).clamp(0.0, 1.0);
-            let leaving = (1.0 - past * pace).clamp(0.0, 1.0);
-            [closed, peek * leaving, open_a]
-        } else {
-            [leaving, 0.0, open_a]
-        }
+    fn peeking(&self) -> bool {
+        self.peek || self.glance()
     }
 
-    /// The window is sized for the widest the island gets: the open one, or
-    /// a glance at `islandScale`.
-    fn widest(&self) -> f32 {
-        self.open_width
-            .max(self.peek_most * self.settings.island_scale)
+    /// The open island's layout now: a column for the lines if there are.
+    fn open_layout(&self, i: usize) -> layout::Open {
+        layout::Open::new(
+            self.surfaces[i].open_width,
+            self.lyrics_column && !self.lines.is_empty(),
+        )
+    }
+
+    /// The glance's size before `islandScale` on one island's screen, in
+    /// DIPs.
+    fn peek_unscaled_at(&self, i: usize) -> (f32, f32) {
+        let song_w = layout::peek_width(self.peek_w, self.surfaces[i].peek_most);
+        peek_unscaled(&self.notice, self.glance(), song_w)
     }
 
     /// Measures the closed island's and the song's glance's text, for
     /// their widths: the song's name, and the line being sung if it shows.
+    /// The closed width fits every screen; each island caps the glance's
+    /// to its own (see `Surface::peek_most`).
     fn fit_text(&mut self) {
-        let Some(r) = &self.renderer else { return };
+        let Some(r) = self.surfaces.iter().find_map(|s| s.renderer.as_ref()) else {
+            return;
+        };
         let Some(t) = &self.track else { return };
         let name = self.song_text.spans(&t.title, &t.artist);
         self.closed_w = layout::closed_width(r.text_width(&name, true));
@@ -1006,20 +1216,7 @@ impl App {
             Before::Line(l) => vec![(l, false)],
             _ => name,
         };
-        self.peek_w = layout::peek_width(r.text_width(&line, false), self.peek_most);
-    }
-
-    /// The open island's layout now: a column for the lines if there are.
-    fn open_layout(&self) -> layout::Open {
-        layout::Open::new(
-            self.open_width,
-            self.lyrics_column && !self.lines.is_empty(),
-        )
-    }
-
-    /// The open island: the same width with or without lines.
-    fn open_size(&self) -> (f32, f32) {
-        (self.open_width, OPEN.1)
+        self.peek_w = r.text_width(&line, false);
     }
 
     /// How much of the scroll to the line being sung is left.
@@ -1027,43 +1224,6 @@ impl App {
         self.lyric_moved.map_or(0.0, |t| {
             layout::lyrics_scroll(t.elapsed().as_secs_f32() * 1000.0)
         })
-    }
-
-    /// The lyrics glance: while synced lyrics play, the closed island shows
-    /// the line being sung (`lyricsPeek` in the plugin).
-    fn glance(&self) -> bool {
-        self.lyrics.is_some()
-            && !self.lines.is_empty()
-            && self.track.as_ref().is_some_and(|t| t.playing)
-    }
-
-    /// The glance's size before `islandScale`, in DIPs: a fixed one for a
-    /// notice (a notification's, a level's, or the song's), as wide as the
-    /// line needs for the song (see `layout::peek_width`).
-    fn peek_unscaled(&self) -> (f32, f32) {
-        let level = self.notice.as_ref().is_some_and(|n| n.level.is_some());
-        if self.notice.as_ref().is_some_and(|n| n.toast) {
-            island_core::notifications::SIZE
-        } else if level && !self.glance() {
-            glance::LEVEL
-        } else if self.notice.is_some() {
-            layout::PEEK
-        } else {
-            (self.peek_w, layout::PEEK.1)
-        }
-    }
-
-    /// The glance's size on screen: the unscaled one times `islandScale`.
-    /// A level on its own is barely bigger than the closed island; over the
-    /// lyrics' glance it takes that one's size.
-    fn peek_size(&self) -> (f32, f32) {
-        let (w, h) = self.peek_unscaled();
-        let k = self.settings.island_scale;
-        (w * k, h * k)
-    }
-
-    fn peeking(&self) -> bool {
-        self.peek || self.glance()
     }
 
     /// Asks for the song's lyrics once it is known well enough: names and a
@@ -1096,8 +1256,10 @@ impl App {
     /// while a line is on screen and the song plays. Never a poll: the
     /// position is read again each time, so it can't drift.
     fn follow_lyrics(&mut self) {
-        unsafe {
-            let _ = KillTimer(Some(self.hwnd), LYRIC_TIMER);
+        for sf in &self.surfaces {
+            unsafe {
+                let _ = KillTimer(Some(sf.hwnd), LYRIC_TIMER);
+            }
         }
         let Some(t) = &self.track else { return };
         if self.lines.is_empty() {
@@ -1113,106 +1275,154 @@ impl App {
         let playing = t.playing;
         if index != self.lyric_index {
             // Closed, the glance's line changes in place.
-            if self.notice.is_none() && !self.open {
+            if self.notice.is_none() {
                 let b = self.showing();
-                self.swap_from(b);
+                let k = self.settings.island_scale;
+                for i in 0..self.surfaces.len() {
+                    if self.surfaces[i].open {
+                        continue;
+                    }
+                    let peek_h = self.peek_unscaled_at(i).1 * k;
+                    swap_from(&mut self.surfaces[i], k, peek_h, b.clone());
+                }
             }
+            let glance_on = self.glance();
             // One line on, open: the column glides up to it. A seek, or
             // closed: it is just there.
             let step = matches!((self.lyric_index, index), (Some(a), Some(b)) if b == a + 1);
             self.lyric_index = index;
             // Closed, the glance grows or shrinks to the new line.
-            if !self.open && self.glance() {
-                self.retarget();
+            for i in 0..self.surfaces.len() {
+                if !self.surfaces[i].open && glance_on {
+                    self.retarget_surface(i);
+                }
             }
-            let column = self.open_layout().lyrics_rect().is_some();
-            self.lyric_moved = (self.open && column && step).then(Instant::now);
-            if self.lyric_moved.is_some() && self.last_frame.is_none() {
-                self.last_frame = Some(Instant::now());
-                self.pacer.start();
-            } else if self.last_frame.is_none() {
-                self.draw();
+            // The scroll is shared: on while any open island shows the
+            // column, whichever comes last in the list.
+            let glides: Vec<bool> = (0..self.surfaces.len())
+                .map(|i| {
+                    self.surfaces[i].open && step && self.open_layout(i).lyrics_rect().is_some()
+                })
+                .collect();
+            self.lyric_moved = glides.contains(&true).then(Instant::now);
+            for (i, glide) in glides.into_iter().enumerate() {
+                if glide {
+                    let sf = &mut self.surfaces[i];
+                    if sf.last_frame.is_none() {
+                        sf.last_frame = Some(Instant::now());
+                        sf.pacer.start();
+                    }
+                } else if self.surfaces[i].last_frame.is_none() {
+                    self.draw_surface(i);
+                }
             }
         }
         if playing
-            && (self.open || self.glance())
+            && (self.surfaces.iter().any(|s| s.open) || self.glance())
             && let Some(at) = next_at
         {
             let ms = at.saturating_sub(pos).clamp(40, u32::MAX as u64) as u32;
-            unsafe { SetTimer(Some(self.hwnd), LYRIC_TIMER, ms, None) };
+            for sf in &self.surfaces {
+                unsafe { SetTimer(Some(sf.hwnd), LYRIC_TIMER, ms, None) };
+            }
         }
     }
 
-    fn set_open(&mut self, open: bool) {
-        if self.open == open {
+    fn set_open(&mut self, i: usize, open: bool) {
+        if self.surfaces[i].open == open {
             return;
         }
         // The glance stays the view being left while the island opens (it
         // is dropped once open), so the song's line never flashes between.
-        self.open = open;
-        self.retarget();
+        self.surfaces[i].open = open;
+        self.retarget_surface(i);
         self.follow_lyrics();
     }
 
     fn set_peek(&mut self, peek: bool) {
         unsafe {
-            let _ = KillTimer(Some(self.hwnd), PEEK_TIMER);
+            let _ = KillTimer(Some(self.anchor), PEEK_TIMER);
             if peek {
-                SetTimer(Some(self.hwnd), PEEK_TIMER, PEEK_MS, None);
+                SetTimer(Some(self.anchor), PEEK_TIMER, PEEK_MS, None);
             }
         }
         self.peek = peek;
-        self.retarget();
+        self.retarget_all();
     }
 
-    fn retarget(&mut self) {
-        if self.peeking() && !self.open {
-            self.peek_view = true;
+    fn retarget_all(&mut self) {
+        for i in 0..self.surfaces.len() {
+            self.retarget_surface(i);
+        }
+    }
+
+    /// Aims one island's springs at the size its view has now.
+    fn retarget_surface(&mut self, i: usize) {
+        {
+            let peeking = self.peeking();
+            let sf = &mut self.surfaces[i];
+            if peeking && !sf.open {
+                sf.peek_view = true;
+            }
         }
         self.fit_text();
         let k = self.settings.island_scale;
-        let (w, h) = if self.open {
-            self.open_size()
-        } else if self.peeking() {
-            self.peek_size()
-        } else if self.track.is_some() {
+        let peeking = self.peeking();
+        let track_some = self.track.is_some();
+        let peek_size = {
+            let (w, h) = self.peek_unscaled_at(i);
+            (w * k, h * k)
+        };
+        let sf = &mut self.surfaces[i];
+        let (w, h) = if sf.open {
+            sf.open_size()
+        } else if peeking {
+            peek_size
+        } else if track_some {
             // Wide enough for the song's name.
             (self.closed_w * k, CLOSED.1 * k)
         } else {
             (CLOSED.0 * k, CLOSED.1 * k)
         };
-        if h != self.height.target {
-            self.shrinking = h < self.height.value;
+        if h != sf.height.target {
+            sf.shrinking = h < sf.height.value;
         }
-        self.width.target = w;
-        self.height.target = h;
-        if self.last_frame.is_none() {
-            self.last_frame = Some(Instant::now());
-            self.pacer.start();
+        sf.width.target = w;
+        sf.height.target = h;
+        if sf.last_frame.is_none() {
+            sf.last_frame = Some(Instant::now());
+            sf.pacer.start();
         }
-        self.tick();
+        self.tick_surface(i);
     }
 
-    fn frame(&mut self) {
-        let now = Instant::now();
-        let ms = self
-            .last_frame
-            .map_or(16.0, |t| (now - t).as_secs_f32() * 1000.0);
-        self.last_frame = Some(now);
+    /// Advances one island's springs and draws a frame; it asks for more
+    /// frames only while it moves, so a still island costs nothing.
+    fn surface_frame(&mut self, i: usize) {
         let peeking = self.peeking();
-        // Growing is loose and a little wobbly; shrinking (also from open
-        // to the glance) is firm, so it never dips under where it stops.
-        let (pw, ph) = if self.shrinking {
-            (spring::CLOSE_WIDTH, spring::CLOSE_HEIGHT)
-        } else {
-            (spring::OPEN_WIDTH, spring::OPEN_HEIGHT)
-        };
-        let mut moving = self.width.advance(&pw, ms) | self.height.advance(&ph, ms);
-        if let Some((_, at)) = &self.swap {
-            if at.elapsed().as_secs_f32() * 1000.0 < SWAP_MS {
-                moving = true;
+        let mut moving;
+        {
+            let sf = &mut self.surfaces[i];
+            let now = Instant::now();
+            let ms = sf
+                .last_frame
+                .map_or(16.0, |t| (now - t).as_secs_f32() * 1000.0);
+            sf.last_frame = Some(now);
+            // Growing is loose and a little wobbly; shrinking (also from
+            // open to the glance) is firm, so it never dips under where it
+            // stops.
+            let (pw, ph) = if sf.shrinking {
+                (spring::CLOSE_WIDTH, spring::CLOSE_HEIGHT)
             } else {
-                self.swap = None;
+                (spring::OPEN_WIDTH, spring::OPEN_HEIGHT)
+            };
+            moving = sf.width.advance(&pw, ms) | sf.height.advance(&ph, ms);
+            if let Some((_, at)) = &sf.swap {
+                if at.elapsed().as_secs_f32() * 1000.0 < SWAP_MS {
+                    moving = true;
+                } else {
+                    sf.swap = None;
+                }
             }
         }
         if let Some(at) = self.pulse {
@@ -1230,41 +1440,43 @@ impl App {
                 self.lyric_moved = None;
             }
         }
-        self.draw();
+        self.draw_surface(i);
         if !moving {
+            let peek = self.peek;
             // Nothing runs while the island is still.
-            if self.open || !peeking {
-                self.peek_view = false;
+            let sf = &mut self.surfaces[i];
+            if sf.open || !peeking {
+                sf.peek_view = false;
             }
-            if !self.peek {
+            sf.last_frame = None;
+            sf.pacer.stop();
+            // The notice goes once every island is still: the others may be
+            // shrinking with it yet.
+            if !peek && self.surfaces.iter().all(|s| s.last_frame.is_none()) {
                 self.notice = None;
             }
-            self.last_frame = None;
-            self.pacer.stop();
         }
     }
 
     /// Puts `file`'s settings to use, changing only what changed: switching
     /// the lyrics on starts their thread, off ends it.
     fn apply(&mut self, file: Settings) {
-        self.file = file;
+        self.file = file.clone();
         let s = self.args.over(file);
         if s.default_page != self.settings.default_page {
             self.page = s.default_page;
         }
         self.timer.set_lengths(&self.settings.focus, &s.focus);
         self.settings = s;
+        let s = self.settings.clone();
         self.texts = texts::texts(s.language, &self.locale);
         self.placement = s.placement;
-        self.monitor = s.monitor;
+        self.monitor = s.monitor.clone();
         self.song_text = s.song_text;
-        if let Some(r) = &self.renderer {
-            let _ = r.align_song(s.text_align);
-        }
         if s.lyrics != self.lyrics.is_some() {
             self.lyrics = s
                 .lyrics
-                .then(|| lyrics::Lyrics::start(self.hwnd, WM_APP_LYRICS));
+                .then(|| lyrics::Lyrics::start(self.anchor, WM_APP_LYRICS));
             self.lyrics_key.clear();
             self.lines.clear();
             self.lyric_index = None;
@@ -1275,14 +1487,14 @@ impl App {
         if s.volume_glance != self.volume.is_some() {
             self.volume = s
                 .volume_glance
-                .then(|| volume::Volume::start(self.hwnd, WM_APP_VOLUME, WM_APP_SPEAKERS).ok())
+                .then(|| volume::Volume::start(self.anchor, WM_APP_VOLUME, WM_APP_SPEAKERS).ok())
                 .flatten();
             self.last_volume = self.volume.as_ref().and_then(|v| v.now());
         }
         if s.privacy_glance != self.privacy.is_some() {
             self.privacy = s
                 .privacy_glance
-                .then(|| privacy::Privacy::start(self.hwnd, WM_APP_PRIVACY))
+                .then(|| privacy::Privacy::start(self.anchor, WM_APP_PRIVACY))
                 .flatten();
             // What is in use already was told by Windows' own light.
             self.users = Device::ALL.map(privacy::using);
@@ -1290,7 +1502,7 @@ impl App {
         if s.bluetooth_glance != self.bluetooth.is_some() {
             self.bluetooth = s
                 .bluetooth_glance
-                .then(|| bluetooth::Bluetooth::start(self.hwnd, WM_APP_BLUETOOTH).ok())
+                .then(|| bluetooth::Bluetooth::start(self.anchor, WM_APP_BLUETOOTH).ok())
                 .flatten();
         }
         if s.notification_glance != self.notifications.is_some() {
@@ -1298,7 +1510,7 @@ impl App {
                 .notification_glance
                 .then(|| {
                     notifications::Notifications::start(
-                        self.hwnd,
+                        self.anchor,
                         WM_APP_NOTIFICATION,
                         self.texts.notification,
                     )
@@ -1308,7 +1520,6 @@ impl App {
         self.lyrics_column = s.open_lyrics;
         self.open_width_setting = s.open_width();
         self.layout();
-        self.retarget();
     }
 
     /// The file again, once it has changed; kept as is while it can't be
@@ -1319,6 +1530,237 @@ impl App {
         {
             self.apply(file);
         }
+    }
+
+    /// A track or its position is new: every island retargets and the ones
+    /// at rest redraw.
+    fn media_update(&mut self) {
+        self.track = self.media.latest();
+        // A new song gets a glance; the one playing at start doesn't.
+        let song = self
+            .track
+            .as_ref()
+            .map(|t| (t.title.clone(), t.artist.clone()));
+        if song.is_some() && song != self.song {
+            let first = self.song.is_none();
+            self.song = song;
+            self.on_bluetooth = volume::on_bluetooth();
+            if !first {
+                self.notice = None;
+                self.set_peek(true);
+            }
+        }
+        self.ask_lyrics();
+        // Music starting or stopping widens or narrows the closed island.
+        self.retarget_all();
+        for i in 0..self.surfaces.len() {
+            if self.surfaces[i].last_frame.is_none() {
+                self.draw_surface(i);
+            }
+            self.tick_surface(i);
+        }
+        // A seek, a pause or a new song: the line again.
+        self.follow_lyrics();
+    }
+
+    /// The lyrics thread answered: keep the lines if they are for the song
+    /// on screen, and follow them from the position now.
+    fn lyrics_answer(&mut self) {
+        let answer = self.lyrics.as_ref().and_then(|l| l.latest());
+        if let Some((key, found)) = answer
+            && key == self.lyrics_key
+        {
+            // Only synced lyrics can be followed; plain ones give
+            // no timing.
+            self.lines = if found.kind == island_core::lyrics::Kind::Synced {
+                found.lines
+            } else {
+                Vec::new()
+            };
+            self.lyric_index = None;
+            self.lyric_moved = None;
+            self.retarget_all();
+            self.follow_lyrics();
+            for i in 0..self.surfaces.len() {
+                if self.surfaces[i].last_frame.is_none() {
+                    self.draw_surface(i);
+                }
+            }
+        }
+    }
+
+    /// Other speakers are the default now: no glance for their volume, and
+    /// the lyrics' delay is read again.
+    fn speakers_changed(&mut self) {
+        if let Some(v) = &mut self.volume {
+            v.follow();
+            self.last_volume = v.now();
+        }
+        self.on_bluetooth = volume::on_bluetooth();
+        self.follow_lyrics();
+    }
+
+    /// The media thread's, and the shared timers', messages. They arrive
+    /// at the anchor window, not at any island's.
+    fn anchor_message(&mut self, msg: u32, wp: WPARAM, lp: LPARAM) -> Option<LRESULT> {
+        match msg {
+            WM_APP_MEDIA => self.media_update(),
+            WM_APP_LYRICS => self.lyrics_answer(),
+            WM_APP_VOLUME if self.volume.is_some() => {
+                self.volume_changed(volume::read(wp, lp));
+            }
+            WM_APP_PRIVACY if self.privacy.is_some() => self.privacy_changed(wp.0),
+            WM_APP_BLUETOOTH => self.bluetooth_changed(),
+            WM_APP_NOTIFICATION => self.notified(),
+            WM_APP_SPEAKERS => self.speakers_changed(),
+            WM_TIMER if wp.0 == PEEK_TIMER => {
+                // The lyrics' glance stays: the notice gives way to it.
+                if self.notice.is_some() && self.glance() {
+                    let b = self.showing();
+                    let k = self.settings.island_scale;
+                    for i in 0..self.surfaces.len() {
+                        let peek_h = self.peek_unscaled_at(i).1 * k;
+                        swap_from(&mut self.surfaces[i], k, peek_h, b.clone());
+                    }
+                }
+                // Otherwise it stays while the islands shrink back (so it
+                // keeps its size and its look on the way) and goes once
+                // still.
+                if self.glance() {
+                    self.notice = None;
+                }
+                self.set_peek(false);
+            }
+            WM_TIMER if wp.0 == FOCUS_TIMER => self.focus_ended(),
+            WM_TIMER if wp.0 == BLUETOOTH_TIMER => self.bluetooth_changed(),
+            WM_APP_SETTINGS => unsafe {
+                SetTimer(Some(self.anchor), SETTINGS_TIMER, SETTINGS_WAIT_MS, None);
+            },
+            WM_TIMER if wp.0 == SETTINGS_TIMER => {
+                unsafe {
+                    let _ = KillTimer(Some(self.anchor), SETTINGS_TIMER);
+                }
+                self.reload();
+            }
+            // Windows' colors may have changed: the accent is read again.
+            WM_SETTINGCHANGE | WM_DWMCOLORIZATIONCOLORCHANGED => render::forget_accent(),
+            WM_RBUTTONUP => self.open_menu(),
+            WM_APP_TRAY => {
+                if matches!((lp.0 & 0xFFFF) as u32, WM_LBUTTONUP | WM_RBUTTONUP) {
+                    self.open_menu();
+                }
+            }
+            WM_DESTROY => {
+                for sf in &self.surfaces {
+                    unsafe {
+                        let _ = DestroyWindow(sf.hwnd);
+                    }
+                }
+                unsafe { PostQuitMessage(0) }
+            }
+            _ if msg == self.taskbar_created && msg != 0 => {
+                if let Some(t) = &self.tray {
+                    t.add(self.texts.name);
+                }
+            }
+            _ => return None,
+        }
+        Some(LRESULT(0))
+    }
+
+    /// One island window's messages: the pointer, the wheel, its own
+    /// timers and frames. Glances and content are shared; an island opens
+    /// and closes on its own.
+    fn surface_message(&mut self, hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> Option<LRESULT> {
+        let Some(i) = self.surfaces.iter().position(|s| s.hwnd == hwnd) else {
+            return match msg {
+                WM_DPICHANGED | WM_DISPLAYCHANGE => unsafe {
+                    let _ = PostMessageW(Some(hwnd), WM_APP_LAYOUT, WPARAM(0), LPARAM(0));
+                    Some(LRESULT(0))
+                },
+                _ => None,
+            };
+        };
+        match msg {
+            WM_MOUSEMOVE if !self.surfaces[i].tracking => {
+                let mut t = TRACKMOUSEEVENT {
+                    cbSize: size_of::<TRACKMOUSEEVENT>() as u32,
+                    dwFlags: TME_LEAVE,
+                    hwndTrack: hwnd,
+                    dwHoverTime: 0,
+                };
+                self.surfaces[i].tracking = unsafe { TrackMouseEvent(&mut t) }.is_ok();
+                if !self.surfaces[i].open {
+                    unsafe { SetTimer(Some(hwnd), HOVER_TIMER, HOVER_DELAY_MS, None) };
+                }
+            }
+            WM_MOUSELEAVE => {
+                self.surfaces[i].tracking = false;
+                unsafe {
+                    let _ = KillTimer(Some(hwnd), HOVER_TIMER);
+                }
+                self.set_open(i, false);
+            }
+            WM_TIMER if wp.0 == HOVER_TIMER => {
+                unsafe {
+                    let _ = KillTimer(Some(hwnd), HOVER_TIMER);
+                }
+                // Over a notification the pointer is there to click it: the
+                // player waits until it is gone.
+                if self.surfaces[i].tracking && self.toast_shown() {
+                    unsafe { SetTimer(Some(hwnd), HOVER_TIMER, HOVER_DELAY_MS, None) };
+                } else if self.surfaces[i].tracking {
+                    self.set_open(i, true);
+                }
+            }
+            WM_APP_FRAME => {
+                self.surfaces[i].pacer.drawn();
+                // A frame already on its way when the island came to rest.
+                if self.surfaces[i].last_frame.is_some() {
+                    self.surface_frame(i);
+                }
+            }
+            WM_TIMER if wp.0 == TICK_TIMER => {
+                if self.surfaces[i].last_frame.is_none() {
+                    self.draw_surface(i);
+                }
+                self.tick_surface(i);
+            }
+            WM_TIMER if wp.0 == LYRIC_TIMER => self.follow_lyrics(),
+            WM_MOUSEWHEEL => {
+                let (x, y) = (lp.0 as i16 as i32, (lp.0 >> 16) as i16 as i32);
+                self.wheel(i, x, y, (wp.0 >> 16) as i16);
+            }
+            WM_LBUTTONUP => {
+                let (x, y) = (lp.0 as i16 as f32, (lp.0 >> 16) as i16 as f32);
+                self.click(i, x, y);
+            }
+            WM_DPICHANGED | WM_DISPLAYCHANGE | WM_APP_LAYOUT => self.layout(),
+            // Clicking the island never takes the focus from the app in use.
+            WM_MOUSEACTIVATE => return Some(LRESULT(MA_NOACTIVATE as isize)),
+            WM_RBUTTONUP => self.open_menu(),
+            WM_SETTINGCHANGE | WM_DWMCOLORIZATIONCOLORCHANGED => render::forget_accent(),
+            // Asked to close (the anchor, message-only, never is): the app
+            // ends.
+            WM_CLOSE => self.quit(),
+            // Destroyed from outside the app: it goes from the list (its
+            // pacer's thread ends with it).
+            WM_DESTROY => {
+                if self.menu.as_ref().is_some_and(|m| m.owner == hwnd) {
+                    self.close_menu();
+                }
+                self.surfaces.remove(i);
+            }
+            // Broadcast to the islands only (the anchor is message-only):
+            // the first one puts the tray icon back.
+            _ if msg == self.taskbar_created && msg != 0 => {
+                if let (0, Some(t)) = (i, &self.tray) {
+                    t.add(self.texts.name);
+                }
+            }
+            _ => return None,
+        }
+        Some(LRESULT(0))
     }
 
     /// The menu's entries and what each does.
@@ -1364,7 +1806,11 @@ impl App {
             self.close_menu();
             return;
         }
-        let Some(renderer) = &self.renderer else {
+        let Some((owner, renderer)) = self
+            .surfaces
+            .iter()
+            .find_map(|s| s.renderer.as_ref().map(|r| (s.hwnd, r)))
+        else {
             return;
         };
         let startup_on = startup::is_on();
@@ -1422,6 +1868,7 @@ impl App {
             self.menu = Some(MenuWindow {
                 hwnd,
                 target,
+                owner,
                 scale: k,
                 size: (size.0 as u32, size.1 as u32),
                 hover: None,
@@ -1449,7 +1896,14 @@ impl App {
             Some(m) => self.menu_rows(m.startup).into_iter().map(|r| r.1).collect(),
             None => return,
         };
-        let (Some(r), Some(m)) = (&mut self.renderer, &mut self.menu) else {
+        let owner = self.menu.as_ref().map(|m| m.owner);
+        let r = self
+            .surfaces
+            .iter_mut()
+            .find(|s| Some(s.hwnd) == owner)
+            .and_then(|s| s.renderer.as_mut());
+        let m = self.menu.as_mut();
+        let (Some(r), Some(m)) = (r, m) else {
             return;
         };
         let view = render::MenuView {
@@ -1535,10 +1989,27 @@ impl App {
         (Some(LRESULT(0)), false)
     }
 
+    /// Ends the app: from the menu, or when an island is asked to close
+    /// (`taskkill` without /F, the Restart Manager on an update).
+    fn quit(&mut self) {
+        self.close_menu();
+        // The icon goes first: the taskbar keeps a dead one otherwise.
+        self.tray = None;
+        // The anchor's own WM_DESTROY can't run now (the app is borrowed),
+        // so the islands go here.
+        let surfaces = std::mem::take(&mut self.surfaces);
+        unsafe {
+            for sf in &surfaces {
+                let _ = DestroyWindow(sf.hwnd);
+            }
+            let _ = DestroyWindow(self.anchor);
+        }
+    }
+
     /// What a menu item does. The switches go to the file, and take effect
     /// at once (also if it can't be written now).
     fn command(&mut self, id: u32) {
-        let mut file = self.file;
+        let mut file = self.file.clone();
         let (key, on) = match id {
             MENU_LYRICS => ("lyrics", &mut file.lyrics),
             MENU_OPEN_LYRICS => ("openLyrics", &mut file.open_lyrics),
@@ -1558,11 +2029,7 @@ impl App {
                 return;
             }
             MENU_QUIT => {
-                // The icon goes first: the taskbar keeps a dead one otherwise.
-                self.tray = None;
-                unsafe {
-                    let _ = DestroyWindow(self.hwnd);
-                }
+                self.quit();
                 return;
             }
             _ => return,
@@ -1578,168 +2045,6 @@ impl App {
         };
         let _ = settings_file::set(key, Value::Bool(*on));
         self.apply(file);
-    }
-
-    fn handle(&mut self, msg: u32, wp: WPARAM, lp: LPARAM) -> Option<LRESULT> {
-        match msg {
-            WM_MOUSEMOVE if !self.tracking => {
-                let mut t = TRACKMOUSEEVENT {
-                    cbSize: size_of::<TRACKMOUSEEVENT>() as u32,
-                    dwFlags: TME_LEAVE,
-                    hwndTrack: self.hwnd,
-                    dwHoverTime: 0,
-                };
-                self.tracking = unsafe { TrackMouseEvent(&mut t) }.is_ok();
-                if !self.open {
-                    unsafe { SetTimer(Some(self.hwnd), HOVER_TIMER, HOVER_DELAY_MS, None) };
-                }
-            }
-            WM_MOUSELEAVE => {
-                self.tracking = false;
-                unsafe {
-                    let _ = KillTimer(Some(self.hwnd), HOVER_TIMER);
-                }
-                self.set_open(false);
-            }
-            WM_TIMER if wp.0 == HOVER_TIMER => {
-                unsafe {
-                    let _ = KillTimer(Some(self.hwnd), HOVER_TIMER);
-                }
-                // Over a notification the pointer is there to click it: the
-                // player waits until it is gone.
-                if self.tracking && self.toast_shown() {
-                    unsafe { SetTimer(Some(self.hwnd), HOVER_TIMER, HOVER_DELAY_MS, None) };
-                } else if self.tracking {
-                    self.set_open(true);
-                }
-            }
-            WM_APP_FRAME => {
-                self.pacer.drawn();
-                // A frame already on its way when the island came to rest.
-                if self.last_frame.is_some() {
-                    self.frame();
-                }
-            }
-            WM_TIMER if wp.0 == TICK_TIMER => {
-                if self.last_frame.is_none() {
-                    self.draw();
-                }
-                self.tick();
-            }
-            WM_TIMER if wp.0 == PEEK_TIMER => {
-                // The lyrics' glance stays: the notice gives way to it.
-                if self.notice.is_some() && self.glance() {
-                    let b = self.showing();
-                    self.swap_from(b);
-                }
-                // Otherwise it stays while the island shrinks back (so it
-                // keeps its size and its look on the way) and goes once still.
-                if self.glance() {
-                    self.notice = None;
-                }
-                self.set_peek(false);
-            }
-            WM_TIMER if wp.0 == FOCUS_TIMER => self.focus_ended(),
-            WM_APP_VOLUME if self.volume.is_some() => self.volume_changed(volume::read(wp, lp)),
-            WM_APP_PRIVACY if self.privacy.is_some() => self.privacy_changed(wp.0),
-            WM_APP_BLUETOOTH => self.bluetooth_changed(),
-            WM_APP_NOTIFICATION => self.notified(),
-            WM_TIMER if wp.0 == BLUETOOTH_TIMER => self.bluetooth_changed(),
-            WM_APP_SPEAKERS => {
-                // New speakers come with their own volume: no glance for it.
-                if let Some(v) = &mut self.volume {
-                    v.follow();
-                    self.last_volume = v.now();
-                }
-                self.on_bluetooth = volume::on_bluetooth();
-                self.follow_lyrics();
-            }
-            WM_MOUSEWHEEL => {
-                let (x, y) = (lp.0 as i16 as i32, (lp.0 >> 16) as i16 as i32);
-                self.wheel(x, y, (wp.0 >> 16) as i16);
-            }
-            WM_APP_MEDIA => {
-                self.track = self.media.latest();
-                // A new song gets a glance; the one playing at start doesn't.
-                let song = self
-                    .track
-                    .as_ref()
-                    .map(|t| (t.title.clone(), t.artist.clone()));
-                if song.is_some() && song != self.song {
-                    let first = self.song.is_none();
-                    self.song = song;
-                    self.on_bluetooth = volume::on_bluetooth();
-                    if !first {
-                        self.notice = None;
-                        self.set_peek(true);
-                    }
-                }
-                self.ask_lyrics();
-                // Music starting or stopping widens or narrows the closed island.
-                self.retarget();
-                if self.last_frame.is_none() {
-                    self.draw();
-                }
-                self.tick();
-                // A seek, a pause or a new song: the line again.
-                self.follow_lyrics();
-            }
-            WM_APP_LYRICS => {
-                let answer = self.lyrics.as_ref().and_then(|l| l.latest());
-                if let Some((key, found)) = answer
-                    && key == self.lyrics_key
-                {
-                    // Only synced lyrics can be followed; plain ones give
-                    // no timing.
-                    self.lines = if found.kind == island_core::lyrics::Kind::Synced {
-                        found.lines
-                    } else {
-                        Vec::new()
-                    };
-                    self.lyric_index = None;
-                    self.lyric_moved = None;
-                    self.retarget();
-                    self.follow_lyrics();
-                    if self.last_frame.is_none() {
-                        self.draw();
-                    }
-                }
-            }
-            WM_TIMER if wp.0 == LYRIC_TIMER => self.follow_lyrics(),
-            WM_LBUTTONUP => {
-                let (x, y) = (lp.0 as i16 as f32, (lp.0 >> 16) as i16 as f32);
-                self.click(x, y);
-            }
-            WM_DPICHANGED | WM_DISPLAYCHANGE | WM_APP_LAYOUT => self.layout(),
-            // Clicking the island never takes the focus from the app in use.
-            WM_MOUSEACTIVATE => return Some(LRESULT(MA_NOACTIVATE as isize)),
-            // An editor saves in steps: read once it is done.
-            WM_APP_SETTINGS => unsafe {
-                SetTimer(Some(self.hwnd), SETTINGS_TIMER, SETTINGS_WAIT_MS, None);
-            },
-            WM_TIMER if wp.0 == SETTINGS_TIMER => {
-                unsafe {
-                    let _ = KillTimer(Some(self.hwnd), SETTINGS_TIMER);
-                }
-                self.reload();
-            }
-            // Windows' colors may have changed: the accent is read again.
-            WM_SETTINGCHANGE | WM_DWMCOLORIZATIONCOLORCHANGED => render::forget_accent(),
-            WM_RBUTTONUP => self.open_menu(),
-            WM_APP_TRAY => {
-                if matches!((lp.0 & 0xFFFF) as u32, WM_LBUTTONUP | WM_RBUTTONUP) {
-                    self.open_menu();
-                }
-            }
-            WM_DESTROY => unsafe { PostQuitMessage(0) },
-            _ if msg == self.taskbar_created && msg != 0 => {
-                if let Some(t) = &self.tray {
-                    t.add(self.texts.name);
-                }
-            }
-            _ => return None,
-        }
-        Some(LRESULT(0))
     }
 }
 
@@ -1765,7 +2070,7 @@ fn open_settings() {
     }
 }
 
-/// The menu window's messages go to the app, like the island's.
+/// The menu window's messages go to the app, like the islands'.
 extern "system" fn menu_wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
     let (handled, settings) = APP.with(|cell| match cell.try_borrow_mut() {
         Ok(mut app) => app
@@ -1779,9 +2084,12 @@ extern "system" fn menu_wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) ->
     handled.unwrap_or_else(|| unsafe { DefWindowProcW(hwnd, msg, wp, lp) })
 }
 
-extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
+/// An island window's messages.
+extern "system" fn island_wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
     let handled = APP.with(|cell| match cell.try_borrow_mut() {
-        Ok(mut app) => app.as_mut().and_then(|a| a.handle(msg, wp, lp)),
+        Ok(mut app) => app
+            .as_mut()
+            .and_then(|a| a.surface_message(hwnd, msg, wp, lp)),
         // A message sent from inside a handler (SetWindowPos, DestroyWindow):
         // the app is busy, so what needs it waits for the queue.
         Err(_) => match msg {
@@ -1789,6 +2097,17 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRES
                 let _ = PostMessageW(Some(hwnd), WM_APP_LAYOUT, WPARAM(0), LPARAM(0));
                 Some(LRESULT(0))
             },
+            _ => None,
+        },
+    });
+    handled.unwrap_or_else(|| unsafe { DefWindowProcW(hwnd, msg, wp, lp) })
+}
+
+/// The hidden window's messages: the sources, the tray, the shared timers.
+extern "system" fn anchor_wndproc(hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> LRESULT {
+    let handled = APP.with(|cell| match cell.try_borrow_mut() {
+        Ok(mut app) => app.as_mut().and_then(|a| a.anchor_message(msg, wp, lp)),
+        Err(_) => match msg {
             WM_DESTROY => unsafe {
                 PostQuitMessage(0);
                 Some(LRESULT(0))
@@ -1857,7 +2176,9 @@ impl Overrides {
 
     fn over(&self, mut s: Settings) -> Settings {
         s.placement = self.placement.unwrap_or(s.placement);
-        s.monitor = self.monitor.unwrap_or(s.monitor);
+        if let Some(m) = &self.monitor {
+            s.monitor = m.clone();
+        }
         s.text_align = self.text_align.unwrap_or(s.text_align);
         s.song_text = self.song_text.unwrap_or(s.song_text);
         s.lyrics |= self.lyrics;
@@ -1886,15 +2207,24 @@ fn main() -> Result<()> {
         // WIC is COM; the UI thread is its apartment.
         let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);
         let instance = GetModuleHandleW(None)?;
-        let class = w!("IslandWindow");
         let wc = WNDCLASSW {
-            lpfnWndProc: Some(wndproc),
+            lpfnWndProc: Some(island_wndproc),
             hInstance: instance.into(),
-            lpszClassName: class,
+            lpszClassName: ISLAND_CLASS,
             hCursor: LoadCursorW(None, IDC_ARROW)?,
             ..Default::default()
         };
         if RegisterClassW(&wc) == 0 {
+            return Err(Error::from_thread());
+        }
+        // The hidden window the shared things talk to (see `App::anchor`).
+        let anchor_wc = WNDCLASSW {
+            lpfnWndProc: Some(anchor_wndproc),
+            hInstance: instance.into(),
+            lpszClassName: ANCHOR_CLASS,
+            ..Default::default()
+        };
+        if RegisterClassW(&anchor_wc) == 0 {
             return Err(Error::from_thread());
         }
         let menu_class = WNDCLASSW {
@@ -1907,16 +2237,16 @@ fn main() -> Result<()> {
         if RegisterClassW(&menu_class) == 0 {
             return Err(Error::from_thread());
         }
-        let hwnd = CreateWindowExW(
-            WS_EX_TOOLWINDOW | WS_EX_TOPMOST | WS_EX_NOACTIVATE | WS_EX_NOREDIRECTIONBITMAP,
-            class,
+        let anchor = CreateWindowExW(
+            WS_EX_NOACTIVATE,
+            ANCHOR_CLASS,
             w!("Island"),
             WS_POPUP,
             0,
             0,
-            1,
-            1,
-            None,
+            0,
+            0,
+            Some(HWND_MESSAGE),
             None,
             Some(instance.into()),
             None,
@@ -1925,31 +2255,20 @@ fn main() -> Result<()> {
         let locale = locale();
         let texts = texts::texts(defaults.language, &locale);
         let app = App {
-            hwnd,
+            anchor,
+            surfaces: Vec::new(),
             placement: defaults.placement,
-            monitor: defaults.monitor,
-            scale: 1.0,
-            window: Rect::default(),
-            width: Spring::at(CLOSED.0),
-            height: Spring::at(CLOSED.1),
-            open: false,
-            peek: false,
-            peek_view: false,
-            song: None,
-            tracking: false,
-            region: [0; 4],
-            last_frame: None,
-            renderer: Some(render::Renderer::new(hwnd)?),
-            media: media::Media::start(hwnd, WM_APP_MEDIA),
-            pacer: pacer::Pacer::new(hwnd, WM_APP_FRAME),
-            shrinking: false,
+            monitor: defaults.monitor.clone(),
+            media: media::Media::start(anchor, WM_APP_MEDIA),
             track: None,
-            file: defaults,
-            settings: defaults,
+            song: None,
+            peek: false,
+            file: defaults.clone(),
+            settings: defaults.clone(),
             args: Overrides::from_args(),
             locale,
             texts,
-            tray: Some(tray::Tray::new(hwnd, WM_APP_TRAY, texts.name)),
+            tray: Some(tray::Tray::new(anchor, WM_APP_TRAY, texts.name)),
             menu: None,
             taskbar_created: RegisterWindowMessageW(w!("TaskbarCreated")),
             song_text: defaults.song_text,
@@ -1962,9 +2281,7 @@ fn main() -> Result<()> {
             lyrics_column: defaults.open_lyrics,
             open_width_setting: defaults.open_width(),
             // Fitted to the screen by the first layout.
-            open_width: defaults.open_width(),
-            peek_most: layout::PEEK.0,
-            peek_w: layout::PEEK.0,
+            peek_w: 0.0,
             closed_w: layout::CLOSED_MEDIA_WIDTH,
             page: defaults.default_page,
             timer: focus::Timer::new(&defaults.focus),
@@ -1978,7 +2295,6 @@ fn main() -> Result<()> {
             users: Default::default(),
             bluetooth: None,
             notifications: None,
-            swap: None,
             pulse: None,
             banners_quiet: banners::active(),
         };
@@ -1986,8 +2302,7 @@ fn main() -> Result<()> {
         // A file with a typo at start: the defaults until it is fixed.
         let file = settings_file::load().unwrap_or_default();
         APP.with_borrow_mut(|a| a.as_mut().map(|a| a.apply(file)));
-        settings_file::watch(hwnd, WM_APP_SETTINGS);
-        let _ = ShowWindow(hwnd, SW_SHOWNOACTIVATE);
+        settings_file::watch(anchor, WM_APP_SETTINGS);
         let mut msg = MSG::default();
         while GetMessageW(&mut msg, None, 0, 0).as_bool() {
             let _ = TranslateMessage(&msg);

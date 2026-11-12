@@ -33,7 +33,7 @@ that isn't valid JSON is ignored until it is fixed.
 | --- | --- | --- |
 | `language` | `""` (the system's), `en`, `es` | `""` |
 | `placement` | `top`, `floating`, `top-left`, `top-right` | `top` |
-| `monitor` | `primary`, or a screen's number counted left to right | `primary` |
+| `monitor` | `primary`, a screen's number counted left to right, `all`, or a list of screens like `[1, 3]` (`1,3` from `--monitor`) | `primary` |
 | `textAlign` | `center`, `left` | `center` |
 | `songText` | `title-artist`, `artist-title`, `title`, `artist` | `title-artist` |
 | `lyrics` | `true`, `false` | `false` |
@@ -58,7 +58,10 @@ peeks for a few seconds, and the open island has the progress and the
 controls, in the cover's color (the progress, the play button, the tab,
 the halo and light behind the cover, the lyrics around the sung line
 and the glow; white for a gray cover). When an unplugged screen was chosen, the island goes to the
-primary until it is back.
+primary until it is back. With more than one screen chosen (`all` or a
+list), each one gets its own island: each opens and closes on its own, and
+the glances (a new song, the volume, a notification) show on all of them
+at once.
 
 `lyrics` turns on synced lyrics from [lrclib.net](https://lrclib.net)
 (off by default: it sends the song's name there). The closed island then

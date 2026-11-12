@@ -17,6 +17,8 @@ struct Shared {
     wake: Condvar,
     /// A frame asked for and not drawn yet: never more than one queued.
     pending: AtomicBool,
+    /// The pacer was dropped: the thread ends.
+    quit: AtomicBool,
 }
 
 pub struct Pacer {
@@ -30,6 +32,7 @@ impl Pacer {
             running: Mutex::new(false),
             wake: Condvar::new(),
             pending: AtomicBool::new(false),
+            quit: AtomicBool::new(false),
         });
         let worker = shared.clone();
         let hwnd = hwnd.0 as isize;
@@ -58,6 +61,18 @@ impl Pacer {
     }
 }
 
+/// Its window gone (an island closed with its screen): the thread ends
+/// instead of sleeping for good.
+impl Drop for Pacer {
+    fn drop(&mut self) {
+        self.shared.quit.store(true, Ordering::Release);
+        if let Ok(mut on) = self.shared.running.lock() {
+            *on = true;
+            self.shared.wake.notify_one();
+        }
+    }
+}
+
 fn run(s: &Shared, hwnd: isize, msg: u32) {
     loop {
         {
@@ -68,6 +83,9 @@ fn run(s: &Shared, hwnd: isize, msg: u32) {
                     Err(_) => return,
                 };
             }
+        }
+        if s.quit.load(Ordering::Acquire) {
+            return;
         }
         // Without composition (it can't be off on Windows 10 and 11, but
         // still): about one refresh.
