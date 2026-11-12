@@ -173,7 +173,11 @@ lights in the logo's color (the system's accent when the logo has none)
 run once around the island's edge, while a ring beats three times and then
 glows softly until the glance ends, 5 seconds later. It reads them with Windows' own listener
 (allowed under Privacy, "Notification access") and looks only when the
-shell's count of notifications changes, so nothing runs in between.
+shell's count of notifications changes, so nothing runs in between. A
+notification with an image of its own (a toast's `appLogoOverride`, like a
+web app's profile picture) shows that instead of the app's logo: the image
+is read from the toast's XML in Windows' notification database, opened
+read-only.
 
 It doesn't need Windows' banner. "Notifications only in the island" in its
 menu turns off "Show notification banners" for every app that has sent

@@ -216,8 +216,9 @@ fn toast(n: &UserNotification, fallback: &str) -> Result<Toast> {
     })
 }
 
-/// The app's logo as the system keeps it (PNG bytes), for the one glanced
-/// at only; `None` if it has none.
+/// The app's logo as the system keeps it (PNG bytes), the fallback when
+/// the toast carries no image of its own (see `toast_image`); for the one
+/// glanced at only; `None` if it has none.
 fn logo(l: &UserNotificationListener, id: u32) -> Option<Vec<u8>> {
     let r = l
         .GetNotification(id)
@@ -243,7 +244,8 @@ fn logo(l: &UserNotificationListener, id: u32) -> Option<Vec<u8>> {
     Some(bytes)
 }
 
-/// A notification that showed, with its app's logo.
+/// A notification that showed, with its picture: its own image when the
+/// toast carries one, else its app's logo.
 pub struct Arrived {
     pub toast: Toast,
     pub logo: Option<Arc<Vec<u8>>>,
@@ -383,13 +385,17 @@ fn watch(
                 continue;
             }
         }
-        // Only the newest is glanced at: only its logo is read.
+        // Only the newest is glanced at: only its picture is read: the
+        // notification's own image when it has one, else the app's logo.
         let last = fresh.len() - 1;
         let arrived = fresh.into_iter().enumerate().map(|(i, toast)| Arrived {
             logo: (i == last)
-                .then(|| logo(&l, toast.id))
-                .flatten()
-                .map(Arc::new),
+                .then(|| {
+                    crate::toast_image::image(toast.id)
+                        .or_else(|| logo(&l, toast.id))
+                        .map(Arc::new)
+                })
+                .flatten(),
             toast,
         });
         if let Ok(mut n) = new.lock() {
