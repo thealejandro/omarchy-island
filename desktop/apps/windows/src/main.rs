@@ -9,11 +9,13 @@ mod render;
 mod settings_file;
 mod startup;
 mod tray;
+mod volume;
 
 use std::cell::RefCell;
 use std::time::Instant;
 
 use island_core::focus::{self, Ended, Lengths, Phase};
+use island_core::glance;
 use island_core::media as layout;
 use island_core::menu::{self, Kind as MenuKind};
 use island_core::monitor::{self, Monitor, MonitorChoice};
@@ -85,6 +87,19 @@ const WM_APP_FRAME: u32 = WM_APP + 4;
 const WM_APP_SETTINGS: u32 = WM_APP + 5;
 /// A click on the tray icon.
 const WM_APP_TRAY: u32 = WM_APP + 6;
+/// The system's volume changed (see `volume.rs`).
+const WM_APP_VOLUME: u32 = WM_APP + 7;
+/// Other speakers are the default now.
+const WM_APP_SPEAKERS: u32 = WM_APP + 8;
+
+/// A glance's content, kept until it ends.
+struct Notice {
+    icon: &'static str,
+    tint: [f32; 3],
+    title: &'static str,
+    detail: String,
+    level: Option<f32>,
+}
 /// Reads the settings once an editor has finished saving them.
 const SETTINGS_TIMER: usize = 6;
 const SETTINGS_WAIT_MS: u32 = 150;
@@ -185,7 +200,11 @@ struct App {
     /// The steady clock the timer counts on.
     start: Instant,
     /// What the glance tells instead of the song (the timer's end).
-    notice: Option<(&'static str, String)>,
+    notice: Option<Notice>,
+    /// Core Audio, while the volume glance is on, and the volume last
+    /// told (a change is told only if it differs).
+    volume: Option<volume::Volume>,
+    last_volume: Option<(f32, bool)>,
 }
 
 thread_local! {
@@ -387,7 +406,13 @@ impl App {
             tabs_clock: &clock,
             tabs_timer: tm.running(),
             focus: focus_view,
-            notice: self.notice.as_ref().map(|(a, b)| (*a, b.as_str())),
+            notice: self.notice.as_ref().map(|n| render::Notice {
+                icon: n.icon,
+                tint: n.tint,
+                title: n.title,
+                detail: &n.detail,
+                level: n.level,
+            }),
             closed_timer: (active && self.track.is_none()).then_some(left.as_str()),
             width: self.window.width as u32,
             height: self.window.height as u32,
@@ -471,16 +496,56 @@ impl App {
         let (now, l) = (self.now_ms(), self.settings.focus);
         if let Some(ended) = self.timer.finish(now, &l) {
             let t = self.texts;
-            self.notice = Some(match ended {
-                Ended::Focus { break_minutes, .. } => {
-                    (t.focus_done, texts::fill(t.take_break, &[break_minutes]))
-                }
-                Ended::Break => (t.break_over, t.ready.to_string()),
-            });
-            self.set_peek(true);
+            let (title, detail, tint) = match ended {
+                Ended::Focus { break_minutes, .. } => (
+                    t.focus_done,
+                    texts::fill(t.take_break, &[break_minutes]),
+                    render::BREAK_TINT,
+                ),
+                Ended::Break => (t.break_over, t.ready.to_string(), render::FOCUS_TINT),
+            };
+            self.notify(
+                Notice {
+                    icon: "\u{E916}",
+                    tint,
+                    title,
+                    detail,
+                    level: None,
+                },
+                PEEK_MS,
+            );
         }
         self.arm_focus();
         self.redraw();
+    }
+
+    /// A glance that tells something, for `ms` after its last change.
+    fn notify(&mut self, n: Notice, ms: u32) {
+        self.notice = Some(n);
+        unsafe {
+            let _ = KillTimer(Some(self.hwnd), PEEK_TIMER);
+            SetTimer(Some(self.hwnd), PEEK_TIMER, ms, None);
+        }
+        self.peek = true;
+        self.retarget();
+    }
+
+    /// The volume changed: a glance, if it's a change worth one.
+    fn volume_changed(&mut self, now: (f32, bool)) {
+        let before = self.last_volume.replace(now);
+        if !glance::volume_changed(before, now) {
+            return;
+        }
+        let (level, muted) = now;
+        let t = self.texts;
+        let n = Notice {
+            icon: glance::volume_icon(level, muted),
+            tint: render::WHITE,
+            title: if muted { t.muted } else { t.volume },
+            detail: format!("{} %", glance::percent(level)),
+            level: Some(if muted { 0.0 } else { level }),
+        };
+        self.notify(n, glance::LEVEL_MS);
     }
 
     fn redraw(&mut self) {
@@ -823,6 +888,13 @@ impl App {
             self.ask_lyrics();
             self.follow_lyrics();
         }
+        if s.volume_glance != self.volume.is_some() {
+            self.volume = s
+                .volume_glance
+                .then(|| volume::Volume::start(self.hwnd, WM_APP_VOLUME, WM_APP_SPEAKERS).ok())
+                .flatten();
+            self.last_volume = self.volume.as_ref().and_then(|v| v.now());
+        }
         self.lyrics_column = s.open_lyrics;
         self.open_width_setting = s.open_width();
         self.layout();
@@ -1125,6 +1197,14 @@ impl App {
                 self.set_peek(false);
             }
             WM_TIMER if wp.0 == FOCUS_TIMER => self.focus_ended(),
+            WM_APP_VOLUME if self.volume.is_some() => self.volume_changed(volume::read(wp, lp)),
+            WM_APP_SPEAKERS => {
+                // New speakers come with their own volume: no glance for it.
+                if let Some(v) = &mut self.volume {
+                    v.follow();
+                    self.last_volume = v.now();
+                }
+            }
             WM_MOUSEWHEEL => {
                 let (x, y) = (lp.0 as i16 as i32, (lp.0 >> 16) as i16 as i32);
                 self.wheel(x, y, (wp.0 >> 16) as i16);
@@ -1430,6 +1510,9 @@ fn main() -> Result<()> {
             timer: focus::Timer::new(&defaults.focus),
             start: Instant::now(),
             notice: None,
+            // Started by the settings (on by default).
+            volume: None,
+            last_volume: None,
         };
         APP.with_borrow_mut(|a| *a = Some(app));
         // A file with a typo at start: the defaults until it is fixed.

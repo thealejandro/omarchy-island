@@ -45,6 +45,7 @@ dependencies = [
  "island-core",
  "serde_json",
  "windows",
+ "windows-core",
  "windows-numerics",
 ]
 
