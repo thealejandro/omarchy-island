@@ -31,7 +31,7 @@ or if the tagged commit is not on main.
 ## Install
 
 Opened from anywhere else (just downloaded, say), the island offers it in
-its own menu, in the middle of the screen in use: "Install Island", or
+a large menu of its own, in the middle of the screen in use: "Install Island", or
 "Update Island" when an older one is installed (shown by that one, if it is
 running, which keeps running until the user chooses). If installing fails,
 the island comes back and says so. "Use without installing" keeps it where
@@ -51,9 +51,10 @@ the island again while it runs opens its menu. Uninstalling it from
 banners back on, then removes the Run value, the shortcut, the entry and
 the program's folder. The settings and the lyrics cache stay.
 
-The island lives in the tray: its menu (also a right click on the island)
+The island lives in the tray: its icon's menu, compact like Windows' own,
 switches the lyrics and the lyrics column, starts it with Windows, opens
-the settings and quits. Starting with Windows is a value under the user's
+the settings and quits. The island itself keeps its clicks for the music
+and the glances: a right click on it opens nothing. Starting with Windows is a value under the user's
 own `Run` key, written only when chosen there.
 
 ## Settings
