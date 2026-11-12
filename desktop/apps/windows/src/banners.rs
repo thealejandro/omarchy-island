@@ -11,6 +11,7 @@
 
 use std::path::PathBuf;
 use std::sync::Mutex;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use windows::Win32::Foundation::ERROR_SUCCESS;
 use windows::Win32::System::Registry::{
@@ -158,9 +159,30 @@ fn known() -> Vec<String> {
     out
 }
 
+/// What was chosen last, for [`set`].
+static WANT: AtomicBool = AtomicBool::new(false);
+/// One [`quiet_all`] or [`restore`] at a time.
+static TURNING: Mutex<()> = Mutex::new(());
+
+/// Turns the banners off (`true`) or back on, on a thread of its own. Chosen
+/// twice in a row, quickly, the last choice is the one that holds: each
+/// thread waits for the one before and then applies what was chosen last,
+/// whichever of them the system runs first.
+pub fn set(on: bool) {
+    WANT.store(on, Ordering::SeqCst);
+    std::thread::spawn(|| {
+        let _turning = TURNING.lock().unwrap_or_else(|e| e.into_inner());
+        if WANT.load(Ordering::SeqCst) {
+            quiet_all();
+        } else {
+            restore();
+        }
+    });
+}
+
 /// Turns off the banners of every app known so far (new ones as their
 /// first notification arrives, with [`quiet`]).
-pub fn quiet_all() {
+fn quiet_all() {
     // Chosen even with no app to turn off yet (all off by hand, or a new
     // Windows): the next ones still are.
     if let Some(m) = marker() {

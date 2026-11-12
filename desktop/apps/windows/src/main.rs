@@ -2348,11 +2348,7 @@ impl App {
             // settings), or back on: kept as is until chosen again.
             MENU_ONLY_ISLAND => {
                 self.banners_quiet = !self.banners_quiet;
-                if self.banners_quiet {
-                    std::thread::spawn(banners::quiet_all);
-                } else {
-                    std::thread::spawn(banners::restore);
-                }
+                banners::set(self.banners_quiet);
                 return;
             }
             MENU_STARTUP => {
