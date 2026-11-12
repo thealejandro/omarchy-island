@@ -5,6 +5,7 @@ mod bars;
 mod lyrics;
 mod media;
 mod pacer;
+mod privacy;
 mod render;
 mod settings_file;
 mod startup;
@@ -20,6 +21,7 @@ use island_core::media as layout;
 use island_core::menu::{self, Kind as MenuKind};
 use island_core::monitor::{self, Monitor, MonitorChoice};
 use island_core::pages::{self, FocusButton, Page};
+use island_core::privacy::{Change, Device};
 use island_core::settings::Settings;
 use island_core::shape::{self, Placement, Rect};
 use island_core::spring::{self, Spring};
@@ -91,6 +93,8 @@ const WM_APP_TRAY: u32 = WM_APP + 6;
 const WM_APP_VOLUME: u32 = WM_APP + 7;
 /// Other speakers are the default now.
 const WM_APP_SPEAKERS: u32 = WM_APP + 8;
+/// Who uses the microphone or camera changed (see `privacy.rs`).
+const WM_APP_PRIVACY: u32 = WM_APP + 9;
 
 /// A glance's content, kept until it ends.
 struct Notice {
@@ -205,6 +209,10 @@ struct App {
     /// told (a change is told only if it differs).
     volume: Option<volume::Volume>,
     last_volume: Option<(f32, bool)>,
+    /// The watch on the microphone and camera, while that glance is on,
+    /// and the apps last seen using each (`Device::ALL`'s order).
+    privacy: Option<privacy::Privacy>,
+    users: [Vec<String>; 2],
 }
 
 thread_local! {
@@ -546,6 +554,46 @@ impl App {
             level: Some(if muted { 0.0 } else { level }),
         };
         self.notify(n, glance::LEVEL_MS);
+    }
+
+    /// Who uses `Device::ALL[i]` may have changed: a glance if an app
+    /// began to, or the last one stopped.
+    fn privacy_changed(&mut self, i: usize) {
+        let Some(&d) = Device::ALL.get(i) else {
+            return;
+        };
+        let now = privacy::using(d);
+        let t = self.texts;
+        let n = match island_core::privacy::change(&self.users[i], &now) {
+            Some(Change::On(app)) => Notice {
+                icon: d.icon(),
+                tint: d.tint(),
+                title: if d == Device::Microphone {
+                    t.microphone_on
+                } else {
+                    t.camera_on
+                },
+                detail: app.to_string(),
+                level: None,
+            },
+            Some(Change::Off) => Notice {
+                icon: d.icon(),
+                tint: render::WHITE,
+                title: if d == Device::Microphone {
+                    t.microphone_off
+                } else {
+                    t.camera_off
+                },
+                detail: String::new(),
+                level: None,
+            },
+            None => {
+                self.users[i] = now;
+                return;
+            }
+        };
+        self.users[i] = now;
+        self.notify(n, PEEK_MS);
     }
 
     fn redraw(&mut self) {
@@ -895,6 +943,14 @@ impl App {
                 .flatten();
             self.last_volume = self.volume.as_ref().and_then(|v| v.now());
         }
+        if s.privacy_glance != self.privacy.is_some() {
+            self.privacy = s
+                .privacy_glance
+                .then(|| privacy::Privacy::start(self.hwnd, WM_APP_PRIVACY))
+                .flatten();
+            // What is in use already was told by Windows' own light.
+            self.users = Device::ALL.map(privacy::using);
+        }
         self.lyrics_column = s.open_lyrics;
         self.open_width_setting = s.open_width();
         self.layout();
@@ -1198,6 +1254,7 @@ impl App {
             }
             WM_TIMER if wp.0 == FOCUS_TIMER => self.focus_ended(),
             WM_APP_VOLUME if self.volume.is_some() => self.volume_changed(volume::read(wp, lp)),
+            WM_APP_PRIVACY if self.privacy.is_some() => self.privacy_changed(wp.0),
             WM_APP_SPEAKERS => {
                 // New speakers come with their own volume: no glance for it.
                 if let Some(v) = &mut self.volume {
@@ -1513,6 +1570,8 @@ fn main() -> Result<()> {
             // Started by the settings (on by default).
             volume: None,
             last_volume: None,
+            privacy: None,
+            users: Default::default(),
         };
         APP.with_borrow_mut(|a| *a = Some(app));
         // A file with a typo at start: the defaults until it is fixed.
