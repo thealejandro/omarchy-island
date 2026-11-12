@@ -363,12 +363,28 @@ pub const INSTALL_FAILED: &str = "--install-failed";
 /// Marks the `WM_COPYDATA` a newer exe sends the running island ("ISL1").
 const OFFER_DATA: usize = 0x4953_4C31;
 
+/// The running island's answer to `send_offer`, as `WM_COPYDATA`'s result.
+pub const OFFER_SHOWN: isize = 1;
+/// It knows the message but won't offer this exe (not newer than itself, or
+/// its menu couldn't open): it stays.
+pub const OFFER_DECLINED: isize = 2;
+
+/// What the running island did with `send_offer`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Reply {
+    Shown,
+    /// It answered no, or didn't answer in time: it stays as it is.
+    Declined,
+    /// One from before this message (it answers 0): only by taking its
+    /// place can the update be offered.
+    Unknown,
+}
+
 /// Asks the island running (`anchor`) to offer the update to this exe, so
-/// it keeps running until the user chooses. `false` if it can't (one from
-/// before this message, or busy).
-pub fn send_offer(anchor: HWND) -> bool {
+/// it keeps running until the user chooses.
+pub fn send_offer(anchor: HWND) -> Reply {
     let Ok(me) = std::env::current_exe() else {
-        return false;
+        return Reply::Declined;
     };
     let text = install::offer_text(env!("CARGO_PKG_VERSION"), &me.to_string_lossy());
     let data: Vec<u16> = text.encode_utf16().collect();
@@ -389,7 +405,11 @@ pub fn send_offer(anchor: HWND) -> bool {
             Some(&mut out),
         )
     };
-    sent.0 != 0 && out != 0
+    match (sent.0 != 0, out as isize) {
+        (true, OFFER_SHOWN) => Reply::Shown,
+        (true, 0) => Reply::Unknown,
+        _ => Reply::Declined,
+    }
 }
 
 /// The newer exe and its version in a `send_offer`, if it is one: a full
