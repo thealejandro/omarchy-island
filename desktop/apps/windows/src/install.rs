@@ -107,6 +107,25 @@ pub fn close_running(anchor_class: PCWSTR, quit: u32) {
     }
 }
 
+/// The island to start again when installing fails, once the running one
+/// was closed: the installed one, whole still, when this was an update;
+/// else this exe.
+pub fn back_after_failure() -> Option<PathBuf> {
+    let me = std::env::current_exe().ok()?;
+    match layout() {
+        Ok(l) if l.exe.is_file() && !same(&me, &l.exe) => Some(l.exe),
+        _ => Some(me),
+    }
+}
+
+/// Whether this exe is the installed one.
+pub fn is_installed() -> bool {
+    match (std::env::current_exe(), layout()) {
+        (Ok(me), Ok(l)) => same(&me, &l.exe),
+        _ => false,
+    }
+}
+
 /// Copies this exe to the user's programs, adds it to the Start menu and
 /// "Installed apps", moves "Start with Windows" to it, and starts it.
 pub fn install(anchor_class: PCWSTR, quit: u32) -> std::io::Result<()> {
@@ -121,11 +140,16 @@ pub fn install(anchor_class: PCWSTR, quit: u32) -> std::io::Result<()> {
     close_running(anchor_class, quit);
     std::fs::create_dir_all(&l.dir)?;
     if !same(&me, &l.exe) {
+        // Copied beside it first, then put in its place in one step: a copy
+        // cut short (a full disk) never leaves a broken island installed.
+        let new = l.exe.with_extension("exe.new");
+        let put = || std::fs::copy(&me, &new).and_then(|_| std::fs::rename(&new, &l.exe));
         // Still in use for a moment (an antivirus scanning it, say).
         let mut tries = 0;
-        while let Err(e) = std::fs::copy(&me, &l.exe) {
+        while let Err(e) = put() {
             tries += 1;
             if tries == 40 {
+                let _ = std::fs::remove_file(&new);
                 return Err(e);
             }
             std::thread::sleep(std::time::Duration::from_millis(250));

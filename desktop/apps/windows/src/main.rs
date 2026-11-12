@@ -1837,11 +1837,18 @@ impl App {
                 }));
             }
             WM_APP_INSTALL_FAILED => {
+                // The installed one, back after an update that failed; or the
+                // exe that couldn't install.
+                let (title, detail) = if install::is_installed() {
+                    (self.texts.update_failed, self.texts.still_installed)
+                } else {
+                    (self.texts.install_failed, self.texts.still_portable)
+                };
                 let n = Notice {
                     icon: island_core::icons::Icon::Home,
                     tint: render::WHITE,
-                    title: self.texts.install_failed.into(),
-                    detail: self.texts.still_portable.into(),
+                    title: title.into(),
+                    detail: detail.into(),
                     level: None,
                     ..Default::default()
                 };
@@ -2490,9 +2497,9 @@ fn main() -> Result<()> {
             // never left with none and no word.
             if done.is_err()
                 && arg == "--install"
-                && let Ok(me) = std::env::current_exe()
+                && let Some(back) = install::back_after_failure()
             {
-                let _ = std::process::Command::new(me)
+                let _ = std::process::Command::new(back)
                     .arg(install::INSTALL_FAILED)
                     .spawn();
             }
