@@ -353,14 +353,22 @@ struct Text {
     empty: IDWriteTextFormat,
     peek: IDWriteTextFormat,
     closed: IDWriteTextFormat,
-    menu: IDWriteTextFormat,
-    menu_head: IDWriteTextFormat,
-    menu_version: IDWriteTextFormat,
+    /// The menu's, compact and large (`menu::Look::ALL`'s order).
+    menu: [MenuFonts; 2],
     clock: IDWriteTextFormat,
     big: IDWriteTextFormat,
     next: IDWriteTextFormat,
     /// A notification's title.
     toast_title: IDWriteTextFormat,
+    /// A notification's app, beside its `when` (`next`'s size).
+    toast_app: IDWriteTextFormat,
+}
+
+/// A menu's rows, name and version.
+struct MenuFonts {
+    row: IDWriteTextFormat,
+    head: IDWriteTextFormat,
+    version: IDWriteTextFormat,
 }
 
 /// One entry of the menu, as drawn.
@@ -381,6 +389,7 @@ pub struct MenuView<'a> {
     pub version: &'a str,
     pub rows: &'a [MenuRow<'a>],
     pub hover: Option<usize>,
+    pub look: menu::Look,
 }
 
 /// The menu window's own composition target; drawn with the island's
@@ -550,13 +559,22 @@ impl Text {
                 empty: format(ui, n, 14.0, DWRITE_TEXT_ALIGNMENT_CENTER)?,
                 peek: format(ui, b, 13.0, DWRITE_TEXT_ALIGNMENT_LEADING)?,
                 closed: format(ui, b, 12.0, DWRITE_TEXT_ALIGNMENT_LEADING)?,
-                menu: format(ui, n, 17.0, DWRITE_TEXT_ALIGNMENT_LEADING)?,
-                menu_head: format(ui, b, 18.0, DWRITE_TEXT_ALIGNMENT_LEADING)?,
-                menu_version: format(ui, n, 14.0, DWRITE_TEXT_ALIGNMENT_TRAILING)?,
+                menu: {
+                    let fonts = |look: menu::Look| -> Result<MenuFonts> {
+                        let s = look.size();
+                        Ok(MenuFonts {
+                            row: format(ui, n, s.font, DWRITE_TEXT_ALIGNMENT_LEADING)?,
+                            head: format(ui, b, s.head_font, DWRITE_TEXT_ALIGNMENT_LEADING)?,
+                            version: format(ui, n, s.version_font, DWRITE_TEXT_ALIGNMENT_TRAILING)?,
+                        })
+                    };
+                    [fonts(menu::Look::Compact)?, fonts(menu::Look::Large)?]
+                },
                 clock: format(ui, b, 12.0, DWRITE_TEXT_ALIGNMENT_TRAILING)?,
                 big: format(ui, b, 42.0, DWRITE_TEXT_ALIGNMENT_LEADING)?,
                 next: format(ui, n, 12.0, DWRITE_TEXT_ALIGNMENT_TRAILING)?,
                 toast_title: format(ui, b, 15.0, DWRITE_TEXT_ALIGNMENT_LEADING)?,
+                toast_app: format(ui, n, 12.0, DWRITE_TEXT_ALIGNMENT_LEADING)?,
                 dw: dw.clone(),
             })
         }
@@ -1516,7 +1534,7 @@ impl Renderer {
                 self.icon(n.icon, r, 24.0, WHITE, alpha);
             }
         }
-        self.tinted(n.title, &self.text.menu, at(l.app), WHITE, 0.6 * alpha);
+        self.tinted(n.title, &self.text.toast_app, at(l.app), WHITE, 0.6 * alpha);
         self.tinted(n.when, &self.text.next, at(l.when), WHITE, 0.45 * alpha);
         let title = if n.detail.is_empty() {
             n.title
@@ -2087,6 +2105,8 @@ impl Renderer {
     }
 
     fn menu_body(&self, m: &MenuView, w: f32, h: f32) {
+        let s = m.look.size();
+        let fonts = &self.text.menu[m.look as usize];
         let panel = D2D1_ROUNDED_RECT {
             rect: D2D_RECT_F {
                 left: 0.5,
@@ -2094,8 +2114,8 @@ impl Renderer {
                 right: w - 0.5,
                 bottom: h - 0.5,
             },
-            radiusX: menu::RADIUS,
-            radiusY: menu::RADIUS,
+            radiusX: s.radius,
+            radiusY: s.radius,
         };
         unsafe {
             // A dark grey, softer than the island's black, like the
@@ -2107,20 +2127,20 @@ impl Renderer {
                 .DrawRoundedRectangle(&panel, &self.ink, 1.0 / m.scale, None);
         }
         let head = Rect {
-            x: menu::TEXT_X,
-            y: menu::PAD,
-            width: w - 2.0 * menu::TEXT_X,
-            height: menu::HEADER,
+            x: s.text_x,
+            y: s.pad,
+            width: w - 2.0 * s.text_x,
+            height: s.header,
         };
-        self.text(m.title, &self.text.menu_head, head, 1.0);
-        self.text(m.version, &self.text.menu_version, head, 0.6);
+        self.text(m.title, &fonts.head, head, 1.0);
+        self.text(m.version, &fonts.version, head, 0.6);
         let kinds: Vec<menu::Kind> = m.rows.iter().map(|r| r.kind).collect();
-        for (i, (row, r)) in m.rows.iter().zip(menu::rows(&kinds)).enumerate() {
+        for (i, (row, r)) in m.rows.iter().zip(s.rows(&kinds)).enumerate() {
             if row.kind == menu::Kind::Separator {
                 let line = Rect {
-                    x: menu::TEXT_X - 2.0,
+                    x: s.text_x - 2.0,
                     y: r.y + r.height / 2.0,
-                    width: w - 2.0 * (menu::TEXT_X - 2.0),
+                    width: w - 2.0 * (s.text_x - 2.0),
                     height: 1.0 / m.scale,
                 };
                 self.rounded(line, 0.0, 0.2);
@@ -2128,28 +2148,28 @@ impl Renderer {
             }
             let a = if row.enabled { 1.0 } else { 0.4 };
             if m.hover == Some(i) && row.enabled {
-                self.rounded(r, menu::ROW_RADIUS, 0.15);
+                self.rounded(r, s.row_radius, 0.15);
             }
-            let switch = (row.kind == menu::Kind::Toggle).then(|| menu::switch(r));
+            let switch = (row.kind == menu::Kind::Toggle).then(|| s.switch(r));
             let label = Rect {
-                x: menu::TEXT_X,
+                x: s.text_x,
                 y: r.y,
-                width: switch.map_or(r.x + r.width, |s| s.x - 8.0) - menu::TEXT_X,
+                width: switch.map_or(r.x + r.width - s.text_x, |_| s.label_width(r)),
                 height: r.height,
             };
-            self.text(row.label, &self.text.menu, label, a);
-            if let Some(s) = switch {
-                let radius = s.height / 2.0;
-                let knob = menu::knob(s, if row.on { 1.0 } else { 0.0 });
+            self.text(row.label, &fonts.row, label, a);
+            if let Some(sw) = switch {
+                let radius = sw.height / 2.0;
+                let knob = s.knob(sw, if row.on { 1.0 } else { 0.0 });
                 if row.on {
                     // On: a white track, the knob in the panel's grey.
-                    self.rounded(s, radius, a);
+                    self.rounded(sw, radius, a);
                     unsafe {
                         self.ink.SetColor(&MENU_PANEL);
                         self.dc.FillEllipse(&ellipse(knob), &self.ink);
                     }
                 } else {
-                    self.rounded(s, radius, 0.3 * a);
+                    self.rounded(sw, radius, 0.3 * a);
                     unsafe {
                         self.ink.SetColor(&white(0.85 * a));
                         self.dc.FillEllipse(&ellipse(knob), &self.ink);

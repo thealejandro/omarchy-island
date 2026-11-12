@@ -235,6 +235,8 @@ struct MenuWindow {
     tracking: bool,
     /// Starting with Windows is on (read from the registry on opening).
     startup: bool,
+    /// Compact, or large for the offer.
+    look: menu::Look,
 }
 // windows-rs only has it under the (big) Win32_UI_Controls feature.
 const WM_MOUSELEAVE: u32 = 0x02A3;
@@ -1806,7 +1808,6 @@ impl App {
             }
             // Windows' colors may have changed: the accent is read again.
             WM_SETTINGCHANGE | WM_DWMCOLORIZATIONCOLORCHANGED => self.colors_changed(),
-            WM_RBUTTONUP => self.open_menu(false),
             WM_APP_TRAY => {
                 if matches!((lp.0 & 0xFFFF) as u32, WM_LBUTTONUP | WM_RBUTTONUP) {
                     self.open_menu(false);
@@ -1937,7 +1938,6 @@ impl App {
             WM_DPICHANGED | WM_DISPLAYCHANGE | WM_APP_LAYOUT => self.layout(),
             // Clicking the island never takes the focus from the app in use.
             WM_MOUSEACTIVATE => return Some(LRESULT(MA_NOACTIVATE as isize)),
-            WM_RBUTTONUP => self.open_menu(false),
             WM_SETTINGCHANGE | WM_DWMCOLORIZATIONCOLORCHANGED => self.colors_changed(),
             // Asked to close (the anchor, message-only, never is): the app
             // ends.
@@ -2035,6 +2035,13 @@ impl App {
             return;
         };
         let startup_on = startup::is_on();
+        // The offer asks for a choice: large. The usual menu: compact.
+        let look = if self.offer.is_some() {
+            menu::Look::Large
+        } else {
+            menu::Look::Compact
+        };
+        let ms = look.size();
         let kinds: Vec<MenuKind> = self
             .menu_rows(startup_on)
             .iter()
@@ -2057,7 +2064,7 @@ impl App {
                 width: (w.right - w.left) as f32,
                 height: (w.bottom - w.top) as f32,
             };
-            let size = ((menu::WIDTH * k).ceil(), (menu::height(&kinds) * k).ceil());
+            let size = ((ms.width * k).ceil(), (ms.height(&kinds) * k).ceil());
             if centered {
                 // In the middle of the screen in use, where it is seen.
                 at.x = w.left + (w.right - w.left - size.0 as i32) / 2;
@@ -2098,6 +2105,7 @@ impl App {
                 hover: None,
                 tracking: false,
                 startup: startup_on,
+                look,
             });
             self.draw_menu();
             let _ = ShowWindow(hwnd, SW_SHOW);
@@ -2151,6 +2159,7 @@ impl App {
             version: concat!("v", env!("CARGO_PKG_VERSION")),
             rows: &rows,
             hover: m.hover,
+            look: m.look,
         };
         let _ = r.draw_menu(&mut m.target, &view);
     }
@@ -2161,7 +2170,7 @@ impl App {
         let Some(m) = &self.menu else {
             return (None, false);
         };
-        let (scale, startup, hwnd) = (m.scale, m.startup, m.hwnd);
+        let (scale, startup, hwnd, ms) = (m.scale, m.startup, m.hwnd, m.look.size());
         let at = (
             lp.0 as i16 as f32 / scale,
             (lp.0 >> 16) as i16 as f32 / scale,
@@ -2179,7 +2188,7 @@ impl App {
                     };
                     m.tracking = unsafe { TrackMouseEvent(&mut t) }.is_ok();
                 }
-                let hover = menu::hit(&kinds, at.0, at.1);
+                let hover = ms.hit(&kinds, at.0, at.1);
                 if hover != m.hover {
                     m.hover = hover;
                     self.draw_menu();
@@ -2193,7 +2202,7 @@ impl App {
                 }
             }
             WM_LBUTTONUP => {
-                let Some(i) = menu::hit(&kinds, at.0, at.1) else {
+                let Some(i) = ms.hit(&kinds, at.0, at.1) else {
                     return (Some(LRESULT(0)), false);
                 };
                 let (id, row) = self.menu_rows(startup).swap_remove(i);

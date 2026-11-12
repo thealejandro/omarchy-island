@@ -1,24 +1,89 @@
-//! The island's own menu (tray icon, right click): a dark grey rounded panel
-//! like the island, with switches. Sizes in DIPs.
+//! The island's own menu (the tray icon's): a dark grey rounded panel like
+//! the island, with switches. Sizes in DIPs.
+//!
+//! Two sizes: compact for the usual menu, near Windows' own menus, and large
+//! for the offer to install or update, which asks for a choice and is shown
+//! in the middle of the screen.
 
 use crate::shape::Rect;
 
-pub const WIDTH: f32 = 360.0;
-/// Around the rows, inside the panel.
-pub const PAD: f32 = 10.0;
-/// The name and version on top.
-pub const HEADER: f32 = 52.0;
-pub const ROW: f32 = 46.0;
-pub const SEPARATOR: f32 = 13.0;
-pub const RADIUS: f32 = 14.0;
-/// The highlight under the pointer.
-pub const ROW_RADIUS: f32 = 10.0;
-/// Where a row's words start.
-pub const TEXT_X: f32 = 22.0;
-const SWITCH: (f32, f32) = (46.0, 26.0);
-const KNOB_INSET: f32 = 3.0;
 /// Between the menu and the edges of the screen's work area.
 pub const SCREEN_MARGIN: f32 = 8.0;
+
+/// Which of the two sizes.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Look {
+    Compact,
+    Large,
+}
+
+/// A menu's measures and its text's sizes.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct Size {
+    pub width: f32,
+    /// Around the rows, inside the panel.
+    pub pad: f32,
+    /// The name and version on top.
+    pub header: f32,
+    pub row: f32,
+    pub separator: f32,
+    pub radius: f32,
+    /// The highlight under the pointer.
+    pub row_radius: f32,
+    /// Where a row's words start.
+    pub text_x: f32,
+    switch: (f32, f32),
+    knob_inset: f32,
+    /// Between a switch and the row's right end.
+    switch_end: f32,
+    /// The rows', the name's and the version's text.
+    pub font: f32,
+    pub head_font: f32,
+    pub version_font: f32,
+}
+
+impl Look {
+    pub const ALL: [Self; 2] = [Self::Compact, Self::Large];
+
+    pub const fn size(self) -> Size {
+        match self {
+            // Room for the longest row ("Notifications only in the island")
+            // beside its switch.
+            Self::Compact => Size {
+                width: 312.0,
+                pad: 6.0,
+                header: 38.0,
+                row: 36.0,
+                separator: 9.0,
+                radius: 12.0,
+                row_radius: 8.0,
+                text_x: 16.0,
+                switch: (38.0, 20.0),
+                knob_inset: 2.5,
+                switch_end: 12.0,
+                font: 14.0,
+                head_font: 14.5,
+                version_font: 12.0,
+            },
+            Self::Large => Size {
+                width: 360.0,
+                pad: 10.0,
+                header: 52.0,
+                row: 46.0,
+                separator: 13.0,
+                radius: 14.0,
+                row_radius: 10.0,
+                text_x: 22.0,
+                switch: (46.0, 26.0),
+                knob_inset: 3.0,
+                switch_end: 14.0,
+                font: 17.0,
+                head_font: 18.0,
+                version_font: 14.0,
+            },
+        }
+    }
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Kind {
@@ -29,59 +94,70 @@ pub enum Kind {
     Separator,
 }
 
-/// Each entry's place, top to bottom, under the header.
-pub fn rows(kinds: &[Kind]) -> Vec<Rect> {
-    let mut y = PAD + HEADER;
-    kinds
-        .iter()
-        .map(|k| {
-            let h = if *k == Kind::Separator {
-                SEPARATOR
-            } else {
-                ROW
-            };
-            let r = Rect {
-                x: PAD,
-                y,
-                width: WIDTH - 2.0 * PAD,
-                height: h,
-            };
-            y += h;
-            r
-        })
-        .collect()
-}
-
-pub fn height(kinds: &[Kind]) -> f32 {
-    rows(kinds).last().map_or(PAD + HEADER, |r| r.y + r.height) + PAD
-}
-
-/// The entry under (x, y), separators left out.
-pub fn hit(kinds: &[Kind], x: f32, y: f32) -> Option<usize> {
-    rows(kinds).iter().zip(kinds).position(|(r, k)| {
-        *k != Kind::Separator && x >= r.x && x < r.x + r.width && y >= r.y && y < r.y + r.height
-    })
-}
-
-/// A toggle row's switch, at its right end.
-pub fn switch(row: Rect) -> Rect {
-    Rect {
-        x: row.x + row.width - 14.0 - SWITCH.0,
-        y: row.y + (row.height - SWITCH.1) / 2.0,
-        width: SWITCH.0,
-        height: SWITCH.1,
+impl Size {
+    /// Each entry's place, top to bottom, under the header.
+    pub fn rows(&self, kinds: &[Kind]) -> Vec<Rect> {
+        let mut y = self.pad + self.header;
+        kinds
+            .iter()
+            .map(|k| {
+                let h = if *k == Kind::Separator {
+                    self.separator
+                } else {
+                    self.row
+                };
+                let r = Rect {
+                    x: self.pad,
+                    y,
+                    width: self.width - 2.0 * self.pad,
+                    height: h,
+                };
+                y += h;
+                r
+            })
+            .collect()
     }
-}
 
-/// The switch's knob: on the right when on. `t` from 0 (off) to 1 (on).
-pub fn knob(switch: Rect, t: f32) -> Rect {
-    let d = switch.height - 2.0 * KNOB_INSET;
-    let travel = switch.width - 2.0 * KNOB_INSET - d;
-    Rect {
-        x: switch.x + KNOB_INSET + travel * t.clamp(0.0, 1.0),
-        y: switch.y + KNOB_INSET,
-        width: d,
-        height: d,
+    pub fn height(&self, kinds: &[Kind]) -> f32 {
+        self.rows(kinds)
+            .last()
+            .map_or(self.pad + self.header, |r| r.y + r.height)
+            + self.pad
+    }
+
+    /// The entry under (x, y), separators left out.
+    pub fn hit(&self, kinds: &[Kind], x: f32, y: f32) -> Option<usize> {
+        self.rows(kinds).iter().zip(kinds).position(|(r, k)| {
+            *k != Kind::Separator && x >= r.x && x < r.x + r.width && y >= r.y && y < r.y + r.height
+        })
+    }
+
+    /// A toggle row's switch, at its right end.
+    pub fn switch(&self, row: Rect) -> Rect {
+        let (w, h) = self.switch;
+        Rect {
+            x: row.x + row.width - self.switch_end - w,
+            y: row.y + (row.height - h) / 2.0,
+            width: w,
+            height: h,
+        }
+    }
+
+    /// The switch's knob: on the right when on. `t` from 0 (off) to 1 (on).
+    pub fn knob(&self, switch: Rect, t: f32) -> Rect {
+        let d = switch.height - 2.0 * self.knob_inset;
+        let travel = switch.width - 2.0 * self.knob_inset - d;
+        Rect {
+            x: switch.x + self.knob_inset + travel * t.clamp(0.0, 1.0),
+            y: switch.y + self.knob_inset,
+            width: d,
+            height: d,
+        }
+    }
+
+    /// How wide a toggle row's words may be, before its switch.
+    pub fn label_width(&self, row: Rect) -> f32 {
+        self.switch(row).x - 8.0 - self.text_x
     }
 }
 
@@ -118,40 +194,63 @@ mod tests {
 
     #[test]
     fn rows_stack_under_the_header() {
-        let r = rows(&MENU);
-        assert_eq!(r[0].y, PAD + HEADER);
-        for w in r.windows(2) {
-            assert_eq!(w[0].y + w[0].height, w[1].y);
+        for s in Look::ALL.map(Look::size) {
+            let r = s.rows(&MENU);
+            assert_eq!(r[0].y, s.pad + s.header);
+            for w in r.windows(2) {
+                assert_eq!(w[0].y + w[0].height, w[1].y);
+            }
+            assert_eq!(r[2].height, s.separator);
+            assert_eq!(
+                s.height(&MENU),
+                s.pad + s.header + 5.0 * s.row + 2.0 * s.separator + s.pad
+            );
         }
-        assert_eq!(r[2].height, SEPARATOR);
-        assert_eq!(
-            height(&MENU),
-            PAD + HEADER + 5.0 * ROW + 2.0 * SEPARATOR + PAD
-        );
     }
 
     #[test]
     fn hits_rows_but_not_separators_or_the_header() {
-        let r = rows(&MENU);
-        for (i, row) in r.iter().enumerate() {
-            let got = hit(&MENU, row.x + 20.0, row.y + row.height / 2.0);
-            assert_eq!(got, (MENU[i] != Separator).then_some(i));
+        for s in Look::ALL.map(Look::size) {
+            let r = s.rows(&MENU);
+            for (i, row) in r.iter().enumerate() {
+                let got = s.hit(&MENU, row.x + 20.0, row.y + row.height / 2.0);
+                assert_eq!(got, (MENU[i] != Separator).then_some(i));
+            }
+            assert_eq!(s.hit(&MENU, 50.0, s.header / 2.0), None);
+            assert_eq!(s.hit(&MENU, 1.0, r[0].y + 5.0), None);
+            assert_eq!(s.hit(&MENU, 50.0, s.height(&MENU) + 1.0), None);
         }
-        assert_eq!(hit(&MENU, 50.0, HEADER / 2.0), None);
-        assert_eq!(hit(&MENU, 1.0, r[0].y + 5.0), None);
-        assert_eq!(hit(&MENU, 50.0, height(&MENU) + 1.0), None);
     }
 
     #[test]
     fn switches_sit_inside_their_row() {
-        let row = rows(&MENU)[0];
-        let s = switch(row);
-        assert!(s.x > TEXT_X + 120.0 && s.x + s.width < row.x + row.width);
-        assert!(s.y > row.y && s.y + s.height < row.y + row.height);
-        let (off, on) = (knob(s, 0.0), knob(s, 1.0));
-        assert!(off.x > s.x && on.x + on.width < s.x + s.width + 0.01);
-        assert!(on.x > off.x);
-        assert_eq!(off.y, on.y);
+        for s in Look::ALL.map(Look::size) {
+            let row = s.rows(&MENU)[0];
+            let sw = s.switch(row);
+            assert!(sw.x + sw.width < row.x + row.width);
+            assert!(sw.y > row.y && sw.y + sw.height < row.y + row.height);
+            let (off, on) = (s.knob(sw, 0.0), s.knob(sw, 1.0));
+            assert!(off.x > sw.x && on.x + on.width < sw.x + sw.width + 0.01);
+            assert!(on.x > off.x);
+            assert_eq!(off.y, on.y);
+        }
+    }
+
+    #[test]
+    fn the_longest_row_fits_beside_its_switch() {
+        // "Notifications only in the island", 32 characters: at most 0.5 em
+        // each in Segoe UI. Only the compact menu has switches (the large
+        // one is the offer's two choices).
+        let s = Look::Compact.size();
+        let row = s.rows(&MENU)[0];
+        assert!(s.label_width(row) >= 32.0 * 0.5 * s.font);
+    }
+
+    #[test]
+    fn the_usual_menu_is_the_smaller_one() {
+        let (c, l) = (Look::Compact.size(), Look::Large.size());
+        assert!(c.height(&MENU) < l.height(&MENU));
+        assert!(c.width <= l.width && c.row < l.row && c.font < l.font);
     }
 
     #[test]
