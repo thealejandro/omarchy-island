@@ -46,6 +46,13 @@ pub struct Texts {
     /// After installing: the glance, and where the island now is.
     pub installed: &'static str,
     pub in_start_menu: &'static str,
+    /// Opened from outside its install folder: what it offers.
+    pub install: &'static str,
+    pub update: &'static str,
+    pub portable: &'static str,
+    /// The install failed: the glance, and what is left.
+    pub install_failed: &'static str,
+    pub still_portable: &'static str,
 }
 
 pub const EN: Texts = Texts {
@@ -80,6 +87,11 @@ pub const EN: Texts = Texts {
     now: "now",
     installed: "Island installed",
     in_start_menu: "In the Start menu",
+    install: "Install Island",
+    update: "Update Island",
+    portable: "Use without installing",
+    install_failed: "Couldn't install Island",
+    still_portable: "It runs without installing",
 };
 
 pub const ES: Texts = Texts {
@@ -114,6 +126,11 @@ pub const ES: Texts = Texts {
     now: "ahora",
     installed: "Isla instalada",
     in_start_menu: "En el menú Inicio",
+    install: "Instalar Island",
+    update: "Actualizar Island",
+    portable: "Usar sin instalar",
+    install_failed: "No se pudo instalar Island",
+    still_portable: "Sigue sin instalar",
 };
 
 /// `text` with each `{}` replaced by the next of `args`.
@@ -198,6 +215,11 @@ mod tests {
                 t.disconnected,
                 t.installed,
                 t.in_start_menu,
+                t.install,
+                t.update,
+                t.portable,
+                t.install_failed,
+                t.still_portable,
             ] {
                 assert!(!s.trim().is_empty());
                 // The tray's tooltip and menu take up to 127 characters.

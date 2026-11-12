@@ -19,7 +19,16 @@ cargo build --release -p island-windows   # target/release/island.exe
 
 ## Install
 
-`island.exe --install` installs it for this user, with no admin rights:
+Opened from anywhere else (just downloaded, say), the island offers it in
+its own menu, in the middle of the screen in use: "Install Island", or "Update Island" when
+an older one is installed (shown by that one, if it is running, which keeps
+running until the user chooses). If installing fails, the island comes
+back and says so. "Use without
+installing" keeps it where it is and isn't asked again for that version
+(`%LOCALAPPDATA%\island\portable.txt`).
+
+`island.exe --install` does the same by hand, for this user, with no admin
+rights:
 
 - it copies itself to `%LOCALAPPDATA%\Programs\Island`;
 - it adds Island to the Start menu and to Settings > Apps > Installed apps;

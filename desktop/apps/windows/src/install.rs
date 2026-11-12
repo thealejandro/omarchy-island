@@ -8,12 +8,17 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use island_core::install::{self, Layout, RegValue};
-use windows::Win32::Foundation::{CloseHandle, LPARAM, WAIT_OBJECT_0, WPARAM};
+use windows::Win32::Foundation::{CloseHandle, HWND, LPARAM, WAIT_OBJECT_0, WPARAM};
+use windows::Win32::Storage::FileSystem::{
+    GetFileVersionInfoSizeW, GetFileVersionInfoW, VS_FIXEDFILEINFO, VerQueryValueW,
+};
 use windows::Win32::System::Com::{
     CLSCTX_INPROC_SERVER, COINIT_APARTMENTTHREADED, CoCreateInstance, CoInitializeEx, IPersistFile,
 };
+use windows::Win32::System::DataExchange::COPYDATASTRUCT;
 use windows::Win32::System::Registry::{
-    HKEY_CURRENT_USER, REG_DWORD, REG_SZ, RegDeleteTreeW, RegSetKeyValueW,
+    HKEY_CURRENT_USER, REG_DWORD, REG_SZ, RRF_RT_REG_SZ, RegDeleteTreeW, RegGetValueW,
+    RegSetKeyValueW,
 };
 use windows::Win32::System::SystemInformation::GetSystemDirectoryW;
 use windows::Win32::System::Threading::{
@@ -21,7 +26,8 @@ use windows::Win32::System::Threading::{
 };
 use windows::Win32::UI::Shell::{IShellLinkW, ShellLink};
 use windows::Win32::UI::WindowsAndMessaging::{
-    FindWindowExW, GetWindowThreadProcessId, HWND_MESSAGE, PostMessageW,
+    FindWindowExW, GetWindowThreadProcessId, HWND_MESSAGE, PostMessageW, SMTO_ABORTIFHUNG,
+    SendMessageTimeoutW, WM_COPYDATA,
 };
 use windows::core::{HSTRING, Interface, PCWSTR, w};
 
@@ -106,10 +112,24 @@ pub fn close_running(anchor_class: PCWSTR, quit: u32) {
 pub fn install(anchor_class: PCWSTR, quit: u32) -> std::io::Result<()> {
     let l = layout()?;
     let me = std::env::current_exe()?;
+    // The island that asked for this, ending by itself: until it has, its
+    // exe is in use.
+    let args: Vec<String> = std::env::args().collect();
+    if let Some(pid) = arg_after(&args, WAIT_PID).and_then(|p| p.parse::<u32>().ok()) {
+        wait_for(pid, 15_000);
+    }
     close_running(anchor_class, quit);
     std::fs::create_dir_all(&l.dir)?;
     if !same(&me, &l.exe) {
-        std::fs::copy(&me, &l.exe)?;
+        // Still in use for a moment (an antivirus scanning it, say).
+        let mut tries = 0;
+        while let Err(e) = std::fs::copy(&me, &l.exe) {
+            tries += 1;
+            if tries == 40 {
+                return Err(e);
+            }
+            std::thread::sleep(std::time::Duration::from_millis(250));
+        }
     }
     shortcut(&l).map_err(other)?;
     let size = std::fs::metadata(&l.exe).map_or(0, |m| m.len());
@@ -218,20 +238,10 @@ fn start_finish(me: &Path) -> std::io::Result<()> {
 /// ended, the program's folder goes (always the one `layout` says, never one
 /// from the command line), and then this copy.
 pub fn finish(args: &[String]) -> bool {
-    let Some(pid) = args
-        .iter()
-        .skip_while(|a| *a != FINISH)
-        .nth(1)
-        .and_then(|p| p.parse::<u32>().ok())
-    else {
+    let Some(pid) = arg_after(args, FINISH).and_then(|p| p.parse::<u32>().ok()) else {
         return false;
     };
-    unsafe {
-        if let Ok(p) = OpenProcess(PROCESS_SYNCHRONIZE, false, pid) {
-            let _ = WaitForSingleObject(p, 10_000);
-            let _ = CloseHandle(p);
-        }
-    }
+    wait_for(pid, 10_000);
     if let Ok(l) = layout() {
         for _ in 0..10 {
             remove_program(&l);
@@ -259,6 +269,199 @@ pub fn finish(args: &[String]) -> bool {
     true
 }
 
+/// The version "Installed apps" lists, if any.
+fn installed_version() -> Option<String> {
+    let mut buf = [0u16; 64];
+    let mut len = (buf.len() * 2) as u32;
+    let e = unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            &HSTRING::from(install::UNINSTALL_KEY),
+            w!("DisplayVersion"),
+            RRF_RT_REG_SZ,
+            None,
+            Some(buf.as_mut_ptr().cast()),
+            Some(&mut len),
+        )
+    };
+    if e.is_err() {
+        return None;
+    }
+    let n = (len as usize / 2).min(buf.len());
+    let v = String::from_utf16_lossy(&buf[..n]);
+    Some(v.trim_end_matches('\0').to_owned())
+}
+
+/// `%LOCALAPPDATA%\island\portable.txt`: the version the user chose to use
+/// without installing.
+fn portable_file() -> Option<PathBuf> {
+    let local = PathBuf::from(std::env::var_os("LOCALAPPDATA")?);
+    local
+        .is_absolute()
+        .then(|| local.join("island").join("portable.txt"))
+}
+
+/// What this exe offers at start: to install itself, or to update an older
+/// installed one.
+pub fn offer() -> Option<install::Offer> {
+    let l = layout().ok()?;
+    let me = std::env::current_exe().ok()?;
+    let declined = portable_file().and_then(|p| std::fs::read_to_string(p).ok());
+    install::offer(
+        same(&me, &l.exe),
+        installed_version().as_deref(),
+        env!("CARGO_PKG_VERSION"),
+        declined.as_deref(),
+    )
+}
+
+/// "Use without installing": not offered again for `version`.
+pub fn decline(version: &str) {
+    if let Some(p) = portable_file() {
+        if let Some(dir) = p.parent() {
+            let _ = std::fs::create_dir_all(dir);
+        }
+        let _ = std::fs::write(p, version);
+    }
+}
+
+/// Installs `exe` in a process of its own (it closes the running island
+/// first).
+pub fn start_install(exe: &Path) -> std::io::Result<()> {
+    Command::new(exe)
+        .arg("--install")
+        .arg(WAIT_PID)
+        .arg(std::process::id().to_string())
+        .spawn()?;
+    Ok(())
+}
+
+/// `--wait-pid <pid>`: the island that started the install, which quits.
+const WAIT_PID: &str = "--wait-pid";
+
+/// The argument after `name`.
+fn arg_after<'a>(args: &'a [String], name: &str) -> Option<&'a str> {
+    args.iter()
+        .skip_while(|a| *a != name)
+        .nth(1)
+        .map(String::as_str)
+}
+
+/// Until process `pid` has ended, `ms` at most.
+fn wait_for(pid: u32, ms: u32) {
+    unsafe {
+        if let Ok(p) = OpenProcess(PROCESS_SYNCHRONIZE, false, pid) {
+            let _ = WaitForSingleObject(p, ms);
+            let _ = CloseHandle(p);
+        }
+    }
+}
+
+/// The install failed: the exe it came from starts again and says so.
+pub const INSTALL_FAILED: &str = "--install-failed";
+
+/// Marks the `WM_COPYDATA` a newer exe sends the running island ("ISL1").
+const OFFER_DATA: usize = 0x4953_4C31;
+
+/// Asks the island running (`anchor`) to offer the update to this exe, so
+/// it keeps running until the user chooses. `false` if it can't (one from
+/// before this message, or busy).
+pub fn send_offer(anchor: HWND) -> bool {
+    let Ok(me) = std::env::current_exe() else {
+        return false;
+    };
+    let text = install::offer_text(env!("CARGO_PKG_VERSION"), &me.to_string_lossy());
+    let data: Vec<u16> = text.encode_utf16().collect();
+    let cds = COPYDATASTRUCT {
+        dwData: OFFER_DATA,
+        cbData: (data.len() * 2) as u32,
+        lpData: data.as_ptr() as *mut _,
+    };
+    let mut out = 0usize;
+    let sent = unsafe {
+        SendMessageTimeoutW(
+            anchor,
+            WM_COPYDATA,
+            WPARAM(0),
+            LPARAM(&cds as *const _ as isize),
+            SMTO_ABORTIFHUNG,
+            3000,
+            Some(&mut out),
+        )
+    };
+    sent.0 != 0 && out != 0
+}
+
+/// The newer exe and its version in a `send_offer`, if it is one: a full
+/// path to a file that is there, newer than this island.
+///
+/// # Safety
+/// `lp` is a `WM_COPYDATA`'s.
+pub unsafe fn read_offer(lp: LPARAM) -> Option<(String, PathBuf)> {
+    let cds = unsafe { (lp.0 as *const COPYDATASTRUCT).as_ref()? };
+    let n = cds.cbData as usize / 2;
+    if cds.dwData != OFFER_DATA || cds.lpData.is_null() || n > 4096 {
+        return None;
+    }
+    let data = unsafe { std::slice::from_raw_parts(cds.lpData as *const u16, n) };
+    let text = String::from_utf16(data).ok()?;
+    let (_, exe) = install::read_offer_text(&text)?;
+    let exe = PathBuf::from(exe);
+    if !exe.is_absolute() || !exe.is_file() {
+        return None;
+    }
+    // The exe's own version, never the one the message says; and only an
+    // Island's.
+    let (version, product, company) = version_info(&exe)?;
+    let island = product.as_deref() == Some("Island") && company.as_deref() == Some("thealejandro");
+    (island && install::newer(&version, env!("CARGO_PKG_VERSION"))).then_some((version, exe))
+}
+
+/// An exe's version (`a.b.c`), product and company, from its resources (as
+/// build.rs writes Island's).
+fn version_info(exe: &Path) -> Option<(String, Option<String>, Option<String>)> {
+    let name = HSTRING::from(exe);
+    unsafe {
+        let size = GetFileVersionInfoSizeW(&name, None);
+        if size == 0 {
+            return None;
+        }
+        let mut data = vec![0u8; size as usize];
+        GetFileVersionInfoW(&name, None, size, data.as_mut_ptr().cast()).ok()?;
+        let query = |path: PCWSTR| {
+            let mut out: *mut std::ffi::c_void = std::ptr::null_mut();
+            let mut len = 0u32;
+            let found = VerQueryValueW(data.as_ptr().cast(), path, &mut out, &mut len).as_bool();
+            (found && !out.is_null()).then_some((out, len as usize))
+        };
+        let text = |path: PCWSTR| {
+            let (p, n) = query(path)?;
+            let s = std::slice::from_raw_parts(p as *const u16, n);
+            Some(
+                String::from_utf16_lossy(s)
+                    .trim_end_matches('\0')
+                    .to_owned(),
+            )
+        };
+        let (info, len) = query(w!("\\"))?;
+        if len < size_of::<VS_FIXEDFILEINFO>() {
+            return None;
+        }
+        let f = &*(info as *const VS_FIXEDFILEINFO);
+        let version = format!(
+            "{}.{}.{}",
+            f.dwFileVersionMS >> 16,
+            f.dwFileVersionMS & 0xFFFF,
+            f.dwFileVersionLS >> 16
+        );
+        Some((
+            version,
+            text(w!("\\StringFileInfo\\040904B0\\ProductName")),
+            text(w!("\\StringFileInfo\\040904B0\\CompanyName")),
+        ))
+    }
+}
+
 /// Whether `arg` is on the command line.
 pub fn has(args: &[String], arg: &str) -> bool {
     args.iter().any(|a| a == arg)
@@ -266,4 +469,25 @@ pub fn has(args: &[String], arg: &str) -> bool {
 
 pub fn is_finish(args: &[String]) -> bool {
     has(args, FINISH)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn reads_an_exes_own_version_and_product() {
+        let (v, product, _) = version_info(&system_exe("notepad.exe")).expect("notepad has one");
+        assert_eq!(v.split('.').count(), 3);
+        assert!(v.split('.').all(|p| p.parse::<u32>().is_ok()));
+        // Not an Island: never offered, whatever its version.
+        assert_ne!(product.as_deref(), Some("Island"));
+        assert_eq!(version_info(&system_exe("no-such-island.exe")), None);
+        // This one is built with Island's resources (build.rs).
+        let me = std::env::current_exe().unwrap();
+        let (v, product, company) = version_info(&me).expect("built with a version");
+        assert_eq!(v, env!("CARGO_PKG_VERSION"));
+        assert_eq!(product.as_deref(), Some("Island"));
+        assert_eq!(company.as_deref(), Some("thealejandro"));
+    }
 }
