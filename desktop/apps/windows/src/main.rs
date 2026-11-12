@@ -1823,10 +1823,18 @@ impl App {
             // A newer exe opened while this one runs: this one offers it,
             // and keeps running until the user chooses.
             WM_COPYDATA => {
-                let (version, exe) = unsafe { install::read_offer(lp) }?;
+                // Answered even when it isn't offered, so that exe never
+                // takes this one's place for nothing.
+                let Some((version, exe)) = (unsafe { install::read_offer(lp) }) else {
+                    return Some(LRESULT(install::OFFER_DECLINED));
+                };
                 self.close_menu();
                 self.show_offer(Offer::Update, version, exe);
-                return Some(LRESULT(self.menu.is_some() as isize));
+                return Some(LRESULT(if self.menu.is_some() {
+                    install::OFFER_SHOWN
+                } else {
+                    install::OFFER_DECLINED
+                }));
             }
             WM_APP_INSTALL_FAILED => {
                 let n = Notice {
@@ -2511,8 +2519,14 @@ fn main() -> Result<()> {
             }
             // A newer exe: the running island offers it, and keeps running
             // until the user chooses.
-            let offered = update && anchor.is_some_and(install::send_offer);
-            if update && !offered {
+            let reply = match anchor {
+                Some(anchor) if update => install::send_offer(anchor),
+                // One from before the hidden window.
+                None if update => install::Reply::Unknown,
+                _ => install::Reply::Declined,
+            };
+            let offered = reply == install::Reply::Shown;
+            if update && reply == install::Reply::Unknown {
                 // One from before this message can't: only by taking its
                 // place can the update be offered.
                 install::close_running(ANCHOR_CLASS, WM_APP_QUIT);
