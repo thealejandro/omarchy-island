@@ -4,6 +4,7 @@
 mod banners;
 mod bars;
 mod bluetooth;
+mod http;
 mod install;
 mod keys;
 mod lyrics;

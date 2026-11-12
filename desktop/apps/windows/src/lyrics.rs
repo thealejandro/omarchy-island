@@ -7,7 +7,6 @@
 //! checks are island-core's; everything from the network is untrusted.
 
 use std::collections::HashMap;
-use std::ffi::c_void;
 use std::fs;
 use std::path::PathBuf;
 use std::sync::mpsc::{self, Receiver, Sender};
@@ -17,14 +16,7 @@ use std::time::{Duration, Instant, SystemTime};
 use island_core::lyrics::{self, Found, Kind, MAX_RECORD};
 use serde_json::Value;
 use windows::Win32::Foundation::{HWND, LPARAM, WPARAM};
-use windows::Win32::Networking::WinHttp::{
-    INTERNET_DEFAULT_HTTPS_PORT, WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY, WINHTTP_FLAG_SECURE,
-    WINHTTP_QUERY_FLAG_NUMBER, WINHTTP_QUERY_STATUS_CODE, WinHttpCloseHandle, WinHttpConnect,
-    WinHttpOpen, WinHttpOpenRequest, WinHttpQueryHeaders, WinHttpReadData, WinHttpReceiveResponse,
-    WinHttpSendRequest, WinHttpSetTimeouts,
-};
 use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
-use windows::core::{HSTRING, PCWSTR, w};
 
 /// The answer to a search can be longer than one record.
 const MAX_SEARCH: usize = 1 << 20;
@@ -168,7 +160,7 @@ fn lookup(q: &Query, cache: Option<&PathBuf>) -> (Found, Option<Duration>) {
     for (i, path) in paths.iter().enumerate() {
         let search = i == last;
         let cap = if search { MAX_SEARCH } else { MAX_RECORD };
-        let Some((code, body)) = get(path, cap) else {
+        let Ok((code, body)) = crate::http::get("lrclib.net", path, cap) else {
             return error;
         };
         match code {
@@ -227,97 +219,5 @@ fn prune(cache: Option<&PathBuf>) {
     files.sort_by_key(|f| std::cmp::Reverse(f.0));
     for (_, p) in files.into_iter().skip(KEEP) {
         let _ = fs::remove_file(p);
-    }
-}
-
-/// Closes a WinHTTP handle when it goes.
-struct Handle(*mut c_void);
-
-impl Drop for Handle {
-    fn drop(&mut self) {
-        if !self.0.is_null() {
-            unsafe {
-                let _ = WinHttpCloseHandle(self.0);
-            }
-        }
-    }
-}
-
-/// GET `https://lrclib.net<path>`: the status and at most `cap` bytes of
-/// body; `None` when the network fails or the body is bigger.
-fn get(path: &str, cap: usize) -> Option<(u32, Vec<u8>)> {
-    let agent = HSTRING::from(format!(
-        "island-windows/{} (https://github.com/thealejandro/island)",
-        env!("CARGO_PKG_VERSION")
-    ));
-    let path = HSTRING::from(path);
-    unsafe {
-        let session = Handle(WinHttpOpen(
-            &agent,
-            WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY,
-            PCWSTR::null(),
-            PCWSTR::null(),
-            0,
-        ));
-        if session.0.is_null() {
-            return None;
-        }
-        // Resolve, connect, send, receive: as the script's 4 s and 8 s.
-        WinHttpSetTimeouts(session.0, 4000, 4000, 8000, 8000).ok()?;
-        let connect = Handle(WinHttpConnect(
-            session.0,
-            w!("lrclib.net"),
-            INTERNET_DEFAULT_HTTPS_PORT,
-            0,
-        ));
-        if connect.0.is_null() {
-            return None;
-        }
-        // HTTPS only; WinHTTP never follows a redirect down to HTTP.
-        let request = Handle(WinHttpOpenRequest(
-            connect.0,
-            w!("GET"),
-            &path,
-            PCWSTR::null(),
-            PCWSTR::null(),
-            std::ptr::null(),
-            WINHTTP_FLAG_SECURE,
-        ));
-        if request.0.is_null() {
-            return None;
-        }
-        WinHttpSendRequest(request.0, None, None, 0, 0, 0).ok()?;
-        WinHttpReceiveResponse(request.0, std::ptr::null_mut()).ok()?;
-        let mut code = 0u32;
-        let mut size = size_of::<u32>() as u32;
-        WinHttpQueryHeaders(
-            request.0,
-            WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
-            PCWSTR::null(),
-            Some(&mut code as *mut u32 as *mut c_void),
-            &mut size,
-            std::ptr::null_mut(),
-        )
-        .ok()?;
-        let mut body = Vec::new();
-        let mut chunk = vec![0u8; 16 * 1024];
-        loop {
-            let mut read = 0u32;
-            WinHttpReadData(
-                request.0,
-                chunk.as_mut_ptr() as *mut c_void,
-                chunk.len() as u32,
-                &mut read,
-            )
-            .ok()?;
-            if read == 0 {
-                break;
-            }
-            body.extend_from_slice(&chunk[..read as usize]);
-            if body.len() > cap {
-                return None;
-            }
-        }
-        Some((code, body))
     }
 }
