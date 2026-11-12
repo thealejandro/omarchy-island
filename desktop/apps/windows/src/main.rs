@@ -15,6 +15,7 @@ mod render;
 mod settings_file;
 mod startup;
 mod theme_file;
+mod toast_image;
 mod tray;
 mod volume;
 
