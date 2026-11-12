@@ -5,6 +5,7 @@ mod banners;
 mod bars;
 mod bluetooth;
 mod install;
+mod keys;
 mod lyrics;
 mod media;
 mod notifications;
@@ -124,6 +125,8 @@ const WM_APP_INSTALLED: u32 = WM_APP + 15;
 const WM_APP_OFFER: u32 = WM_APP + 16;
 /// Started again after `--install` failed: it says so.
 const WM_APP_INSTALL_FAILED: u32 = WM_APP + 17;
+/// A volume or media key, kept from Windows (see `keys.rs`).
+const WM_APP_KEY: u32 = WM_APP + 18;
 
 const ISLAND_CLASS: PCWSTR = w!("IslandWindow");
 /// The hidden window the shared things talk to: the sources (media, volume,
@@ -522,6 +525,8 @@ struct App {
     /// told (a change is told only if it differs).
     volume: Option<volume::Volume>,
     last_volume: Option<(f32, bool)>,
+    /// The volume and media keys, while the island takes them from Windows.
+    keys: Option<keys::Keys>,
     /// The default speakers are Bluetooth ones: read again on a new song or
     /// a change of speakers, for the lyrics' "auto" delay.
     on_bluetooth: bool,
@@ -987,8 +992,30 @@ impl App {
         self.notify(n, glance::LEVEL_MS);
     }
 
-    /// A paired Bluetooth device connected or disconnected: a glance for
-    /// the last change told (a burst ends where it ended up).
+    /// A volume or media key, kept from Windows: done as Windows does it.
+    fn key_pressed(&mut self, wp: WPARAM) {
+        use keys::Key;
+        let Some(key) = Key::read(wp) else { return };
+        let up = match key {
+            Key::VolumeUp => Some(true),
+            Key::VolumeDown => Some(false),
+            Key::Mute => None,
+            Key::PlayPause => return self.media.send(media::Command::PlayPause),
+            Key::Next => return self.media.send(media::Command::Next),
+            Key::Prev => return self.media.send(media::Command::Prev),
+        };
+        let Some(v) = &self.volume else { return };
+        let moved = v.press(up);
+        let now = v.now();
+        // At 0 or 100 already no change comes back; the key still gets its
+        // glance, as with Windows' flyout.
+        if let (false, Some(now)) = (moved, now) {
+            self.last_volume = None;
+            self.volume_changed(now);
+        }
+    }
+
+    /// A paired Bluetooth device connected or disconnected: a glance for    /// the last change told (a burst ends where it ended up).
     fn bluetooth_changed(&mut self) {
         let Some(b) = &self.bluetooth else { return };
         let (mut told, next) = b.due();
@@ -1529,6 +1556,13 @@ impl App {
                 .flatten();
             self.last_volume = self.volume.as_ref().and_then(|v| v.now());
         }
+        // The keys only while the island has a glance of its own to show.
+        let keys = s.hide_windows_flyout && self.volume.is_some();
+        if keys != self.keys.is_some() {
+            self.keys = keys
+                .then(|| keys::Keys::start(self.anchor, WM_APP_KEY))
+                .flatten();
+        }
         if s.privacy_glance != self.privacy.is_some() {
             self.privacy = s
                 .privacy_glance
@@ -1625,6 +1659,7 @@ impl App {
     /// at rest redraw.
     fn media_update(&mut self) {
         self.track = self.media.latest();
+        keys::set_media(self.track.is_some());
         // A new song gets a glance; the one playing at start doesn't.
         let song = self
             .track
@@ -1698,6 +1733,7 @@ impl App {
             WM_APP_VOLUME if self.volume.is_some() => {
                 self.volume_changed(volume::read(wp, lp));
             }
+            WM_APP_KEY => self.key_pressed(wp),
             WM_APP_PRIVACY if self.privacy.is_some() => self.privacy_changed(wp.0),
             WM_APP_BLUETOOTH => self.bluetooth_changed(),
             WM_APP_NOTIFICATION => self.notified(),
@@ -2168,6 +2204,7 @@ impl App {
     /// (`taskkill` without /F, the Restart Manager on an update).
     fn quit(&mut self) {
         self.close_menu();
+        self.keys = None;
         // The icon goes first: the taskbar keeps a dead one otherwise.
         self.tray = None;
         // The anchor's own WM_DESTROY can't run now (the app is borrowed),
@@ -2541,6 +2578,7 @@ fn main() -> Result<()> {
             // Started by the settings (on by default).
             volume: None,
             last_volume: None,
+            keys: None,
             on_bluetooth: false,
             privacy: None,
             users: Default::default(),

@@ -82,6 +82,7 @@ that isn't valid JSON is ignored until it is fixed.
 | `longBreakMinutes` | 5 to 60 | `15` |
 | `longBreakEvery` | 2 to 8 (rounds of focus) | `4` |
 | `volumeGlance` | `true`, `false` | `true` |
+| `hideWindowsFlyout` | `true`, `false` | `true` |
 | `privacyGlance` | `true`, `false` | `true` |
 | `bluetoothGlance` | `true`, `false` | `true` |
 | `notificationGlance` | `true`, `false` | `true` |
@@ -139,6 +140,18 @@ glances at it for a moment: the speaker, the percentage and a bar in
 the light shade of Windows' accent (as its own volume flyout), or
 "Muted". It follows the default speakers when they change, and nothing
 runs while the volume stays put. `volumeGlance: false` turns it off.
+
+With it on, Windows' own volume flyout doesn't show over the glance: the
+island takes the volume keys (up, down, mute) and moves the volume as they
+do, 2 % a press, unmuting first. While an app is in Windows' media
+controls, the play/pause, next and previous keys go to it the same way;
+with none they go on to Windows. Windows 11 draws its flyout inside the
+shell, with no window that could be hidden, so a key it never gets is the
+one way. It's a keyboard hook on a thread of its own that waits between
+presses, and every other key passes untouched. Keys meant for an app
+running as administrator never reach it, so those keep Windows' flyout.
+`hideWindowsFlyout: false` gives the keys back to Windows; so does
+quitting the island.
 
 When an app starts using the microphone or the camera, the island glances
 at it with the app's name (orange for the microphone, green for the

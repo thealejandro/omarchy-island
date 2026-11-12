@@ -65,6 +65,13 @@ pub fn volume_icon(level: f32, muted: bool) -> Icon {
     }
 }
 
+/// The volume after one press of a volume key, as Windows' own keys move it:
+/// 2 % up or down from the percentage shown, never past 0 or 100.
+pub fn volume_step(level: f32, up: bool) -> f32 {
+    let p = percent(level) as i32 + if up { 2 } else { -2 };
+    p.clamp(0, 100) as f32 / 100.0
+}
+
 /// A change worth a glance: the percentage or the mute (a change of
 /// balance between the speakers alone tells nothing).
 pub fn volume_changed(before: Option<(f32, bool)>, now: (f32, bool)) -> bool {
@@ -86,6 +93,16 @@ mod tests {
         assert_eq!(volume_icon(0.5, false), Icon::Speaker1);
         assert_eq!(volume_icon(0.9, false), Icon::Speaker2);
         assert_eq!(volume_icon(0.9, true), Icon::SpeakerMute);
+    }
+
+    #[test]
+    fn a_volume_key_moves_two_percent() {
+        assert_eq!(percent(volume_step(0.30, true)), 32);
+        assert_eq!(percent(volume_step(0.31, false)), 29);
+        assert_eq!(percent(volume_step(0.995, true)), 100);
+        assert_eq!(percent(volume_step(0.01, false)), 0);
+        assert_eq!(volume_step(1.0, true), 1.0);
+        assert_eq!(volume_step(0.0, false), 0.0);
     }
 
     #[test]
