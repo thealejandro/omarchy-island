@@ -34,7 +34,9 @@ Opened from anywhere else (just downloaded, say), the island offers it in
 a large menu of its own, in the middle of the screen in use: "Install Island", or
 "Update Island" when an older one is installed (shown by that one, if it is
 running, which keeps running until the user chooses). If installing fails,
-the island comes back and says so. "Use without installing" keeps it where
+the island comes back and says so: after a failed update, the installed
+one, whole, since the new exe is copied beside it first and only then put
+in its place. "Use without installing" keeps it where
 it is and isn't asked again for that version
 (`%LOCALAPPDATA%\island\portable.txt`).
 

@@ -53,6 +53,9 @@ pub struct Texts {
     /// The install failed: the glance, and what is left.
     pub install_failed: &'static str,
     pub still_portable: &'static str,
+    /// An update failed: the installed one is back.
+    pub update_failed: &'static str,
+    pub still_installed: &'static str,
 }
 
 pub const EN: Texts = Texts {
@@ -92,6 +95,8 @@ pub const EN: Texts = Texts {
     portable: "Use without installing",
     install_failed: "Couldn't install Island",
     still_portable: "It runs without installing",
+    update_failed: "Couldn't update Island",
+    still_installed: "The old one stays",
 };
 
 pub const ES: Texts = Texts {
@@ -131,6 +136,8 @@ pub const ES: Texts = Texts {
     portable: "Usar sin instalar",
     install_failed: "No se pudo instalar Island",
     still_portable: "Sigue sin instalar",
+    update_failed: "No se pudo actualizar Island",
+    still_installed: "Sigue la anterior",
 };
 
 /// `text` with each `{}` replaced by the next of `args`.
@@ -220,6 +227,8 @@ mod tests {
                 t.portable,
                 t.install_failed,
                 t.still_portable,
+                t.update_failed,
+                t.still_installed,
             ] {
                 assert!(!s.trim().is_empty());
                 // The tray's tooltip and menu take up to 127 characters.
