@@ -128,6 +128,8 @@ pub struct Settings {
     /// Windows' notification sound when a glance shows while the banners
     /// are off ("Notifications only in the island").
     pub notification_sound: bool,
+    /// "Check for updates" in the tray's menu (GitHub, only when chosen).
+    pub update_check: bool,
     /// How late the lyrics follow the position the player tells, in ms:
     /// the sound comes out later than that (more so over Bluetooth).
     /// `None` ("auto"): by the speakers in use, see [`Settings::lyrics_delay`].
@@ -167,6 +169,7 @@ impl Default for Settings {
             notification_glance: true,
             notifications_in_full_screen: true,
             notification_sound: true,
+            update_check: true,
             lyrics_delay: None,
             island_scale: 1.0,
             accent: Accent::System,
@@ -201,6 +204,7 @@ pub const TEMPLATE: &str = r#"{
   "notificationGlance": true,
   "notificationsInFullScreen": true,
   "notificationSound": true,
+  "updateCheck": true,
   "lyricsDelay": "auto"
 }
 "#;
@@ -289,6 +293,7 @@ impl Settings {
                 d.notifications_in_full_screen,
             ),
             notification_sound: flag("notificationSound", d.notification_sound),
+            update_check: flag("updateCheck", d.update_check),
             // A number in range; "auto" or anything else: by the speakers.
             lyrics_delay: o
                 .get("lyricsDelay")
@@ -455,6 +460,8 @@ mod tests {
         assert!(parse(r#"{"volumeGlance": 0}"#).volume_glance);
         assert!(!parse(r#"{"hideWindowsFlyout": false}"#).hide_windows_flyout);
         assert!(parse("{}").hide_windows_flyout);
+        assert!(!parse(r#"{"updateCheck": false}"#).update_check);
+        assert!(parse("{}").update_check);
         assert!(!parse(r#"{"privacyGlance": false}"#).privacy_glance);
         assert!(!parse(r#"{"bluetoothGlance": false}"#).bluetooth_glance);
         assert!(!parse(r#"{"notificationGlance": false}"#).notification_glance);

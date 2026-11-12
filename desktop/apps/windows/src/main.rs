@@ -18,6 +18,7 @@ mod startup;
 mod theme_file;
 mod toast_image;
 mod tray;
+mod update;
 mod volume;
 
 use std::cell::RefCell;
@@ -130,6 +131,8 @@ const WM_APP_OFFER: u32 = WM_APP + 16;
 const WM_APP_INSTALL_FAILED: u32 = WM_APP + 17;
 /// A volume or media key, kept from Windows (see `keys.rs`).
 const WM_APP_KEY: u32 = WM_APP + 18;
+/// A check for updates ended (`update::Updater`).
+const WM_APP_UPDATE: u32 = WM_APP + 19;
 
 const ISLAND_CLASS: PCWSTR = w!("IslandWindow");
 /// The hidden window the shared things talk to: the sources (media, volume,
@@ -219,6 +222,8 @@ const MENU_QUIT: u32 = 5;
 const MENU_ONLY_ISLAND: u32 = 6;
 const MENU_INSTALL: u32 = 7;
 const MENU_PORTABLE: u32 = 8;
+const MENU_UPDATE: u32 = 9;
+const MENU_NOT_NOW: u32 = 10;
 const MENU_CLASS: PCWSTR = w!("IslandMenu");
 
 /// The menu window, while it is open.
@@ -497,6 +502,10 @@ struct App {
     offer: Option<Offer>,
     /// The version and exe that offer is for (this one, or a newer one).
     offer_from: Option<(String, PathBuf)>,
+    /// That offer is an update "Check for updates" found (downloaded), not
+    /// an exe the user opened.
+    offer_found: bool,
+    updater: update::Updater,
     /// Sent to the anchor when Explorer (and the taskbar) restarts.
     taskbar_created: u32,
     song_text: layout::SongText,
@@ -1818,7 +1827,7 @@ impl App {
             WM_APP_QUIT => self.quit(),
             WM_APP_OFFER if self.menu.is_none() => {
                 if let (Some(offer), Ok(me)) = (install::offer(), std::env::current_exe()) {
-                    self.show_offer(offer, env!("CARGO_PKG_VERSION").to_owned(), me);
+                    self.show_offer(offer, env!("CARGO_PKG_VERSION").to_owned(), me, false);
                 }
             }
             // A newer exe opened while this one runs: this one offers it,
@@ -1830,7 +1839,7 @@ impl App {
                     return Some(LRESULT(install::OFFER_DECLINED));
                 };
                 self.close_menu();
-                self.show_offer(Offer::Update, version, exe);
+                self.show_offer(Offer::Update, version, exe, false);
                 return Some(LRESULT(if self.menu.is_some() {
                     install::OFFER_SHOWN
                 } else {
@@ -1855,6 +1864,7 @@ impl App {
                 };
                 self.notify(n, PEEK_MS);
             }
+            WM_APP_UPDATE => self.update_found(),
             WM_APP_INSTALLED => {
                 let n = Notice {
                     icon: island_core::icons::Icon::Home,
@@ -1993,13 +2003,30 @@ impl App {
                 Offer::Install => t.install,
                 Offer::Update => t.update,
             };
-            return vec![
-                (MENU_INSTALL, row(action, install, false, true)),
-                (MENU_PORTABLE, row(action, t.portable, false, true)),
-            ];
+            // A found update isn't turned down for good: only for now.
+            let later = if self.offer_found {
+                (MENU_NOT_NOW, row(action, t.not_now, false, true))
+            } else {
+                (MENU_PORTABLE, row(action, t.portable, false, true))
+            };
+            return vec![(MENU_INSTALL, row(action, install, false, true)), later];
         }
         let lyrics = self.settings.lyrics;
-        vec![
+        let checking = self.updater.busy();
+        let update = (
+            MENU_UPDATE,
+            row(
+                action,
+                if checking {
+                    t.checking
+                } else {
+                    t.check_updates
+                },
+                false,
+                !checking,
+            ),
+        );
+        let mut rows = vec![
             (MENU_LYRICS, row(toggle, t.lyrics, lyrics, true)),
             (
                 MENU_OPEN_LYRICS,
@@ -2022,7 +2049,11 @@ impl App {
             (MENU_SETTINGS, row(action, t.open_settings, false, true)),
             (0, row(line, "", false, false)),
             (MENU_QUIT, row(action, t.quit, false, true)),
-        ]
+        ];
+        if self.settings.update_check {
+            rows.insert(6, update);
+        }
+        rows
     }
 
     /// Opens the menu at the pointer, or `centered` on its screen (the exe
@@ -2132,14 +2163,46 @@ impl App {
     }
 
     /// The offer, under the island: to install `exe` (`version`).
-    fn show_offer(&mut self, offer: Offer, version: String, exe: PathBuf) {
+    fn show_offer(&mut self, offer: Offer, version: String, exe: PathBuf, found: bool) {
         self.offer = Some(offer);
+        self.offer_found = found;
         self.offer_from = Some((version, exe));
         self.open_menu(true);
         // No island to show it under: the usual menu stays as it is.
         if self.menu.is_none() {
             self.offer = None;
         }
+    }
+
+    /// What "Check for updates" found: the offer, if one was downloaded;
+    /// else a glance that says so.
+    fn update_found(&mut self) {
+        let t = self.texts;
+        let running = concat!("v", env!("CARGO_PKG_VERSION"));
+        let (title, detail) = match self.updater.take() {
+            Some(update::Outcome::Ready(v, exe)) => {
+                self.close_menu();
+                self.show_offer(Offer::Update, v.to_string(), exe, true);
+                if self.menu.is_some() {
+                    return;
+                }
+                (t.new_version, format!("v{v}"))
+            }
+            Some(update::Outcome::Available(v)) => (t.new_version, format!("v{v} {}", t.on_github)),
+            Some(update::Outcome::UpToDate) => (t.up_to_date, running.to_owned()),
+            Some(update::Outcome::Offline) => (t.no_connection, t.try_later.to_owned()),
+            Some(update::Outcome::Failed) => (t.check_failed, t.try_later.to_owned()),
+            None => return,
+        };
+        let n = Notice {
+            icon: island_core::icons::Icon::Home,
+            tint: render::WHITE,
+            title: title.into(),
+            detail,
+            level: None,
+            ..Default::default()
+        };
+        self.notify(n, PEEK_MS);
     }
 
     fn close_menu(&mut self) {
@@ -2167,12 +2230,17 @@ impl App {
         let (Some(r), Some(m)) = (r, m) else {
             return;
         };
+        // A found update: from which version to which.
+        let version = match (&self.offer_from, self.offer_found) {
+            (Some((to, _)), true) => format!("v{} → v{to}", env!("CARGO_PKG_VERSION")),
+            _ => concat!("v", env!("CARGO_PKG_VERSION")).to_owned(),
+        };
         let view = render::MenuView {
             width: m.size.0,
             height: m.size.1,
             scale: m.scale,
             title: self.texts.name,
-            version: concat!("v", env!("CARGO_PKG_VERSION")),
+            version: &version,
             rows: &rows,
             hover: m.hover,
             look: m.look,
@@ -2309,6 +2377,16 @@ impl App {
                 if let Some((version, _)) = self.offer_from.take() {
                     install::decline(&version);
                 }
+                return;
+            }
+            MENU_NOT_NOW => {
+                self.offer_from = None;
+                return;
+            }
+            // The installed copy updates itself; any other only hears of it.
+            MENU_UPDATE => {
+                self.updater
+                    .check(self.anchor, WM_APP_UPDATE, install::is_installed());
                 return;
             }
             _ => return,
@@ -2645,6 +2723,8 @@ fn main() -> Result<()> {
             banners_quiet: banners::active(),
             offer: None,
             offer_from: None,
+            offer_found: false,
+            updater: update::Updater::default(),
             last_sound: None,
         };
         APP.with_borrow_mut(|a| *a = Some(app));
@@ -2653,6 +2733,8 @@ fn main() -> Result<()> {
         APP.with_borrow_mut(|a| a.as_mut().map(|a| a.apply(file)));
         settings_file::watch(anchor, WM_APP_SETTINGS);
         if install::has(&args, install::INSTALLED) {
+            // A downloaded update, once installed, is of no more use.
+            install::clear_updates();
             let _ = PostMessageW(Some(anchor), WM_APP_INSTALLED, WPARAM(0), LPARAM(0));
         } else if install::has(&args, install::INSTALL_FAILED) {
             let _ = PostMessageW(Some(anchor), WM_APP_INSTALL_FAILED, WPARAM(0), LPARAM(0));
