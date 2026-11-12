@@ -21,7 +21,9 @@ use island_core::shape::{self, Placement, Rect};
 use island_core::spring::{self, Spring};
 use island_core::texts::{self, Texts};
 use serde_json::Value;
-use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
+use windows::Win32::Foundation::{
+    ERROR_ALREADY_EXISTS, GetLastError, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM,
+};
 use windows::Win32::Globalization::GetUserDefaultLocaleName;
 use windows::Win32::Graphics::Gdi::{
     CreateRectRgn, EnumDisplayMonitors, GetMonitorInfoW, HDC, HMONITOR, MONITOR_DEFAULTTONEAREST,
@@ -29,6 +31,7 @@ use windows::Win32::Graphics::Gdi::{
 };
 use windows::Win32::System::Com::{COINIT_APARTMENTTHREADED, CoInitializeEx};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
+use windows::Win32::System::Threading::CreateMutexW;
 use windows::Win32::UI::HiDpi::{
     DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, GetDpiForMonitor, MDT_EFFECTIVE_DPI,
     SetProcessDpiAwarenessContext,
@@ -164,8 +167,8 @@ struct App {
     /// The open island shows the lyrics in a column beside the player (on
     /// by default); off, it is just the player.
     lyrics_column: bool,
-    /// The open island's width setting (DIPs, steps of 10): 720 by default
-    /// with the column, 560 without.
+    /// The open island's width setting (DIPs, steps of 10): 560 by default,
+    /// with the column or without.
     open_width_setting: f32,
     /// That width as it fits the screen now ([`layout::fit_open_width`]).
     open_width: f32,
@@ -1128,6 +1131,13 @@ impl Overrides {
 
 fn main() -> Result<()> {
     unsafe {
+        // One island per user session: a second start (the exe opened
+        // twice, or by hand while it starts with Windows) just leaves. The
+        // handle lives as long as the process.
+        let _single = CreateMutexW(None, false, w!("Local\\IslandDesktop"))?;
+        if GetLastError() == ERROR_ALREADY_EXISTS {
+            return Ok(());
+        }
         let _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
         // WIC is COM; the UI thread is its apartment.
         let _ = CoInitializeEx(None, COINIT_APARTMENTTHREADED);

@@ -1,0 +1,10 @@
+# The CRT goes inside the exe, so it runs on any Windows 10 or 11 with
+# nothing to install (no libunwind.dll, no Visual C++ runtime).
+[target.x86_64-pc-windows-gnullvm]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.x86_64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]
+
+[target.aarch64-pc-windows-msvc]
+rustflags = ["-C", "target-feature=+crt-static"]

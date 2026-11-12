@@ -148,8 +148,9 @@ const fn rect(x: f32, y: f32, width: f32, height: f32) -> Rect {
 
 // The open island, 180 tall; its width is a setting, in steps of 10.
 pub const OPEN_WIDTH: f32 = 560.0;
-/// The width by default with a column of lyrics.
-pub const OPEN_LYRICS_WIDTH: f32 = 720.0;
+/// The width by default with a column of lyrics: the same, so turning
+/// them on doesn't resize the island.
+pub const OPEN_LYRICS_WIDTH: f32 = OPEN_WIDTH;
 pub const OPEN_WIDTH_MIN: f32 = 480.0;
 pub const OPEN_WIDTH_MAX: f32 = 960.0;
 const OPEN_WIDTH_STEP: f32 = 10.0;
@@ -164,11 +165,15 @@ const BUTTONS_GAP: f32 = 64.0;
 // column right of the player, as tall as it, so nothing is left empty.
 const LYRICS_TOP: f32 = 14.0;
 const LYRICS_HEIGHT: f32 = 152.0;
-const LYRICS_GAP_X: f32 = 20.0;
-/// The column's share of the room beside the cover.
+const LYRICS_GAP_X: f32 = 16.0;
+/// The column's share of the room beside the cover, on a wide island.
 const LYRICS_SHARE: f32 = 0.42;
+/// On a narrow one the column takes what the player can spare, up to this.
+const LYRICS_WANTED: f32 = 200.0;
+/// The player keeps this much for its title, bar and buttons.
+const PLAYER_MIN_WIDTH: f32 = 170.0;
 /// Narrower than this the lines would break every few words: no column.
-const LYRICS_MIN_WIDTH: f32 = 180.0;
+const LYRICS_MIN_WIDTH: f32 = 160.0;
 
 /// The open island's width from a setting: a whole number of DIPs,
 /// rounded to a step of 10 and kept between the smallest and largest.
@@ -204,14 +209,18 @@ impl Open {
         Self { width, lyrics }
     }
 
-    /// The column's width: a share of the room, in steps of 10; none if
-    /// that is too narrow to read.
+    /// The column's width, in steps of 10: a share of the room, or on a
+    /// narrow island what the player can spare (so lyrics fit from 500 on);
+    /// none if that is too narrow to read.
     fn column_width(self) -> f32 {
         if !self.lyrics {
             return 0.0;
         }
         let room = self.width - TEXT_X - MARGIN - LYRICS_GAP_X;
-        let w = (room * LYRICS_SHARE / OPEN_WIDTH_STEP).round() * OPEN_WIDTH_STEP;
+        let share = (room * LYRICS_SHARE / OPEN_WIDTH_STEP).round() * OPEN_WIDTH_STEP;
+        let spare = ((room - PLAYER_MIN_WIDTH).min(LYRICS_WANTED) / OPEN_WIDTH_STEP).floor()
+            * OPEN_WIDTH_STEP;
+        let w = share.max(spare);
         if w < LYRICS_MIN_WIDTH { 0.0 } else { w }
     }
 
@@ -378,7 +387,7 @@ mod tests {
             for lyrics in [false, true] {
                 let o = Open::new(w, lyrics);
                 let p = player(o);
-                assert!(p.bar.width >= 200.0, "{w}: room for the bar");
+                assert!(p.bar.width >= 170.0, "{w}: room for the bar");
                 let end = p.bar.x + p.bar.width;
                 match o.lyrics_rect() {
                     Some(l) => {
@@ -387,21 +396,29 @@ mod tests {
                         assert_eq!(l.x + l.width, w - 24.0, "{w}");
                         // The open island's height (180).
                         assert!(l.y + l.height <= 180.0);
-                        assert!(l.width >= 180.0 && l.width % 10.0 == 0.0, "{w}");
+                        assert!(l.width >= 160.0 && l.width % 10.0 == 0.0, "{w}");
                     }
                     None => assert_eq!(end, w - 24.0, "{w}"),
                 }
             }
             w += 10.0;
         }
-        // The default with lyrics: the player a bit narrower than alone.
+        // The default with lyrics: as wide as without, the column beside.
         let o = Open::new(OPEN_LYRICS_WIDTH, true);
-        assert_eq!(o.lyrics_rect().map(|l| l.width), Some(230.0));
-        assert_eq!(player(o).bar.width, 318.0);
+        assert_eq!(o.lyrics_rect().map(|l| l.width), Some(200.0));
+        assert_eq!(player(o).bar.width, 192.0);
         assert_eq!(player(Open::new(OPEN_WIDTH, false)).bar.width, 408.0);
-        // Too narrow for a readable column: just the player.
-        assert_eq!(Open::new(540.0, true).lyrics_rect(), None);
-        assert!(Open::new(600.0, true).lyrics_rect().is_some());
+        // Wide: a share of the room.
+        assert_eq!(
+            Open::new(720.0, true).lyrics_rect().map(|l| l.width),
+            Some(230.0)
+        );
+        // From 500 on there is a column; narrower, just the player.
+        assert_eq!(
+            Open::new(500.0, true).lyrics_rect().map(|l| l.width),
+            Some(160.0)
+        );
+        assert_eq!(Open::new(490.0, true).lyrics_rect(), None);
     }
 
     #[test]
@@ -572,7 +589,8 @@ mod tests {
         assert_eq!(hit(332.0, 60.0, alone), None);
         // Beside lyrics, they follow the narrower bar's middle.
         let beside = Open::new(OPEN_LYRICS_WIDTH, true);
-        assert_eq!(hit(287.0, 148.0, beside), Some(Button::PlayPause));
+        assert_eq!(hit(224.0, 148.0, beside), Some(Button::PlayPause));
+        assert_eq!(hit(288.0, 148.0, beside), Some(Button::Next));
         assert_eq!(hit(396.0, 148.0, beside), None);
         // They fit in the open island, left of the lyrics, at any width.
         let mut w = OPEN_WIDTH_MIN;
