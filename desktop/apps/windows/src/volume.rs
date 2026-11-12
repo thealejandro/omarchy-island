@@ -6,6 +6,7 @@
 //! message: the window's thread reads it and, when the default speakers
 //! change, follows them.
 
+use island_core::glance;
 use windows::Win32::Foundation::{HWND, LPARAM, PROPERTYKEY, WPARAM};
 use windows::Win32::Media::Audio::Endpoints::{
     IAudioEndpointVolume, IAudioEndpointVolumeCallback, IAudioEndpointVolumeCallback_Impl,
@@ -158,6 +159,31 @@ impl Volume {
                 e.GetMasterVolumeLevelScalar().ok()?,
                 e.GetMute().ok()?.as_bool(),
             ))
+        }
+    }
+
+    /// A press of a volume key, done as Windows does it: up or down
+    /// ([`glance::volume_step`]), unmuting first, or the mute switched
+    /// (`up: None`). The change comes back as any other. `false` when
+    /// nothing moved (at 0 or 100 already, or no speakers).
+    pub fn press(&self, up: Option<bool>) -> bool {
+        let Some(e) = &self.endpoint else {
+            return false;
+        };
+        let Some((level, muted)) = self.now() else {
+            return false;
+        };
+        unsafe {
+            match up {
+                None => e.SetMute(!muted, std::ptr::null()).is_ok(),
+                Some(up) => {
+                    let to = glance::volume_step(level, up);
+                    let unmuted = muted && e.SetMute(false, std::ptr::null()).is_ok();
+                    let moved = glance::percent(to) != glance::percent(level)
+                        && e.SetMasterVolumeLevelScalar(to, std::ptr::null()).is_ok();
+                    unmuted || moved
+                }
+            }
         }
     }
 

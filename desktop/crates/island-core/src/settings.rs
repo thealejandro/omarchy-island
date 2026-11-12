@@ -113,6 +113,9 @@ pub struct Settings {
     pub focus: Lengths,
     /// A glance on each change of the system's volume.
     pub volume_glance: bool,
+    /// With the volume glance on, the island takes the volume and media keys
+    /// itself, so Windows' own flyout doesn't show over it.
+    pub hide_windows_flyout: bool,
     /// A glance when an app starts or stops using the microphone or camera.
     pub privacy_glance: bool,
     /// A glance when a paired Bluetooth device connects or disconnects.
@@ -155,6 +158,7 @@ impl Default for Settings {
             default_page: Page::default(),
             focus: Lengths::default(),
             volume_glance: true,
+            hide_windows_flyout: true,
             privacy_glance: true,
             bluetooth_glance: true,
             notification_glance: true,
@@ -187,6 +191,7 @@ pub const TEMPLATE: &str = r#"{
   "longBreakMinutes": 15,
   "longBreakEvery": 4,
   "volumeGlance": true,
+  "hideWindowsFlyout": true,
   "privacyGlance": true,
   "bluetoothGlance": true,
   "notificationGlance": true,
@@ -270,6 +275,7 @@ impl Settings {
                 every: minutes("longBreakEvery", Lengths::EVERY, df.every),
             },
             volume_glance: flag("volumeGlance", d.volume_glance),
+            hide_windows_flyout: flag("hideWindowsFlyout", d.hide_windows_flyout),
             privacy_glance: flag("privacyGlance", d.privacy_glance),
             bluetooth_glance: flag("bluetoothGlance", d.bluetooth_glance),
             notification_glance: flag("notificationGlance", d.notification_glance),
@@ -441,6 +447,8 @@ mod tests {
         assert_eq!(parse(r#"{"defaultPage": "nope"}"#).default_page, Page::Home);
         assert!(!parse(r#"{"volumeGlance": false}"#).volume_glance);
         assert!(parse(r#"{"volumeGlance": 0}"#).volume_glance);
+        assert!(!parse(r#"{"hideWindowsFlyout": false}"#).hide_windows_flyout);
+        assert!(parse("{}").hide_windows_flyout);
         assert!(!parse(r#"{"privacyGlance": false}"#).privacy_glance);
         assert!(!parse(r#"{"bluetoothGlance": false}"#).bluetooth_glance);
         assert!(!parse(r#"{"notificationGlance": false}"#).notification_glance);
