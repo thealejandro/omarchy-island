@@ -8,8 +8,12 @@
 pub const ICON: crate::icons::Icon = crate::icons::Icon::Bluetooth;
 /// The icon's colour (linear RGB), Bluetooth's own blue.
 pub const TINT: [f32; 3] = [0.2, 0.5, 1.0];
-/// How long a change must hold before it's told, in ms.
+/// How long a connection must hold before it's told, in ms.
 pub const SETTLE_MS: u64 = 5000;
+/// How long a disconnection must hold: Low Energy devices (keyboards,
+/// mice, bands) drop for several seconds now and then while idle and come
+/// back on their own.
+pub const DROP_MS: u64 = 30_000;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Event {
@@ -33,6 +37,10 @@ struct Device {
 #[derive(Debug, Default)]
 pub struct Links {
     devices: Vec<Device>,
+    /// Devices the watcher dropped, and whether they were last told as
+    /// connected: Windows drops a Low Energy device and lists it again now
+    /// and then, and that comeback is no news.
+    gone: Vec<(String, bool)>,
     ready: bool,
 }
 
@@ -42,15 +50,27 @@ impl Links {
         self.ready = true;
     }
 
-    /// A device paired (or listed at first).
+    /// A device paired (or listed at first, or listed again).
     pub fn added(&mut self, id: &str, name: &str, connected: bool, at: u64) {
+        // Listed again: news only if it changed from what was told.
+        let before = self
+            .devices
+            .iter()
+            .find(|d| d.id == id)
+            .map(|d| d.told)
+            .or_else(|| self.gone.iter().find(|g| g.0 == id).map(|g| g.1));
         self.devices.retain(|d| d.id != id);
+        self.gone.retain(|g| g.0 != id);
         self.devices.push(Device {
             id: id.into(),
             name: name.into(),
             // A new pairing that comes connected is news; the first list
             // is not.
-            told: if self.ready { false } else { connected },
+            told: match before {
+                Some(told) => told,
+                None if self.ready => false,
+                None => connected,
+            },
             now: connected,
             since: at,
         });
@@ -75,9 +95,14 @@ impl Links {
         }
     }
 
-    /// Unpaired: gone without a word.
+    /// Unpaired or dropped from the list: gone without a word, but kept in
+    /// mind in case it's listed again.
     pub fn removed(&mut self, id: &str) {
-        self.devices.retain(|d| d.id != id);
+        if let Some(i) = self.devices.iter().position(|d| d.id == id) {
+            let d = self.devices.remove(i);
+            self.gone.retain(|g| g.0 != id);
+            self.gone.push((d.id, d.told));
+        }
     }
 
     /// The changes that have held, told once each; and in how long the
@@ -86,7 +111,7 @@ impl Links {
         let mut told = Vec::new();
         let mut next: Option<u64> = None;
         for d in self.devices.iter_mut().filter(|d| d.now != d.told) {
-            let when = d.since + SETTLE_MS;
+            let when = d.since + if d.now { SETTLE_MS } else { DROP_MS };
             if at >= when {
                 d.told = d.now;
                 told.push(if d.now {
@@ -134,8 +159,9 @@ mod tests {
         // Told once.
         assert_eq!(l.due(1000 + 2 * S), (vec![], None));
         l.updated("a", Some(""), Some(false), 9 * S);
+        assert_eq!(l.due(9 * S + DROP_MS - 1).0, vec![]);
         assert_eq!(
-            l.due(10 * S).0,
+            l.due(9 * S + DROP_MS).0,
             vec![Event::Disconnected("Buds Pro".into())]
         );
     }
@@ -150,9 +176,41 @@ mod tests {
         l.updated("p", None, Some(false), 2000);
         // The same for a connected one dropping for a moment.
         l.updated("k", None, Some(false), 2500);
-        assert_eq!(l.due(2600), (vec![], Some(S - 100)));
+        assert_eq!(l.due(2600), (vec![], Some(DROP_MS - 100)));
         l.updated("k", None, Some(true), 3000);
         assert_eq!(l.due(S + 3000), (vec![], None));
+    }
+
+    #[test]
+    fn an_idle_drop_is_no_news() {
+        // Seen on a paired Low Energy device: gone for 8.8 s, back on its own.
+        let mut l = Links::default();
+        l.added("p", "4", true, 0);
+        l.ready();
+        l.updated("p", None, Some(false), 1000);
+        assert_eq!(l.due(1000 + S), (vec![], Some(DROP_MS - S)));
+        l.updated("p", None, Some(true), 9800);
+        assert_eq!(l.due(9800 + DROP_MS), (vec![], None));
+    }
+
+    #[test]
+    fn listed_again_is_no_news() {
+        let mut l = Links::default();
+        l.added("p", "4", true, 0);
+        l.ready();
+        // Windows drops it and lists it again, still connected.
+        l.removed("p");
+        l.added("p", "4", true, 1000);
+        // Or lists it again without dropping it first.
+        l.added("p", "4", true, 2000);
+        assert_eq!(l.due(10 * S), (vec![], None));
+        // Back disconnected: that is news.
+        l.removed("p");
+        l.added("p", "4", false, 11 * S);
+        assert_eq!(
+            l.due(11 * S + DROP_MS).0,
+            vec![Event::Disconnected("4".into())]
+        );
     }
 
     #[test]
