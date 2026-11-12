@@ -25,6 +25,7 @@ pub mod spring;
 pub mod svg;
 pub mod texts;
 pub mod theme;
+pub mod update;
 
 /// Version of the desktop apps, from the workspace.
 pub const VERSION: &str = env!("CARGO_PKG_VERSION");
