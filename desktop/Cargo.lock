@@ -68,7 +68,7 @@ dependencies = [
 
 [[package]]
 name = "island-core"
-version = "0.1.0"
+version = "0.1.5"
 dependencies = [
  "regex-lite",
  "serde_json",
@@ -76,7 +76,7 @@ dependencies = [
 
 [[package]]
 name = "island-windows"
-version = "0.1.0"
+version = "0.1.5"
 dependencies = [
  "embed-resource",
  "island-core",
