@@ -4,6 +4,7 @@
 
 use island_core::lyrics::Line;
 use island_core::media::{self as layout, Button, SongText, TextAlign, fmt_time};
+use island_core::menu;
 use island_core::shape::{Outline, Point, Rect, Segment};
 use windows::Win32::Foundation::{E_FAIL, HMODULE, HWND, POINT, RECT};
 use windows::Win32::Graphics::Direct2D::Common::{
@@ -14,7 +15,7 @@ use windows::Win32::Graphics::Direct2D::{
     D2D1_ANTIALIAS_MODE_ALIASED, D2D1_ARC_SEGMENT, D2D1_ARC_SIZE_SMALL,
     D2D1_BITMAP_BRUSH_PROPERTIES1, D2D1_BITMAP_OPTIONS_CANNOT_DRAW, D2D1_BITMAP_OPTIONS_TARGET,
     D2D1_BITMAP_PROPERTIES1, D2D1_DEVICE_CONTEXT_OPTIONS_NONE, D2D1_DRAW_TEXT_OPTIONS_CLIP,
-    D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT, D2D1_EXTEND_MODE_CLAMP,
+    D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT, D2D1_ELLIPSE, D2D1_EXTEND_MODE_CLAMP,
     D2D1_FACTORY_TYPE_SINGLE_THREADED, D2D1_GAMMA_2_2, D2D1_INTERPOLATION_MODE_LINEAR,
     D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES, D2D1_ROUNDED_RECT, D2D1_SWEEP_DIRECTION_CLOCKWISE,
     D2D1_SWEEP_DIRECTION_COUNTER_CLOCKWISE, D2D1CreateFactory, ID2D1BitmapBrush1, ID2D1Brush,
@@ -133,6 +134,36 @@ struct Text {
     peek: IDWriteTextFormat,
     closed: IDWriteTextFormat,
     note: IDWriteTextFormat,
+    menu: IDWriteTextFormat,
+    menu_head: IDWriteTextFormat,
+}
+
+/// One entry of the menu, as drawn.
+pub struct MenuRow<'a> {
+    pub kind: menu::Kind,
+    pub label: &'a str,
+    pub on: bool,
+    pub enabled: bool,
+}
+
+/// What the menu shows in a frame.
+pub struct MenuView<'a> {
+    /// The window, in px.
+    pub width: u32,
+    pub height: u32,
+    pub scale: f32,
+    pub title: &'a str,
+    pub version: &'a str,
+    pub rows: &'a [MenuRow<'a>],
+    pub hover: Option<usize>,
+}
+
+/// The menu window's own composition target; drawn with the island's
+/// device, so the menu costs no second one.
+pub struct MenuTarget {
+    _target: IDCompositionTarget,
+    visual: IDCompositionVisual,
+    surface: Option<(IDCompositionSurface, u32, u32)>,
 }
 
 pub struct Renderer {
@@ -192,6 +223,14 @@ fn d3d_device() -> Result<ID3D11Device> {
 fn v(p: Point) -> Vector2 {
     Vector2 { X: p.x, Y: p.y }
 }
+
+/// The menu's panel.
+const MENU_PANEL: D2D1_COLOR_F = D2D1_COLOR_F {
+    r: 0.17,
+    g: 0.17,
+    b: 0.18,
+    a: 0.97,
+};
 
 fn white(a: f32) -> D2D1_COLOR_F {
     D2D1_COLOR_F {
@@ -294,6 +333,8 @@ impl Text {
                 peek: format(ui, b, 13.0, DWRITE_TEXT_ALIGNMENT_LEADING)?,
                 closed: format(ui, b, 12.0, DWRITE_TEXT_ALIGNMENT_LEADING)?,
                 note: format(icons, n, 22.0, DWRITE_TEXT_ALIGNMENT_CENTER)?,
+                menu: format(ui, n, 12.0, DWRITE_TEXT_ALIGNMENT_LEADING)?,
+                menu_head: format(ui, b, 12.0, DWRITE_TEXT_ALIGNMENT_LEADING)?,
                 dw: dw.clone(),
             })
         }
@@ -951,5 +992,163 @@ impl Renderer {
             }
             self.dcomp.Commit()
         }
+    }
+
+    pub fn menu_target(&self, hwnd: HWND) -> Result<MenuTarget> {
+        unsafe {
+            let target = self.dcomp.CreateTargetForHwnd(hwnd, true)?;
+            let visual = self.dcomp.CreateVisual()?;
+            target.SetRoot(&visual)?;
+            Ok(MenuTarget {
+                _target: target,
+                visual,
+                surface: None,
+            })
+        }
+    }
+
+    /// The whole menu, every time: it is small and drawn only on a change.
+    pub fn draw_menu(&mut self, t: &mut MenuTarget, m: &MenuView) -> Result<()> {
+        let (w, h) = (m.width.max(1), m.height.max(1));
+        let surface = match &t.surface {
+            Some((s, sw, sh)) if (*sw, *sh) == (w, h) => s.clone(),
+            _ => unsafe {
+                let s = self.dcomp.CreateSurface(
+                    w,
+                    h,
+                    DXGI_FORMAT_B8G8R8A8_UNORM,
+                    DXGI_ALPHA_MODE_PREMULTIPLIED,
+                )?;
+                t.visual.SetContent(&s)?;
+                t.surface = Some((s.clone(), w, h));
+                s
+            },
+        };
+        unsafe {
+            let mut offset = POINT::default();
+            let dxgi: IDXGISurface = surface.BeginDraw(None, &mut offset)?;
+            let drawn = (|| {
+                let props = D2D1_BITMAP_PROPERTIES1 {
+                    pixelFormat: D2D1_PIXEL_FORMAT {
+                        format: DXGI_FORMAT_B8G8R8A8_UNORM,
+                        alphaMode: D2D1_ALPHA_MODE_PREMULTIPLIED,
+                    },
+                    dpiX: 96.0,
+                    dpiY: 96.0,
+                    bitmapOptions: D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
+                    ..Default::default()
+                };
+                let bitmap = self.dc.CreateBitmapFromDxgiSurface(&dxgi, Some(&props))?;
+                self.dc.SetTarget(&bitmap);
+                self.dc.BeginDraw();
+                let (ox, oy) = (offset.x as f32, offset.y as f32);
+                self.dc.SetTransform(&Matrix3x2::translation(ox, oy));
+                self.dc.PushAxisAlignedClip(
+                    &D2D_RECT_F {
+                        left: 0.0,
+                        top: 0.0,
+                        right: w as f32,
+                        bottom: h as f32,
+                    },
+                    D2D1_ANTIALIAS_MODE_ALIASED,
+                );
+                self.dc.Clear(Some(&D2D1_COLOR_F::default()));
+                // From here on, DIPs.
+                let k = m.scale;
+                self.dc.SetTransform(&affine(k, ox, oy));
+                self.menu_body(m, w as f32 / k, h as f32 / k);
+                self.dc.PopAxisAlignedClip();
+                let ended = self.dc.EndDraw(None, None);
+                self.dc.SetTarget(None::<&ID2D1Image>);
+                ended
+            })();
+            surface.EndDraw()?;
+            drawn?;
+            self.dcomp.Commit()
+        }
+    }
+
+    fn menu_body(&self, m: &MenuView, w: f32, h: f32) {
+        let panel = D2D1_ROUNDED_RECT {
+            rect: D2D_RECT_F {
+                left: 0.5,
+                top: 0.5,
+                right: w - 0.5,
+                bottom: h - 0.5,
+            },
+            radiusX: menu::RADIUS,
+            radiusY: menu::RADIUS,
+        };
+        unsafe {
+            // A dark grey, softer than the island's black, like the
+            // system's own flyouts; a light rim keeps its edge.
+            self.ink.SetColor(&MENU_PANEL);
+            self.dc.FillRoundedRectangle(&panel, &self.ink);
+            self.ink.SetColor(&white(0.16));
+            self.dc
+                .DrawRoundedRectangle(&panel, &self.ink, 1.0 / m.scale, None);
+        }
+        let head = Rect {
+            x: menu::TEXT_X,
+            y: menu::PAD,
+            width: w - 2.0 * menu::TEXT_X,
+            height: menu::HEADER,
+        };
+        self.text(m.title, &self.text.menu_head, head, 0.95);
+        self.text(m.version, &self.text.time_end, head, 0.4);
+        let kinds: Vec<menu::Kind> = m.rows.iter().map(|r| r.kind).collect();
+        for (i, (row, r)) in m.rows.iter().zip(menu::rows(&kinds)).enumerate() {
+            if row.kind == menu::Kind::Separator {
+                let line = Rect {
+                    x: menu::TEXT_X - 2.0,
+                    y: r.y + r.height / 2.0,
+                    width: w - 2.0 * (menu::TEXT_X - 2.0),
+                    height: 1.0 / m.scale,
+                };
+                self.rounded(line, 0.0, 0.1);
+                continue;
+            }
+            let a = if row.enabled { 1.0 } else { 0.35 };
+            if m.hover == Some(i) && row.enabled {
+                self.rounded(r, menu::ROW_RADIUS, 0.09);
+            }
+            let switch = (row.kind == menu::Kind::Toggle).then(|| menu::switch(r));
+            let label = Rect {
+                x: menu::TEXT_X,
+                y: r.y,
+                width: switch.map_or(r.x + r.width, |s| s.x - 8.0) - menu::TEXT_X,
+                height: r.height,
+            };
+            self.text(row.label, &self.text.menu, label, 0.92 * a);
+            if let Some(s) = switch {
+                let radius = s.height / 2.0;
+                let knob = menu::knob(s, if row.on { 1.0 } else { 0.0 });
+                if row.on {
+                    // On: a white track, the knob in the panel's grey.
+                    self.rounded(s, radius, 0.92 * a);
+                    unsafe {
+                        self.ink.SetColor(&MENU_PANEL);
+                        self.dc.FillEllipse(&ellipse(knob), &self.ink);
+                    }
+                } else {
+                    self.rounded(s, radius, 0.16 * a);
+                    unsafe {
+                        self.ink.SetColor(&white(0.85 * a));
+                        self.dc.FillEllipse(&ellipse(knob), &self.ink);
+                    }
+                }
+            }
+        }
+    }
+}
+
+fn ellipse(r: Rect) -> D2D1_ELLIPSE {
+    D2D1_ELLIPSE {
+        point: v(Point {
+            x: r.x + r.width / 2.0,
+            y: r.y + r.height / 2.0,
+        }),
+        radiusX: r.width / 2.0,
+        radiusY: r.height / 2.0,
     }
 }
