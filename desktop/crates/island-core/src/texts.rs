@@ -56,6 +56,19 @@ pub struct Texts {
     /// An update failed: the installed one is back.
     pub update_failed: &'static str,
     pub still_installed: &'static str,
+    /// "Check for updates" in the menu, and while it looks.
+    pub check_updates: &'static str,
+    pub checking: &'static str,
+    /// What it found: the glances.
+    pub up_to_date: &'static str,
+    pub no_connection: &'static str,
+    pub check_failed: &'static str,
+    pub try_later: &'static str,
+    /// A copy that doesn't update itself: where the new one is.
+    pub new_version: &'static str,
+    pub on_github: &'static str,
+    /// The found update's offer: not now (asked again next time).
+    pub not_now: &'static str,
 }
 
 pub const EN: Texts = Texts {
@@ -97,6 +110,15 @@ pub const EN: Texts = Texts {
     still_portable: "It runs without installing",
     update_failed: "Couldn't update Island",
     still_installed: "The old one stays",
+    check_updates: "Check for updates",
+    checking: "Checking…",
+    up_to_date: "Island is up to date",
+    no_connection: "No connection",
+    check_failed: "Couldn't check",
+    try_later: "Try again later",
+    new_version: "A new version",
+    on_github: "on GitHub",
+    not_now: "Not now",
 };
 
 pub const ES: Texts = Texts {
@@ -138,6 +160,15 @@ pub const ES: Texts = Texts {
     still_portable: "Sigue sin instalar",
     update_failed: "No se pudo actualizar Island",
     still_installed: "Sigue la anterior",
+    check_updates: "Buscar actualizaciones",
+    checking: "Buscando…",
+    up_to_date: "Island está al día",
+    no_connection: "Sin conexión",
+    check_failed: "No se pudo buscar",
+    try_later: "Prueba más tarde",
+    new_version: "Versión nueva",
+    on_github: "en GitHub",
+    not_now: "Ahora no",
 };
 
 /// `text` with each `{}` replaced by the next of `args`.
@@ -229,6 +260,17 @@ mod tests {
                 t.still_portable,
                 t.update_failed,
                 t.still_installed,
+                t.check_updates,
+                t.checking,
+                t.up_to_date,
+                t.no_connection,
+                t.check_failed,
+                t.try_later,
+                t.new_version,
+                t.on_github,
+                t.not_now,
+                t.notification,
+                t.now,
             ] {
                 assert!(!s.trim().is_empty());
                 // The tray's tooltip and menu take up to 127 characters.

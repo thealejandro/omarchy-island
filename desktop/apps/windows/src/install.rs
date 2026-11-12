@@ -52,6 +52,31 @@ fn layout() -> std::io::Result<Layout> {
     Ok(install::layout(&local, &roaming))
 }
 
+/// Where an update found by "Check for updates" is downloaded:
+/// `%LOCALAPPDATA%\island\updates`.
+pub fn updates_dir() -> Option<PathBuf> {
+    let local = PathBuf::from(std::env::var_os("LOCALAPPDATA")?);
+    local
+        .is_absolute()
+        .then(|| local.join("island").join("updates"))
+}
+
+/// The downloaded updates go: once installed, or with the island.
+pub fn clear_updates() {
+    if let Some(dir) = updates_dir() {
+        let _ = std::fs::remove_dir_all(dir);
+    }
+}
+
+/// Whether `exe` is Island `version`, by its own resources.
+pub fn is_island(exe: &Path, version: &str) -> bool {
+    version_info(exe).is_some_and(|(v, product, company)| {
+        v == version
+            && product.as_deref() == Some("Island")
+            && company.as_deref() == Some("thealejandro")
+    })
+}
+
 /// The same file or folder, as the file system sees it (short 8.3 names,
 /// redirected folders); as text when one isn't there yet.
 fn same(a: &Path, b: &Path) -> bool {
@@ -220,6 +245,7 @@ pub fn uninstall(anchor_class: PCWSTR, quit: u32) -> std::io::Result<()> {
     let l = layout()?;
     close_running(anchor_class, quit);
     crate::banners::restore();
+    clear_updates();
     // Each step goes on if one before failed: half an uninstall would be
     // worse. The first failure is told at the end.
     let mut failed = crate::startup::set(false).err().map(other);

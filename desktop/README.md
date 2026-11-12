@@ -53,9 +53,23 @@ the island again while it runs opens its menu. Uninstalling it from
 banners back on, then removes the Run value, the shortcut, the entry and
 the program's folder. The settings and the lyrics cache stay.
 
+"Check for updates", in the tray's menu, is the one time the island asks
+GitHub about itself, and only when chosen: a thread of its own reads the
+repo's releases (`windows-vX.Y.Z` tags only, no drafts or prereleases)
+and ends. With a newer one, the installed copy downloads its exe to
+`%LOCALAPPDATA%\island\updates`, holds it to the release's
+`SHA256SUMS.txt` and to its own version resources, and offers it in the
+large menu ("v0.1.4 → v0.2.0", "Update Island" or "Not now", which asks
+again the next time). A copy that isn't the installed one only says a new
+version is on GitHub. Up to date, offline or a failure: a glance says so.
+The checksum comes from the same release, so it proves the download whole
+rather than who made it; with no code signing, HTTPS to github.com is what
+is trusted. `updateCheck: false` takes it out of the menu. The download
+goes once installed, or with the island.
+
 The island lives in the tray: its icon's menu, compact like Windows' own,
 switches the lyrics and the lyrics column, starts it with Windows, opens
-the settings and quits. The island itself keeps its clicks for the music
+the settings, checks for updates and quits. The island itself keeps its clicks for the music
 and the glances: a right click on it opens nothing. Starting with Windows is a value under the user's
 own `Run` key, written only when chosen there.
 
@@ -91,6 +105,7 @@ that isn't valid JSON is ignored until it is fixed.
 | `notificationGlance` | `true`, `false` | `true` |
 | `notificationsInFullScreen` | `true`, `false` | `true` |
 | `notificationSound` | `true`, `false` | `true` |
+| `updateCheck` | `true`, `false` | `true` |
 | `lyricsDelay` | `auto`, or 0 to 2000 (ms) | `auto` |
 
 While music plays (any app in Windows' media controls), the closed island
