@@ -224,7 +224,7 @@ const CLOSED_W: f32 = 180.0;
 /// big (DIPs) and scaled to the cover's size.
 const NOTE_BOX: f32 = 44.0;
 /// A notification's logo, in DIPs (see `island_core::notifications`).
-const TOAST_LOGO: f32 = 44.0;
+const TOAST_LOGO: f32 = 48.0;
 /// A blue like the system's own, if Windows doesn't tell its accent.
 const DEFAULT_ACCENT: [f32; 3] = [0.3, 0.6, 1.0];
 
@@ -556,7 +556,7 @@ impl Text {
                 clock: format(ui, b, 12.0, DWRITE_TEXT_ALIGNMENT_TRAILING)?,
                 big: format(ui, b, 42.0, DWRITE_TEXT_ALIGNMENT_LEADING)?,
                 next: format(ui, n, 12.0, DWRITE_TEXT_ALIGNMENT_TRAILING)?,
-                toast_title: format(ui, b, 14.0, DWRITE_TEXT_ALIGNMENT_LEADING)?,
+                toast_title: format(ui, b, 15.0, DWRITE_TEXT_ALIGNMENT_LEADING)?,
                 dw: dw.clone(),
             })
         }

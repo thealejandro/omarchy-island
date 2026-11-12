@@ -45,6 +45,7 @@ use windows::Win32::Graphics::Gdi::{
     CreateRectRgn, EnumDisplayMonitors, GetMonitorInfoW, HDC, HMONITOR, MONITOR_DEFAULTTONEAREST,
     MONITORINFO, MonitorFromPoint, ScreenToClient, SetWindowRgn,
 };
+use windows::Win32::Media::Audio::{PlaySoundW, SND_ALIAS, SND_ASYNC, SND_NODEFAULT};
 use windows::Win32::System::Com::{COINIT_APARTMENTTHREADED, CoInitializeEx};
 use windows::Win32::System::LibraryLoader::{
     GetModuleHandleW, LOAD_LIBRARY_SEARCH_SYSTEM32, SetDefaultDllDirectories,
@@ -161,6 +162,19 @@ struct Notice {
     logo: Option<std::sync::Arc<Vec<u8>>>,
     /// The app that sent the notification, opened by a click on it.
     app_id: String,
+}
+
+/// The system's own "Notification.Default" sound: with the banners off
+/// Windows stays silent, so the island plays it to call attention too.
+/// The user's sound scheme and volume apply; nothing of ours is shipped.
+fn notification_sound() {
+    unsafe {
+        let _ = PlaySoundW(
+            w!("Notification.Default"),
+            None,
+            SND_ALIAS | SND_ASYNC | SND_NODEFAULT,
+        );
+    }
 }
 
 /// Opens the app with this AppUserModelID, as its tile in Start would.
@@ -509,6 +523,9 @@ struct App {
     /// Windows' banners are off for the island to tell notifications alone
     /// (chosen in the menu; kept, noted, across runs).
     banners_quiet: bool,
+    /// When the island last played the notification sound: a burst of them
+    /// sounds once.
+    last_sound: Option<Instant>,
     /// The song's glance text width as measured (each island caps it to its
     /// screen, see `Surface::peek_most`).
     peek_w: f32,
@@ -1076,6 +1093,14 @@ impl App {
         // An app new to the island: its next ones come without a banner.
         if self.banners_quiet {
             banners::quiet(&t.app_id);
+            // Windows is silent with the banners off: the island isn't.
+            let quiet_since = self
+                .last_sound
+                .is_some_and(|at| at.elapsed() < std::time::Duration::from_secs(1));
+            if self.settings.notification_sound && !quiet_since {
+                notification_sound();
+                self.last_sound = Some(Instant::now());
+            }
         }
         let n = Notice {
             icon: island_core::notifications::ICON,
@@ -2589,6 +2614,7 @@ fn main() -> Result<()> {
             banners_quiet: banners::active(),
             offer: None,
             offer_from: None,
+            last_sound: None,
         };
         APP.with_borrow_mut(|a| *a = Some(app));
         // A file with a typo at start: the defaults until it is fixed.
