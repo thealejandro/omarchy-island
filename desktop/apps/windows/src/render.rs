@@ -76,7 +76,12 @@ pub struct Scene<'a> {
     /// The body (ears included), in px.
     pub body: Rect,
     pub outline: &'a Outline,
+    /// The screen's scale (DIPs to px).
     pub scale: f32,
+    /// `islandScale`: how much bigger the closed island and its glances are
+    /// drawn (the open island isn't). Applied as a transform, not to the
+    /// layout's numbers, which stay in DIPs.
+    pub island_scale: f32,
     /// From the body's left edge to its content (the ear), in px.
     pub inset: f32,
     /// The body without ears, in DIPs.
@@ -390,6 +395,9 @@ pub struct Renderer {
     /// The view being drawn: its scale's center x, the scale and how far
     /// above its place it is (see [`layout::entrance`]).
     view: (f32, f32, f32),
+    /// The view's own scale (`islandScale` for the small ones), which the
+    /// bars take; the entrance's they don't.
+    fit: f32,
     /// The body's bounds in the last frame (px): the next frame redraws
     /// only those and its own, and the rest of the surface is kept.
     drawn: Option<RECT>,
@@ -553,6 +561,7 @@ impl Renderer {
                 bars,
                 bars_at: None,
                 view: (0.0, 1.0, 0.0),
+                fit: 1.0,
                 morphing: false,
                 drawn: None,
                 icons: Default::default(),
@@ -765,7 +774,8 @@ impl Renderer {
     }
 
     /// Fills `r` (DIPs, in the content space) with the cover, or a dim
-    /// square when there is none.
+    /// square when there is none. `scale` is px per DIP, as big as any view
+    /// draws it (`islandScale` included), so the decode never upscales.
     fn draw_art(&mut self, track: &Track, r: Rect, radius: f32, alpha: f32, scale: f32) {
         // The views leave the cover to the one travelling between them.
         if self.morphing {
@@ -1096,7 +1106,7 @@ impl Renderer {
                 self.tinted_rounded(r, 10.0 + g, theme, 0.035 * alpha);
             }
         }
-        self.draw_art(t, art, 10.0, alpha, s.scale);
+        self.draw_art(t, art, 10.0, alpha, s.island_scale.max(1.0) * s.scale);
         self.text(&t.title, &self.text.title, shift(p.title, dx), alpha);
         let artist = if t.artist.is_empty() {
             &t.album
@@ -1306,7 +1316,13 @@ impl Renderer {
         let Some(t) = s.track else { return };
         if art_a > 0.0 {
             let (art, _, bars) = layout::peek_parts(s.peek_width);
-            self.draw_art(t, shift(art, dx), 7.0, art_a, s.scale);
+            self.draw_art(
+                t,
+                shift(art, dx),
+                7.0,
+                art_a,
+                s.island_scale.max(1.0) * s.scale,
+            );
             self.bars(t, shift(bars, dx), art_a);
         }
         let spans = match line {
@@ -1317,7 +1333,7 @@ impl Renderer {
     }
 
     fn peek_notice(&mut self, n: &Notice, s: &Scene, dx: f32, dy: f32, alpha: f32) {
-        let (size, scale) = (s.size, s.scale);
+        let (size, scale) = (s.size, s.scale * s.island_scale);
         if alpha <= 0.0 {
             return;
         }
@@ -1327,7 +1343,8 @@ impl Renderer {
         }
         let at = |r: Rect| lift(shift(r, dx), dy);
         let Some(level) = n.level else {
-            // (A level is laid out at the body's own size, without `dx`.)
+            // (A level is laid out at the body's own size, without `dx`;
+            // the body's is scaled, so it is read back into DIPs first.)
             self.icon(n.icon, at(layout::PEEK_ART), 20.0, n.tint, alpha);
             let mut spans = vec![(n.title.to_string(), false)];
             if !n.detail.is_empty() {
@@ -1338,8 +1355,11 @@ impl Renderer {
         };
         // A level: the icon, the bar and the number, nothing else; muted,
         // the word stands where the bar was.
-        let at = |r: Rect| lift(r, dy);
-        let l = glance::level_layout(size);
+        // Laid out at the unscaled size and centered on the body, so the
+        // transform (about the body's center) keeps it there.
+        let k = s.island_scale;
+        let at = |r: Rect| lift(shift(r, (size.0 - size.0 / k) / 2.0), dy);
+        let l = glance::level_layout((size.0 / k, size.1 / k));
         // A level with no color of its own takes the system's accent.
         let tint = if n.tint == WHITE {
             windows_accent()
@@ -1518,7 +1538,13 @@ impl Renderer {
             return;
         };
         let (art, text, bars) = layout::closed_parts(s.closed_width);
-        self.draw_art(t, shift(art, dx), 5.0, alpha, s.scale);
+        self.draw_art(
+            t,
+            shift(art, dx),
+            5.0,
+            alpha,
+            s.island_scale.max(1.0) * s.scale,
+        );
         let spans = s.song.spans(&t.title, &t.artist);
         self.song(&spans, &self.text.closed, shift(text, dx), alpha);
         self.bars(t, shift(bars, dx), alpha);
@@ -1550,19 +1576,20 @@ impl Renderer {
     fn bars(&mut self, t: &Track, bars: Rect, alpha: f32) {
         // Where the view's entrance puts them; their size stays, so their
         // surface is never painted again mid-motion.
+        // (At `islandScale`, which they do take.)
         let (cx, k, drop) = self.view;
+        let (w, h) = (bars.width * self.fit, bars.height * self.fit);
         let bars = Rect {
-            x: cx + (bars.x + bars.width / 2.0 - cx) * k - bars.width / 2.0,
-            y: (bars.y + bars.height / 2.0) * k - drop - bars.height / 2.0,
-            ..bars
+            x: cx + (bars.x + bars.width / 2.0 - cx) * k - w / 2.0,
+            y: (bars.y + bars.height / 2.0) * k - drop - h / 2.0,
+            width: w,
+            height: h,
         };
         if self.bars_at.is_none_or(|(_, a, _)| alpha > a) {
             self.bars_at = Some((bars, alpha, t.playing));
         }
     }
 
-    /// Places the next view for its entrance at visibility `a`, scaled
-    /// about (`cx`, 0) of the content; gives its opacity.
     /// Where the cover is while the island opens or closes (content DIPs)
     /// and its corner; `None` at rest, or when one end has no cover (a
     /// notice's glance, the focus page).
@@ -1571,23 +1598,40 @@ impl Renderer {
         if s.track.is_none() || s.page != Page::Home || !(0.001..0.999).contains(&t) {
             return None;
         }
+        let k = s.island_scale;
+        let cx = s.size.0 / 2.0;
+        // The small view is drawn scaled about its top center; this rect is
+        // drawn without that transform, so the scale is baked into it (about
+        // the same point), the big end's untouched: the open view never is.
+        let scaled = |r: Rect, dx: f32, radius: f32| {
+            let r = shift(r, dx);
+            (
+                Rect {
+                    x: cx + (r.x - cx) * k,
+                    y: r.y * k,
+                    width: r.width * k,
+                    height: r.height * k,
+                },
+                radius * k,
+            )
+        };
         let (small, radius) = if s.peek_view {
             if s.notice.is_some() {
                 return None;
             }
             let dx = (s.size.0 - s.peek_width) / 2.0;
-            (shift(layout::peek_parts(s.peek_width).0, dx), 7.0)
+            scaled(layout::peek_parts(s.peek_width).0, dx, 7.0)
         } else {
             let dx = (s.size.0 - s.closed_width) / 2.0;
-            (shift(layout::closed_parts(s.closed_width).0, dx), 5.0)
+            scaled(layout::closed_parts(s.closed_width).0, dx, 5.0)
         };
         // The player's cover where the open view, scaled to the body, has it.
-        let (cx, k) = (s.size.0 / 2.0, open_fit(s));
+        let fit = open_fit(s);
         let big = Rect {
-            x: cx + ((s.size.0 - s.open.width) / 2.0 + layout::ART.x - cx) * k,
-            y: (pages::PAGE_Y + layout::ART.y) * k,
-            width: layout::ART.width * k,
-            height: layout::ART.height * k,
+            x: cx + ((s.size.0 - s.open.width) / 2.0 + layout::ART.x - cx) * fit,
+            y: (pages::PAGE_Y + layout::ART.y) * fit,
+            width: layout::ART.width * fit,
+            height: layout::ART.height * fit,
         };
         let e = t * t * (3.0 - 2.0 * t);
         let mix = |a: f32, b: f32| a + (b - a) * e;
@@ -1604,10 +1648,13 @@ impl Renderer {
 
     /// `fit` scales the view further, about the same point: the open one
     /// grows with the body instead of showing at full size, cut by it.
+    /// Places the next view for its entrance at visibility `a`, scaled
+    /// about (`cx`, 0) of the content (by `fit` too); gives its opacity.
     fn enter(&mut self, base: &Matrix3x2, cx: f32, a: f32, fit: f32) -> f32 {
         let (opacity, k, drop) = layout::entrance(a);
         let k = k * fit;
         self.view = (cx, k, drop);
+        self.fit = fit;
         unsafe {
             self.dc
                 .SetTransform(&(affine(k, cx * (1.0 - k), -drop) * *base));
@@ -1692,7 +1739,7 @@ impl Renderer {
     pub fn draw(&mut self, s: &Scene) -> Result<()> {
         let geo = self.geometry(s.outline)?;
         let surface = self.surface(s.width.max(1), s.height.max(1))?;
-        let side = (layout::ART.width * s.scale).ceil();
+        let side = (layout::ART.width * s.island_scale.max(1.0) * s.scale).ceil();
         self.accent = s
             .track
             .and_then(|t| t.art.as_ref())
@@ -1700,14 +1747,17 @@ impl Renderer {
             .map(|a| a.accent);
         // A notification on screen: its color, ring and how visible it is.
         let toast = match s.notice {
-            Some(n) if n.toast && s.alpha[1] > 0.0 => {
-                Some((self.toast_accent(&n, s.scale), n.ring, s.alpha[1], n.orbit))
-            }
+            Some(n) if n.toast && s.alpha[1] > 0.0 => Some((
+                self.toast_accent(&n, s.scale * s.island_scale),
+                n.ring,
+                s.alpha[1],
+                n.orbit,
+            )),
             _ => None,
         };
         let (sw, sh) = (s.width.max(1) as i32, s.height.max(1) as i32);
         // Room for the ring and the light around the edge, outside it.
-        let m = (6.0 * s.scale).ceil() as i32;
+        let m = (6.0 * s.scale * s.island_scale).ceil() as i32;
         let now = RECT {
             left: (s.body.x.floor() as i32 - m).clamp(0, sw - 1),
             top: (s.body.y.floor() as i32 - m).clamp(0, sh - 1),
@@ -1776,9 +1826,9 @@ impl Renderer {
                 }
                 if let Some((color, ring, a, orbit)) = toast {
                     self.glow(&geo, s.body.height, color, a)?;
-                    self.ring(&geo, color, ring * a, s.scale);
+                    self.ring(&geo, color, ring * a, s.scale * s.island_scale);
                     if let Some((at, bright)) = orbit {
-                        self.comet(&geo, color, at, bright * a, s.scale);
+                        self.comet(&geo, color, at, bright * a, s.scale * s.island_scale);
                     }
                 }
 
@@ -1807,22 +1857,26 @@ impl Renderer {
                     } else {
                         CLOSED_W
                     };
-                    let a = self.enter(&base, cx, closed, 1.0);
+                    // The small views are drawn at islandScale: one transform
+                    // about the top center, the layout itself untouched.
+                    let a = self.enter(&base, cx, closed, s.island_scale);
                     self.draw_closed(s, (s.size.0 - w) / 2.0, a);
                 }
                 if peek > 0.0 {
-                    let a = self.enter(&base, cx, peek, 1.0);
+                    let a = self.enter(&base, cx, peek, s.island_scale);
                     self.draw_peek(s, (s.size.0 - s.peek_width) / 2.0, a);
                 }
                 if open > 0.0 {
                     let a = self.enter(&base, cx, open, open_fit(s));
+                    // Its bars keep their size while it grows.
+                    self.fit = 1.0;
                     let w = s.open.width;
                     self.draw_open(s, (s.size.0 - w) / 2.0, a);
                 }
                 self.morphing = false;
                 if let (Some((r, radius)), Some(t)) = (morph, s.track) {
                     self.dc.SetTransform(&base);
-                    self.draw_art(t, r, radius, 1.0, s.scale);
+                    self.draw_art(t, r, radius, 1.0, s.island_scale.max(1.0) * s.scale);
                 }
                 self.view = (0.0, 1.0, 0.0);
                 self.dc.PopAxisAlignedClip();
@@ -1845,8 +1899,15 @@ impl Renderer {
                         height: r.height * k,
                     };
                     let color = self.accent.unwrap_or([1.0; 3]);
-                    self.bars
-                        .update(&self.dcomp, &self.dc, px, k, color, alpha, playing)?;
+                    self.bars.update(
+                        &self.dcomp,
+                        &self.dc,
+                        px,
+                        k * s.island_scale,
+                        color,
+                        alpha,
+                        playing,
+                    )?;
                 }
                 None => self.bars.hide()?,
             }

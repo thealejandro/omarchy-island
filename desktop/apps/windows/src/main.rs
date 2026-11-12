@@ -542,10 +542,11 @@ impl App {
             lyrics,
             open: self.open_layout(),
             glance: self.glance() && lyrics.is_some_and(|l| !l.current().trim().is_empty()),
-            peek_width: self.peek_size().0,
+            peek_width: self.peek_unscaled().0,
             closed_width: self.closed_w,
             openness: self.openness(),
             peek_view: self.peek_view,
+            island_scale: self.settings.island_scale,
         };
         let drawn = match &mut self.renderer {
             Some(r) => r.draw(&scene),
@@ -656,7 +657,7 @@ impl App {
     fn swap_from(&mut self, before: Before) {
         let at_rest = !self.open
             && self.peek_view
-            && self.height.target > CLOSED.1
+            && self.height.target > CLOSED.1 * self.settings.island_scale
             && (self.height.value - self.height.target).abs() < 0.5
             && self.alphas()[1] > 0.99;
         if !at_rest {
@@ -937,12 +938,12 @@ impl App {
     }
 
     /// How open the body is, from the small view it grows from (the closed
-    /// island or the glance) to the open one: 0 to 1.
+    /// island or the glance, both at `islandScale`) to the open one: 0 to 1.
     fn openness(&self) -> f32 {
         let small = if self.peek_view {
             self.peek_size().1
         } else {
-            CLOSED.1
+            CLOSED.1 * self.settings.island_scale
         };
         ((self.height.value - small) / (OPEN.1 - small)).clamp(0.0, 1.0)
     }
@@ -951,7 +952,8 @@ impl App {
     /// body's height: each one fades as the body leaves its size.
     fn alphas(&self) -> [f32; 3] {
         let h = self.height.value;
-        let open = ((h - CLOSED.1) / (OPEN.1 - CLOSED.1)).clamp(0.0, 1.0);
+        let closed_h = CLOSED.1 * self.settings.island_scale;
+        let open = ((h - closed_h) / (OPEN.1 - closed_h)).clamp(0.0, 1.0);
         // The closed content leaves fast; the open one comes in once there
         // is room for it. It shrinks with the body (scaled to it), so
         // closing it can stay until the body is small, while the cover
@@ -972,8 +974,8 @@ impl App {
             // taller glance (a notification's) is fully there by the song's
             // glance's height, so growing from that one never shows the
             // closed island in between; the body uncovers the rest.
-            let small_h = peek_h.min(layout::PEEK.1);
-            let grown = ((h - CLOSED.1) / (small_h - CLOSED.1)).clamp(0.0, 1.0);
+            let small_h = peek_h.min(layout::PEEK.1 * self.settings.island_scale);
+            let grown = ((h - closed_h) / (small_h - closed_h)).clamp(0.0, 1.0);
             let peek = ((grown - 0.5) * 2.0).clamp(0.0, 1.0);
             let closed = ((0.5 - grown) * 2.0).clamp(0.0, 1.0);
             // It leaves as the body grows past its own height, not the
@@ -986,9 +988,11 @@ impl App {
         }
     }
 
-    /// The window is sized for the widest the island gets.
+    /// The window is sized for the widest the island gets: the open one, or
+    /// a glance at `islandScale`.
     fn widest(&self) -> f32 {
-        self.open_width.max(self.peek_most)
+        self.open_width
+            .max(self.peek_most * self.settings.island_scale)
     }
 
     /// Measures the closed island's and the song's glance's text, for
@@ -1033,9 +1037,10 @@ impl App {
             && self.track.as_ref().is_some_and(|t| t.playing)
     }
 
-    /// The glance's size: a level on its own is barely bigger than the
-    /// closed island; over the lyrics' glance it takes that one's size.
-    fn peek_size(&self) -> (f32, f32) {
+    /// The glance's size before `islandScale`, in DIPs: a fixed one for a
+    /// notice (a notification's, a level's, or the song's), as wide as the
+    /// line needs for the song (see `layout::peek_width`).
+    fn peek_unscaled(&self) -> (f32, f32) {
         let level = self.notice.as_ref().is_some_and(|n| n.level.is_some());
         if self.notice.as_ref().is_some_and(|n| n.toast) {
             island_core::notifications::SIZE
@@ -1046,6 +1051,15 @@ impl App {
         } else {
             (self.peek_w, layout::PEEK.1)
         }
+    }
+
+    /// The glance's size on screen: the unscaled one times `islandScale`.
+    /// A level on its own is barely bigger than the closed island; over the
+    /// lyrics' glance it takes that one's size.
+    fn peek_size(&self) -> (f32, f32) {
+        let (w, h) = self.peek_unscaled();
+        let k = self.settings.island_scale;
+        (w * k, h * k)
     }
 
     fn peeking(&self) -> bool {
@@ -1156,15 +1170,16 @@ impl App {
             self.peek_view = true;
         }
         self.fit_text();
+        let k = self.settings.island_scale;
         let (w, h) = if self.open {
             self.open_size()
         } else if self.peeking() {
             self.peek_size()
         } else if self.track.is_some() {
             // Wide enough for the song's name.
-            (self.closed_w, CLOSED.1)
+            (self.closed_w * k, CLOSED.1 * k)
         } else {
-            CLOSED
+            (CLOSED.0 * k, CLOSED.1 * k)
         };
         if h != self.height.target {
             self.shrinking = h < self.height.value;
