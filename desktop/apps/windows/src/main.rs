@@ -2,6 +2,7 @@
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod bars;
+mod bluetooth;
 mod lyrics;
 mod media;
 mod pacer;
@@ -15,6 +16,7 @@ mod volume;
 use std::cell::RefCell;
 use std::time::Instant;
 
+use island_core::bluetooth::Event as BtEvent;
 use island_core::focus::{self, Ended, Lengths, Phase};
 use island_core::glance;
 use island_core::media as layout;
@@ -95,8 +97,21 @@ const WM_APP_VOLUME: u32 = WM_APP + 7;
 const WM_APP_SPEAKERS: u32 = WM_APP + 8;
 /// Who uses the microphone or camera changed (see `privacy.rs`).
 const WM_APP_PRIVACY: u32 = WM_APP + 9;
+/// A Bluetooth device connected or disconnected (see `bluetooth.rs`).
+const WM_APP_BLUETOOTH: u32 = WM_APP + 10;
+
+/// How long the glance's content takes to change in place, in ms.
+const SWAP_MS: f32 = 300.0;
+
+/// What the glance showed before a change in place (see `render::Before`).
+enum Before {
+    Notice(Notice),
+    Line(String),
+    Song,
+}
 
 /// A glance's content, kept until it ends.
+#[derive(Clone)]
 struct Notice {
     icon: &'static str,
     tint: [f32; 3],
@@ -109,6 +124,8 @@ const SETTINGS_TIMER: usize = 6;
 const SETTINGS_WAIT_MS: u32 = 150;
 /// When the focus timer's phase ends (one shot, set again each time).
 const FOCUS_TIMER: usize = 7;
+/// When a Bluetooth change still settling will have held.
+const BLUETOOTH_TIMER: usize = 8;
 /// The wheel changes the focus length by this many minutes.
 const WHEEL_MINUTES: i32 = 5;
 // The menu's items.
@@ -209,10 +226,17 @@ struct App {
     /// told (a change is told only if it differs).
     volume: Option<volume::Volume>,
     last_volume: Option<(f32, bool)>,
+    /// The default speakers are Bluetooth ones: read again on a new song or
+    /// a change of speakers, for the lyrics' "auto" delay.
+    on_bluetooth: bool,
     /// The watch on the microphone and camera, while that glance is on,
     /// and the apps last seen using each (`Device::ALL`'s order).
     privacy: Option<privacy::Privacy>,
     users: [Vec<String>; 2],
+    /// The watch on paired Bluetooth devices, while that glance is on.
+    bluetooth: Option<bluetooth::Bluetooth>,
+    /// The glance's content being left in place, and since when.
+    swap: Option<(Before, Instant)>,
 }
 
 thread_local! {
@@ -422,6 +446,23 @@ impl App {
                 level: n.level,
             }),
             closed_timer: (active && self.track.is_none()).then_some(left.as_str()),
+            swap: self.swap.as_ref().map(|(b, at)| render::Swap {
+                before: match b {
+                    Before::Notice(n) => render::Before::Notice(render::Notice {
+                        icon: n.icon,
+                        tint: n.tint,
+                        title: n.title,
+                        detail: &n.detail,
+                        level: n.level,
+                    }),
+                    Before::Line(l) => render::Before::Line(l),
+                    Before::Song => render::Before::Song,
+                },
+                t: {
+                    let x = (at.elapsed().as_secs_f32() * 1000.0 / SWAP_MS).min(1.0);
+                    1.0 - (1.0 - x).powi(3)
+                },
+            }),
             width: self.window.width as u32,
             height: self.window.height as u32,
             body,
@@ -527,8 +568,45 @@ impl App {
         self.redraw();
     }
 
+    /// What the glance shows now, to change from in place.
+    fn showing(&self) -> Before {
+        if let Some(n) = &self.notice {
+            return Before::Notice(n.clone());
+        }
+        let line = self
+            .lyric_index
+            .and_then(|i| self.lines.get(i))
+            .map(|l| l.text.clone())
+            .filter(|l| self.glance() && !l.trim().is_empty());
+        line.map_or(Before::Song, Before::Line)
+    }
+
+    /// The glance's content is about to change: if the glance is out and
+    /// at rest, `before` fades out as the new content comes in. (Growing
+    /// or shrinking, the body's own move carries the change.)
+    fn swap_from(&mut self, before: Before) {
+        let at_rest = !self.open
+            && self.peek_view
+            && self.height.target > CLOSED.1
+            && (self.height.value - self.height.target).abs() < 0.5
+            && self.alphas()[1] > 0.99;
+        if !at_rest {
+            return;
+        }
+        self.swap = Some((before, Instant::now()));
+        if self.last_frame.is_none() {
+            self.last_frame = Some(Instant::now());
+            self.pacer.start();
+        }
+    }
+
     /// A glance that tells something, for `ms` after its last change.
     fn notify(&mut self, n: Notice, ms: u32) {
+        // A notice of the same kind (the volume again) just updates.
+        let before = self.showing();
+        if !matches!(&before, Before::Notice(b) if b.title == n.title && b.icon == n.icon) {
+            self.swap_from(before);
+        }
         self.notice = Some(n);
         unsafe {
             let _ = KillTimer(Some(self.hwnd), PEEK_TIMER);
@@ -550,10 +628,42 @@ impl App {
             icon: glance::volume_icon(level, muted),
             tint: render::WHITE,
             title: if muted { t.muted } else { t.volume },
-            detail: format!("{} %", glance::percent(level)),
+            // Muted, the volume kept for later means nothing now.
+            detail: if muted {
+                String::new()
+            } else {
+                format!("{} %", glance::percent(level))
+            },
             level: Some(if muted { 0.0 } else { level }),
         };
         self.notify(n, glance::LEVEL_MS);
+    }
+
+    /// A paired Bluetooth device connected or disconnected: a glance for
+    /// the last change told (a burst ends where it ended up).
+    fn bluetooth_changed(&mut self) {
+        let Some(b) = &self.bluetooth else { return };
+        let (mut told, next) = b.due();
+        unsafe {
+            let _ = KillTimer(Some(self.hwnd), BLUETOOTH_TIMER);
+            if let Some(ms) = next {
+                SetTimer(Some(self.hwnd), BLUETOOTH_TIMER, ms as u32 + 20, None);
+            }
+        }
+        let Some(e) = told.pop() else { return };
+        let t = self.texts;
+        let (title, name) = match e {
+            BtEvent::Connected(n) => (t.connected, n),
+            BtEvent::Disconnected(n) => (t.disconnected, n),
+        };
+        let n = Notice {
+            icon: island_core::bluetooth::ICON,
+            tint: island_core::bluetooth::TINT,
+            title,
+            detail: name,
+            level: None,
+        };
+        self.notify(n, PEEK_MS);
     }
 
     /// Who uses `Device::ALL[i]` may have changed: a glance if an app
@@ -711,13 +821,14 @@ impl App {
         let pace = if self.shrinking { 1.4 } else { 3.0 };
         let leaving = (1.0 - open * pace).clamp(0.0, 1.0);
         if self.peek_view {
+            let peek_h = self.peek_size().1;
             // One gives way to the other halfway, so they never overlap.
-            let grown = ((h - CLOSED.1) / (layout::PEEK.1 - CLOSED.1)).clamp(0.0, 1.0);
+            let grown = ((h - CLOSED.1) / (peek_h - CLOSED.1)).clamp(0.0, 1.0);
             let peek = ((grown - 0.5) * 2.0).clamp(0.0, 1.0);
             let closed = ((0.5 - grown) * 2.0).clamp(0.0, 1.0);
             // It leaves as the body grows past its own height, not the
             // closed one: at rest it is fully visible.
-            let past = ((h - layout::PEEK.1) / (OPEN.1 - layout::PEEK.1)).clamp(0.0, 1.0);
+            let past = ((h - peek_h) / (OPEN.1 - peek_h)).clamp(0.0, 1.0);
             let leaving = (1.0 - past * pace).clamp(0.0, 1.0);
             [closed, peek * leaving, open_a]
         } else {
@@ -756,6 +867,17 @@ impl App {
         self.lyrics.is_some()
             && !self.lines.is_empty()
             && self.track.as_ref().is_some_and(|t| t.playing)
+    }
+
+    /// The glance's size: a level on its own is barely bigger than the
+    /// closed island; over the lyrics' glance it takes that one's size.
+    fn peek_size(&self) -> (f32, f32) {
+        let level = self.notice.as_ref().is_some_and(|n| n.level.is_some());
+        if level && !self.glance() {
+            glance::LEVEL
+        } else {
+            layout::PEEK
+        }
     }
 
     fn peeking(&self) -> bool {
@@ -799,12 +921,20 @@ impl App {
         if self.lines.is_empty() {
             return;
         }
-        let pos = t.position_now();
+        // The sound comes out later than the player's position says.
+        let pos = t
+            .position_now()
+            .saturating_sub(u64::from(self.settings.lyrics_delay(self.on_bluetooth)));
         let w = island_core::lyrics::window(&self.lines, pos);
         let index = w.index;
         let next_at = w.next_at;
         let playing = t.playing;
         if index != self.lyric_index {
+            // Closed, the glance's line changes in place.
+            if self.notice.is_none() && !self.open {
+                let b = self.showing();
+                self.swap_from(b);
+            }
             // One line on, open: the column glides up to it. A seek, or
             // closed: it is just there.
             let step = matches!((self.lyric_index, index), (Some(a), Some(b)) if b == a + 1);
@@ -856,7 +986,7 @@ impl App {
         let (w, h) = if self.open {
             self.open_size()
         } else if self.peeking() {
-            layout::PEEK
+            self.peek_size()
         } else if self.track.is_some() {
             // Wide enough for the song's name.
             (layout::CLOSED_MEDIA_WIDTH, CLOSED.1)
@@ -890,6 +1020,13 @@ impl App {
             (spring::OPEN_WIDTH, spring::OPEN_HEIGHT)
         };
         let mut moving = self.width.advance(&pw, ms) | self.height.advance(&ph, ms);
+        if let Some((_, at)) = &self.swap {
+            if at.elapsed().as_secs_f32() * 1000.0 < SWAP_MS {
+                moving = true;
+            } else {
+                self.swap = None;
+            }
+        }
         if self.lyric_moved.is_some() {
             if self.lyric_scroll() > 0.0 {
                 moving = true;
@@ -902,6 +1039,9 @@ impl App {
             // Nothing runs while the island is still.
             if self.open || !peeking {
                 self.peek_view = false;
+            }
+            if !self.peek {
+                self.notice = None;
             }
             self.last_frame = None;
             self.pacer.stop();
@@ -950,6 +1090,12 @@ impl App {
                 .flatten();
             // What is in use already was told by Windows' own light.
             self.users = Device::ALL.map(privacy::using);
+        }
+        if s.bluetooth_glance != self.bluetooth.is_some() {
+            self.bluetooth = s
+                .bluetooth_glance
+                .then(|| bluetooth::Bluetooth::start(self.hwnd, WM_APP_BLUETOOTH).ok())
+                .flatten();
         }
         self.lyrics_column = s.open_lyrics;
         self.open_width_setting = s.open_width();
@@ -1249,18 +1395,31 @@ impl App {
                 self.tick();
             }
             WM_TIMER if wp.0 == PEEK_TIMER => {
-                self.notice = None;
+                // The lyrics' glance stays: the notice gives way to it.
+                if self.notice.is_some() && self.glance() {
+                    let b = self.showing();
+                    self.swap_from(b);
+                }
+                // Otherwise it stays while the island shrinks back (so it
+                // keeps its size and its look on the way) and goes once still.
+                if self.glance() {
+                    self.notice = None;
+                }
                 self.set_peek(false);
             }
             WM_TIMER if wp.0 == FOCUS_TIMER => self.focus_ended(),
             WM_APP_VOLUME if self.volume.is_some() => self.volume_changed(volume::read(wp, lp)),
             WM_APP_PRIVACY if self.privacy.is_some() => self.privacy_changed(wp.0),
+            WM_APP_BLUETOOTH => self.bluetooth_changed(),
+            WM_TIMER if wp.0 == BLUETOOTH_TIMER => self.bluetooth_changed(),
             WM_APP_SPEAKERS => {
                 // New speakers come with their own volume: no glance for it.
                 if let Some(v) = &mut self.volume {
                     v.follow();
                     self.last_volume = v.now();
                 }
+                self.on_bluetooth = volume::on_bluetooth();
+                self.follow_lyrics();
             }
             WM_MOUSEWHEEL => {
                 let (x, y) = (lp.0 as i16 as i32, (lp.0 >> 16) as i16 as i32);
@@ -1276,6 +1435,7 @@ impl App {
                 if song.is_some() && song != self.song {
                     let first = self.song.is_none();
                     self.song = song;
+                    self.on_bluetooth = volume::on_bluetooth();
                     if !first {
                         self.notice = None;
                         self.set_peek(true);
@@ -1570,8 +1730,11 @@ fn main() -> Result<()> {
             // Started by the settings (on by default).
             volume: None,
             last_volume: None,
+            on_bluetooth: false,
             privacy: None,
             users: Default::default(),
+            bluetooth: None,
+            swap: None,
         };
         APP.with_borrow_mut(|a| *a = Some(app));
         // A file with a typo at start: the defaults until it is fixed.

@@ -46,6 +46,8 @@ that isn't valid JSON is ignored until it is fixed.
 | `longBreakEvery` | 2 to 8 (rounds of focus) | `4` |
 | `volumeGlance` | `true`, `false` | `true` |
 | `privacyGlance` | `true`, `false` | `true` |
+| `bluetoothGlance` | `true`, `false` | `true` |
+| `lyricsDelay` | `auto`, or 0 to 2000 (ms) | `auto` |
 
 While music plays (any app in Windows' media controls), the closed island
 shows the cover, the song and bars that move with the music; a new song
@@ -60,6 +62,12 @@ player: the sung line bright, the ones around it fading, scrolling up as
 the song goes (pauses show as `• • •`). `openLyrics: false` leaves the
 open island as just the player, the lyrics only in the closed one. Answers
 are cached in `%LOCALAPPDATA%\island\lyrics` (the last 400 songs).
+Over Bluetooth the sound comes out a little after the position the player
+tells, so the lines follow later: with `lyricsDelay: "auto"`, 200 ms when
+the default speakers are Bluetooth ones and none when they are wired,
+looked at again on each song and change of speakers. A number of ms is
+used instead whatever the speakers; raise it if the lines still come
+early, lower it if late.
 
 `openWidth` is the open island's width (`auto`: 560, with the lyrics
 column or without). The column takes a share of it, or on a narrow island
@@ -86,6 +94,13 @@ at it with the app's name (orange for the microphone, green for the
 camera), and again when the last one stops. It reads what Windows' privacy
 settings keep and waits on the registry's own notice of a change.
 `privacyGlance: false` turns it off.
+
+A paired Bluetooth device that connects or disconnects (headphones, a
+speaker, a keyboard) gets a glance with its name, once the change has held
+for 5 seconds (some devices, phones above all, connect for a moment on
+their own). Only paired devices are watched, so it never scans for new
+ones. `bluetoothGlance: false` turns it
+off.
 
 For trying things out, the command line wins over the file:
 `--placement`, `--monitor`, `--text-align`, `--song-text`, `--lyrics`,

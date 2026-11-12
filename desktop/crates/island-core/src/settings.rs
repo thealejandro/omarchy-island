@@ -67,7 +67,19 @@ pub struct Settings {
     pub volume_glance: bool,
     /// A glance when an app starts or stops using the microphone or camera.
     pub privacy_glance: bool,
+    /// A glance when a paired Bluetooth device connects or disconnects.
+    pub bluetooth_glance: bool,
+    /// How late the lyrics follow the position the player tells, in ms:
+    /// the sound comes out later than that (more so over Bluetooth).
+    /// `None` ("auto"): by the speakers in use, see [`Settings::lyrics_delay`].
+    pub lyrics_delay: Option<u32>,
 }
+
+/// `lyricsDelay`'s range, in ms.
+pub const LYRICS_DELAY: (u32, u32) = (0, 2000);
+/// "auto" over Bluetooth speakers or headphones: what they add, about.
+/// Wired ones add next to nothing.
+pub const BLUETOOTH_DELAY: u32 = 200;
 
 impl Default for Settings {
     fn default() -> Self {
@@ -84,6 +96,8 @@ impl Default for Settings {
             focus: Lengths::default(),
             volume_glance: true,
             privacy_glance: true,
+            bluetooth_glance: true,
+            lyrics_delay: None,
         }
     }
 }
@@ -105,7 +119,9 @@ pub const TEMPLATE: &str = r#"{
   "longBreakMinutes": 15,
   "longBreakEvery": 4,
   "volumeGlance": true,
-  "privacyGlance": true
+  "privacyGlance": true,
+  "bluetoothGlance": true,
+  "lyricsDelay": "auto"
 }
 "#;
 
@@ -173,7 +189,21 @@ impl Settings {
             },
             volume_glance: flag("volumeGlance", d.volume_glance),
             privacy_glance: flag("privacyGlance", d.privacy_glance),
+            bluetooth_glance: flag("bluetoothGlance", d.bluetooth_glance),
+            // A number in range; "auto" or anything else: by the speakers.
+            lyrics_delay: o
+                .get("lyricsDelay")
+                .and_then(Value::as_u64)
+                .filter(|m| (u64::from(LYRICS_DELAY.0)..=u64::from(LYRICS_DELAY.1)).contains(m))
+                .map(|m| m as u32),
         })
+    }
+
+    /// The lyrics' delay in ms: the one chosen, or by whether the sound goes
+    /// out over Bluetooth.
+    pub fn lyrics_delay(&self, bluetooth: bool) -> u32 {
+        self.lyrics_delay
+            .unwrap_or(if bluetooth { BLUETOOTH_DELAY } else { 0 })
     }
 
     /// The open island's width setting: the chosen one, or 560 (with a
@@ -275,6 +305,16 @@ mod tests {
         assert!(!parse(r#"{"volumeGlance": false}"#).volume_glance);
         assert!(parse(r#"{"volumeGlance": 0}"#).volume_glance);
         assert!(!parse(r#"{"privacyGlance": false}"#).privacy_glance);
+        assert!(!parse(r#"{"bluetoothGlance": false}"#).bluetooth_glance);
+        // The lyrics' delay: a number wins over the speakers; else by them.
+        let s = parse(r#"{"lyricsDelay": 350}"#);
+        assert_eq!((s.lyrics_delay(true), s.lyrics_delay(false)), (350, 350));
+        assert_eq!(parse(r#"{"lyricsDelay": 0}"#).lyrics_delay(true), 0);
+        for auto in [r#""auto""#, "-5", "9000", r#""fast""#] {
+            let s = parse(&format!(r#"{{"lyricsDelay": {auto}}}"#));
+            assert_eq!(s.lyrics_delay(true), BLUETOOTH_DELAY, "{auto}");
+            assert_eq!(s.lyrics_delay(false), 0, "{auto}");
+        }
         // A BOM (Notepad's UTF-8) is fine.
         assert!(parse("\u{feff}{\"lyrics\": true}").lyrics);
         // Too big to be a settings file.
