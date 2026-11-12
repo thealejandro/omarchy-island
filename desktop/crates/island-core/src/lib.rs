@@ -6,17 +6,21 @@
 //! (`LyricsModel.js`, `IslandSettings.js`); both sides keep the same limits.
 
 pub mod bluetooth;
+pub mod color;
 pub mod focus;
 pub mod glance;
+pub mod icons;
 pub mod lyrics;
 pub mod media;
 pub mod menu;
 pub mod monitor;
+pub mod notifications;
 pub mod pages;
 pub mod privacy;
 pub mod settings;
 pub mod shape;
 pub mod spring;
+pub mod svg;
 pub mod texts;
 
 /// Version of the desktop apps, from the workspace.

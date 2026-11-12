@@ -158,7 +158,8 @@ pub const ART: Rect = rect(24.0, 24.0, 88.0, 88.0);
 const TEXT_X: f32 = 128.0;
 const MARGIN: f32 = 24.0;
 const BUTTON: f32 = 40.0;
-const BUTTONS_Y: f32 = 128.0;
+const BAR_Y: f32 = 124.0;
+const BUTTONS_Y: f32 = 132.0;
 const BUTTONS_GAP: f32 = 64.0;
 
 // With synced lyrics the open island is not taller: the lines run in a
@@ -250,13 +251,17 @@ pub struct Player {
 
 pub fn player(open: Open) -> Player {
     let w = open.text_width();
+    // The song beside the cover, centered on it; the bar under both, from
+    // the cover's edge to the text's, with the controls below its middle and
+    // the times at its ends, level with them.
+    let (left, right) = (ART.x, TEXT_X + w);
+    let bar_w = right - left;
     Player {
-        title: rect(TEXT_X, 26.0, w, 26.0),
-        artist: rect(TEXT_X, 54.0, w, 22.0),
-        bar: rect(TEXT_X, 96.0, w, 4.0),
-        times: rect(TEXT_X, 104.0, w, 16.0),
-        // The controls sit under the bar's middle.
-        buttons_center: TEXT_X + w / 2.0,
+        title: rect(TEXT_X, 42.0, w, 26.0),
+        artist: rect(TEXT_X, 70.0, w, 22.0),
+        bar: rect(left, BAR_Y, bar_w, 4.0),
+        times: rect(left, BUTTONS_Y + (BUTTON - 16.0) / 2.0, bar_w, 16.0),
+        buttons_center: left + bar_w / 2.0,
     }
 }
 /// Where the line being sung starts, from the column's top: room for the
@@ -326,12 +331,63 @@ pub const PEEK_ART: Rect = rect(14.0, 8.0, 28.0, 28.0);
 pub const PEEK_TEXT: Rect = rect(54.0, 0.0, 300.0, 44.0);
 pub const PEEK_BARS: Rect = rect(368.0, 16.0, 18.0, 12.0);
 
-// The closed island, 180 x 32; 300 wide while something plays, for the
-// song's name.
-pub const CLOSED_MEDIA_WIDTH: f32 = 300.0;
+/// The most the song's glance grows to for a long line, before the screen
+/// has its say (see [`fit_open_width`]).
+pub const PEEK_MOST: f32 = 760.0;
+/// Around the glance's line: the cover and its gap on the left, the gap,
+/// the bars and the edge on the right.
+const PEEK_CHROME: f32 = PEEK_TEXT.x + (PEEK.0 - PEEK_TEXT.x - PEEK_TEXT.width);
+
+/// Rounds a width up to a step of 10, between `least` and `most`.
+fn fit(w: f32, least: f32, most: f32) -> f32 {
+    let w = (w / OPEN_WIDTH_STEP).ceil() * OPEN_WIDTH_STEP;
+    w.clamp(least, most.max(least))
+}
+
+/// The song's glance, as wide as its line (`text` DIPs) needs: never
+/// narrower than [`PEEK`], at most `most`.
+pub fn peek_width(text: f32, most: f32) -> f32 {
+    fit(text + PEEK_CHROME, PEEK.0, most)
+}
+
+/// Where the glance's cover, line and bars go at `width`.
+pub fn peek_parts(width: f32) -> (Rect, Rect, Rect) {
+    let text = rect(PEEK_TEXT.x, 0.0, width - PEEK_CHROME, PEEK.1);
+    let bars = rect(
+        width - (PEEK.0 - PEEK_BARS.x),
+        PEEK_BARS.y,
+        PEEK_BARS.width,
+        PEEK_BARS.height,
+    );
+    (PEEK_ART, text, bars)
+}
+
+// The closed island, 180 x 32; while something plays, as wide as the
+// song's name needs, between these.
+pub const CLOSED_MEDIA_WIDTH: f32 = 220.0;
+pub const CLOSED_MEDIA_MOST: f32 = 420.0;
 pub const SMALL_ART: Rect = rect(12.0, 6.0, 20.0, 20.0);
+/// The name's gap to the cover and to the bars, the same on both sides.
+const CLOSED_GAP: f32 = 12.0;
+const BARS_W: f32 = 18.0;
+const CLOSED_CHROME: f32 = SMALL_ART.x + SMALL_ART.width + 2.0 * CLOSED_GAP + BARS_W + SMALL_ART.x;
+/// The closed island's text without music (the focus timer).
 pub const CLOSED_TEXT: Rect = rect(40.0, 0.0, 214.0, 32.0);
-pub const BARS: Rect = rect(270.0, 10.0, 18.0, 12.0);
+
+/// The closed island while music plays, as wide as the song's name (`text`
+/// DIPs) needs.
+pub fn closed_width(text: f32) -> f32 {
+    fit(text + CLOSED_CHROME, CLOSED_MEDIA_WIDTH, CLOSED_MEDIA_MOST)
+}
+
+/// Where the closed island's cover, name and bars go at `width`: the name
+/// centered between the two, the same gap on each side.
+pub fn closed_parts(width: f32) -> (Rect, Rect, Rect) {
+    let x = SMALL_ART.x + SMALL_ART.width + CLOSED_GAP;
+    let text = rect(x, 0.0, width - CLOSED_CHROME, 32.0);
+    let bars = rect(width - SMALL_ART.x - BARS_W, 10.0, BARS_W, 12.0);
+    (SMALL_ART, text, bars)
+}
 
 // A view coming in grows from a touch smaller and drops into place from
 // above (the plugin's peek: scale 0.96 and a 6 px drop, OutCubic).
@@ -406,8 +462,8 @@ mod tests {
         // The default with lyrics: as wide as without, the column beside.
         let o = Open::new(OPEN_LYRICS_WIDTH, true);
         assert_eq!(o.lyrics_rect().map(|l| l.width), Some(200.0));
-        assert_eq!(player(o).bar.width, 192.0);
-        assert_eq!(player(Open::new(OPEN_WIDTH, false)).bar.width, 408.0);
+        assert_eq!(player(o).bar.width, 296.0);
+        assert_eq!(player(Open::new(OPEN_WIDTH, false)).bar.width, 512.0);
         // Wide: a share of the room.
         assert_eq!(
             Open::new(720.0, true).lyrics_rect().map(|l| l.width),
@@ -582,16 +638,16 @@ mod tests {
     #[test]
     fn buttons_are_hit_inside_and_missed_between() {
         let alone = Open::new(OPEN_WIDTH, false);
-        assert_eq!(hit(332.0, 148.0, alone), Some(Button::PlayPause));
-        assert_eq!(hit(268.0, 148.0, alone), Some(Button::Prev));
-        assert_eq!(hit(396.0, 148.0, alone), Some(Button::Next));
-        assert_eq!(hit(300.0, 148.0, alone), None);
-        assert_eq!(hit(332.0, 60.0, alone), None);
+        assert_eq!(hit(280.0, 152.0, alone), Some(Button::PlayPause));
+        assert_eq!(hit(216.0, 152.0, alone), Some(Button::Prev));
+        assert_eq!(hit(344.0, 152.0, alone), Some(Button::Next));
+        assert_eq!(hit(248.0, 152.0, alone), None);
+        assert_eq!(hit(280.0, 60.0, alone), None);
         // Beside lyrics, they follow the narrower bar's middle.
         let beside = Open::new(OPEN_LYRICS_WIDTH, true);
-        assert_eq!(hit(224.0, 148.0, beside), Some(Button::PlayPause));
-        assert_eq!(hit(288.0, 148.0, beside), Some(Button::Next));
-        assert_eq!(hit(396.0, 148.0, beside), None);
+        assert_eq!(hit(172.0, 152.0, beside), Some(Button::PlayPause));
+        assert_eq!(hit(236.0, 152.0, beside), Some(Button::Next));
+        assert_eq!(hit(344.0, 152.0, beside), None);
         // They fit in the open island, left of the lyrics, at any width.
         let mut w = OPEN_WIDTH_MIN;
         while w <= OPEN_WIDTH_MAX {
@@ -601,9 +657,47 @@ mod tests {
                 assert!(next.y + next.height <= 180.0);
                 let end = o.lyrics_rect().map_or(w, |l| l.x);
                 assert!(next.x + next.width <= end, "{w}");
-                assert!(button(Button::Prev, o).x >= ART.x + ART.width, "{w}");
+                // Under the cover now, clear of the times at the bar's ends.
+                let bar = player(o).bar;
+                assert!(button(Button::Prev, o).x >= bar.x + 44.0, "{w}");
+                assert!(next.x + next.width <= bar.x + bar.width - 44.0, "{w}");
             }
             w += 10.0;
         }
+    }
+}
+
+#[cfg(test)]
+mod width_tests {
+    use super::*;
+
+    #[test]
+    fn the_glance_grows_with_its_line_up_to_the_most() {
+        assert_eq!(peek_width(0.0, 760.0), PEEK.0);
+        assert_eq!(peek_width(300.0, 760.0), PEEK.0);
+        assert_eq!(peek_width(455.0, 760.0), 560.0);
+        assert_eq!(peek_width(2000.0, 760.0), 760.0);
+        // A narrow screen's most never shrinks it below the usual.
+        assert_eq!(peek_width(2000.0, 300.0), PEEK.0);
+        let (art, text, bars) = peek_parts(560.0);
+        assert_eq!(text.width, 460.0);
+        assert!(art.x + art.width < text.x && text.x + text.width < bars.x);
+        assert_eq!(
+            bars.x + bars.width,
+            560.0 - (PEEK.0 - PEEK_BARS.x - PEEK_BARS.width)
+        );
+        assert_eq!(peek_parts(PEEK.0), (PEEK_ART, PEEK_TEXT, PEEK_BARS));
+    }
+
+    #[test]
+    fn the_closed_island_fits_the_name_with_even_gaps() {
+        assert_eq!(closed_width(0.0), CLOSED_MEDIA_WIDTH);
+        assert_eq!(closed_width(1000.0), CLOSED_MEDIA_MOST);
+        let w = closed_width(181.0);
+        assert_eq!(w % 10.0, 0.0);
+        let (art, text, bars) = closed_parts(w);
+        assert!(text.width >= 181.0);
+        assert_eq!(text.x - (art.x + art.width), bars.x - (text.x + text.width));
+        assert_eq!(w - (bars.x + bars.width), art.x);
     }
 }

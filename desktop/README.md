@@ -47,12 +47,16 @@ that isn't valid JSON is ignored until it is fixed.
 | `volumeGlance` | `true`, `false` | `true` |
 | `privacyGlance` | `true`, `false` | `true` |
 | `bluetoothGlance` | `true`, `false` | `true` |
+| `notificationGlance` | `true`, `false` | `true` |
+| `notificationsInFullScreen` | `true`, `false` | `true` |
 | `lyricsDelay` | `auto`, or 0 to 2000 (ms) | `auto` |
 
 While music plays (any app in Windows' media controls), the closed island
 shows the cover, the song and bars that move with the music; a new song
 peeks for a few seconds, and the open island has the progress and the
-controls. When an unplugged screen was chosen, the island goes to the
+controls, in the cover's color (the progress, the play button, the tab,
+the halo and light behind the cover, the lyrics around the sung line
+and the glow; white for a gray cover). When an unplugged screen was chosen, the island goes to the
 primary until it is back.
 
 `lyrics` turns on synced lyrics from [lrclib.net](https://lrclib.net)
@@ -85,7 +89,8 @@ changes `focusMinutes` by 5. The island opens on `defaultPage`, then on the
 page last chosen.
 
 When the volume changes (keys, taskbar or any app), the closed island
-glances at it for a moment: the speaker, the percentage and a bar, or
+glances at it for a moment: the speaker, the percentage and a bar in
+the light shade of Windows' accent (as its own volume flyout), or
 "Muted". It follows the default speakers when they change, and nothing
 runs while the volume stays put. `volumeGlance: false` turns it off.
 
@@ -101,6 +106,38 @@ for 5 seconds (some devices, phones above all, connect for a moment on
 their own). Only paired devices are watched, so it never scans for new
 ones. `bluetoothGlance: false` turns it
 off.
+
+When a notification pops up, the island grows into a glance of its own,
+taller than the song's so the two never pass for each other: the app's
+logo, its name and "now", the title in bold and the next line dim. Two
+lights in the logo's color (the system's accent when the logo has none)
+run once around the island's edge, while a ring beats three times and then
+glows softly until the glance ends, 5 seconds later. It reads them with Windows' own listener
+(allowed under Privacy, "Notification access") and looks only when the
+shell's count of notifications changes, so nothing runs in between.
+
+It doesn't need Windows' banner. "Notifications only in the island" in its
+menu turns off "Show notification banners" for every app that has sent
+notifications (as the switch under Settings > System > Notifications would;
+Windows' own alerts keep theirs), and for each new one as its first
+notification arrives; they still go to the notification center, and the
+island still shows them. It applies at once and stays so, also after
+restarting, until it is chosen again: then the banners it turned off (noted
+in `%LOCALAPPDATA%\island\banners.txt`) come back, but not those turned off
+by hand. Before uninstalling the island, choose it again, or run
+`island.exe --restore-banners` (it does the same without opening the
+island); else turn them on in Settings > System > Notifications.
+With an app in full screen the glance shows too
+(`notificationsInFullScreen: false` keeps it away then); never while
+presenting, in a game in exclusive full screen or with Do Not Disturb
+(except the one Windows 11 turns on by itself in full screen).
+A click on the glance opens the app that sent it (Windows lets no other app
+click the notification itself). `notificationGlance: false` turns it off.
+
+The icons are filled ones from Microsoft's
+[Fluent UI System Icons](https://github.com/microsoft/fluentui-system-icons)
+(MIT License, Copyright (c) 2020 Microsoft Corporation), drawn as shapes,
+so they look the same on Windows 10 and 11 and at any scale.
 
 For trying things out, the command line wins over the file:
 `--placement`, `--monitor`, `--text-align`, `--song-text`, `--lyrics`,

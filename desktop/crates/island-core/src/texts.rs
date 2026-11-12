@@ -9,6 +9,8 @@ pub struct Texts {
     pub name: &'static str,
     pub lyrics: &'static str,
     pub open_lyrics: &'static str,
+    /// Windows' banners off: notifications only in the island.
+    pub only_island: &'static str,
     pub start_with_windows: &'static str,
     pub open_settings: &'static str,
     pub quit: &'static str,
@@ -37,6 +39,10 @@ pub struct Texts {
     pub camera_off: &'static str,
     pub connected: &'static str,
     pub disconnected: &'static str,
+    /// A notification whose app has no name.
+    pub notification: &'static str,
+    /// When a notification arrived: just now.
+    pub now: &'static str,
 }
 
 pub const EN: Texts = Texts {
@@ -44,6 +50,7 @@ pub const EN: Texts = Texts {
     name: "Island",
     lyrics: "Synced lyrics",
     open_lyrics: "Lyrics in the open island",
+    only_island: "Notifications only in the island",
     start_with_windows: "Start with Windows",
     open_settings: "Open settings",
     quit: "Quit",
@@ -66,6 +73,8 @@ pub const EN: Texts = Texts {
     camera_off: "Camera off",
     connected: "Connected",
     disconnected: "Disconnected",
+    notification: "Notification",
+    now: "now",
 };
 
 pub const ES: Texts = Texts {
@@ -73,6 +82,7 @@ pub const ES: Texts = Texts {
     name: "Island",
     lyrics: "Letras sincronizadas",
     open_lyrics: "Letra en la isla abierta",
+    only_island: "Notificaciones solo en la isla",
     start_with_windows: "Iniciar con Windows",
     open_settings: "Abrir ajustes",
     quit: "Salir",
@@ -95,6 +105,8 @@ pub const ES: Texts = Texts {
     camera_off: "Cámara apagada",
     connected: "Conectado",
     disconnected: "Desconectado",
+    notification: "Notificación",
+    now: "ahora",
 };
 
 /// `text` with each `{}` replaced by the next of `args`.
@@ -154,6 +166,7 @@ mod tests {
                 t.name,
                 t.lyrics,
                 t.open_lyrics,
+                t.only_island,
                 t.start_with_windows,
                 t.open_settings,
                 t.quit,

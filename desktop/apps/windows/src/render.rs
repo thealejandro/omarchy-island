@@ -2,27 +2,36 @@
 //! redirection bitmap and is transparent wherever the island isn't drawn.
 //! Text is DirectWrite; the cover is decoded with WIC.
 
+use island_core::color;
 use island_core::glance;
+use island_core::icons::{self, Icon};
 use island_core::lyrics::Line;
 use island_core::media::{self as layout, Button, SongText, TextAlign, fmt_time};
 use island_core::menu;
 use island_core::pages::{self, FocusButton, Page};
 use island_core::shape::{Outline, Point, Rect, Segment};
+use island_core::svg;
 use windows::Win32::Foundation::{E_FAIL, HMODULE, HWND, POINT, RECT};
 use windows::Win32::Graphics::Direct2D::Common::{
-    D2D_RECT_F, D2D_SIZE_F, D2D1_ALPHA_MODE_PREMULTIPLIED, D2D1_COLOR_F, D2D1_FIGURE_BEGIN_FILLED,
-    D2D1_FIGURE_END_CLOSED, D2D1_GRADIENT_STOP, D2D1_PIXEL_FORMAT,
+    D2D_RECT_F, D2D_SIZE_F, D2D1_ALPHA_MODE_PREMULTIPLIED, D2D1_BEZIER_SEGMENT, D2D1_COLOR_F,
+    D2D1_FIGURE_BEGIN_FILLED, D2D1_FIGURE_END_CLOSED, D2D1_FIGURE_END_OPEN, D2D1_FILL_MODE_WINDING,
+    D2D1_GRADIENT_STOP, D2D1_PIXEL_FORMAT,
 };
 use windows::Win32::Graphics::Direct2D::{
-    D2D1_ANTIALIAS_MODE_ALIASED, D2D1_ARC_SEGMENT, D2D1_ARC_SIZE_SMALL,
+    D2D1_ANTIALIAS_MODE_ALIASED, D2D1_ARC_SEGMENT, D2D1_ARC_SIZE_LARGE, D2D1_ARC_SIZE_SMALL,
     D2D1_BITMAP_BRUSH_PROPERTIES1, D2D1_BITMAP_OPTIONS_CANNOT_DRAW, D2D1_BITMAP_OPTIONS_TARGET,
-    D2D1_BITMAP_PROPERTIES1, D2D1_DEVICE_CONTEXT_OPTIONS_NONE, D2D1_DRAW_TEXT_OPTIONS_CLIP,
+    D2D1_BITMAP_PROPERTIES1, D2D1_CAP_STYLE_ROUND, D2D1_DASH_STYLE_CUSTOM,
+    D2D1_DEVICE_CONTEXT_OPTIONS_NONE, D2D1_DRAW_TEXT_OPTIONS_CLIP,
     D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT, D2D1_ELLIPSE, D2D1_EXTEND_MODE_CLAMP,
     D2D1_FACTORY_TYPE_SINGLE_THREADED, D2D1_GAMMA_2_2, D2D1_INTERPOLATION_MODE_LINEAR,
-    D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES, D2D1_ROUNDED_RECT, D2D1_SWEEP_DIRECTION_CLOCKWISE,
-    D2D1_SWEEP_DIRECTION_COUNTER_CLOCKWISE, D2D1CreateFactory, ID2D1BitmapBrush1, ID2D1Brush,
-    ID2D1DeviceContext, ID2D1Factory1, ID2D1Image, ID2D1PathGeometry, ID2D1RenderTarget,
-    ID2D1SolidColorBrush,
+    D2D1_LINEAR_GRADIENT_BRUSH_PROPERTIES, D2D1_ROUNDED_RECT, D2D1_STROKE_STYLE_PROPERTIES1,
+    D2D1_SWEEP_DIRECTION_CLOCKWISE, D2D1_SWEEP_DIRECTION_COUNTER_CLOCKWISE, D2D1CreateFactory,
+    ID2D1BitmapBrush1, ID2D1Brush, ID2D1DeviceContext, ID2D1Factory1, ID2D1Image,
+    ID2D1PathGeometry, ID2D1RenderTarget, ID2D1SolidColorBrush,
+};
+use windows::Win32::Graphics::Direct2D::{
+    D2D1_ANTIALIAS_MODE_PER_PRIMITIVE, D2D1_LAYER_OPTIONS1_NONE, D2D1_LAYER_PARAMETERS1,
+    D2D1_RADIAL_GRADIENT_BRUSH_PROPERTIES, ID2D1Geometry, ID2D1Layer,
 };
 use windows::Win32::Graphics::Direct3D::{D3D_DRIVER_TYPE_HARDWARE, D3D_DRIVER_TYPE_WARP};
 use windows::Win32::Graphics::Direct3D11::{
@@ -40,8 +49,9 @@ use windows::Win32::Graphics::DirectWrite::{
     DWRITE_TEXT_ALIGNMENT_LEADING, DWRITE_TEXT_ALIGNMENT_TRAILING, DWRITE_TEXT_METRICS,
     DWRITE_TEXT_RANGE, DWRITE_TRIMMING, DWRITE_TRIMMING_GRANULARITY_CHARACTER,
     DWRITE_WORD_WRAPPING_NO_WRAP, DWRITE_WORD_WRAPPING_WRAP, DWriteCreateFactory, IDWriteFactory,
-    IDWriteFontCollection, IDWriteTextFormat, IDWriteTextLayout,
+    IDWriteTextFormat, IDWriteTextLayout,
 };
+use windows::Win32::Graphics::Dwm::DwmGetColorizationColor;
 use windows::Win32::Graphics::Dxgi::Common::{
     DXGI_ALPHA_MODE_PREMULTIPLIED, DXGI_FORMAT_B8G8R8A8_UNORM,
 };
@@ -84,6 +94,14 @@ pub struct Scene<'a> {
     pub open: layout::Open,
     /// The glance shows the line being sung instead of the song.
     pub glance: bool,
+    /// The song's glance and the closed island with music, as wide as
+    /// their text needs (DIPs).
+    pub peek_width: f32,
+    pub closed_width: f32,
+    /// How far the body is from its small size (closed or the glance it
+    /// grows from, `peek_view`) to the open one: 0 to 1.
+    pub openness: f32,
+    pub peek_view: bool,
     /// The open island's page, and the tabs' right end: the time of day,
     /// or the focus timer while it runs.
     pub page: Page,
@@ -128,11 +146,22 @@ fn lift(r: Rect, dy: f32) -> Rect {
 /// and, for a level (the volume), a bar.
 #[derive(Clone, Copy)]
 pub struct Notice<'a> {
-    pub icon: &'a str,
+    pub icon: Icon,
     pub tint: [f32; 3],
     pub title: &'a str,
     pub detail: &'a str,
     pub level: Option<f32>,
+    /// A notification: the app (`title`), its title (`detail`) and `body`
+    /// beside its logo, "now" (`when`) at the right, and a ring in the
+    /// logo's color around the island, as bright as `ring`.
+    pub toast: bool,
+    pub body: &'a str,
+    pub logo: Option<&'a std::sync::Arc<Vec<u8>>>,
+    pub when: &'a str,
+    pub ring: f32,
+    /// The light running around the edge as it arrives: how far around
+    /// (0 to 1) and how bright (see `island_core::notifications::orbit`).
+    pub orbit: Option<(f32, f32)>,
 }
 
 /// The focus page, ready to draw.
@@ -186,6 +215,92 @@ const CLOSED_W: f32 = 180.0;
 /// The note that stands in for a missing cover is laid out in a box this
 /// big (DIPs) and scaled to the cover's size.
 const NOTE_BOX: f32 = 44.0;
+/// A notification's logo, in DIPs (see `island_core::notifications`).
+const TOAST_LOGO: f32 = 44.0;
+/// A blue like the system's own, if Windows doesn't tell its accent.
+const DEFAULT_ACCENT: [f32; 3] = [0.3, 0.6, 1.0];
+
+/// Windows' accent exactly as its own volume flyout shows it on a dark
+/// background: the palette's lighter shade (`AccentPalette`, the second of
+/// its eight colors), else the accent itself (`AccentColorMenu`, ABGR).
+fn windows_accent() -> [f32; 3] {
+    let mut kept = ACCENT.lock().unwrap_or_else(|e| e.into_inner());
+    *kept.get_or_insert_with(read_accent)
+}
+
+/// The accent as last read, until Windows says it changed.
+static ACCENT: std::sync::Mutex<Option<[f32; 3]>> = std::sync::Mutex::new(None);
+
+/// Windows changed its colors: the accent is read again when next drawn.
+pub fn forget_accent() {
+    *ACCENT.lock().unwrap_or_else(|e| e.into_inner()) = None;
+}
+
+fn read_accent() -> [f32; 3] {
+    use windows::Win32::System::Registry::{
+        HKEY_CURRENT_USER, RRF_RT_REG_BINARY, RRF_RT_REG_DWORD, RegGetValueW,
+    };
+    use windows::core::w;
+    const KEY: windows::core::PCWSTR =
+        w!("Software\\Microsoft\\Windows\\CurrentVersion\\Explorer\\Accent");
+    let mut palette = [0u8; 32];
+    let mut size = palette.len() as u32;
+    let read = unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            KEY,
+            w!("AccentPalette"),
+            RRF_RT_REG_BINARY,
+            None,
+            Some(palette.as_mut_ptr().cast()),
+            Some(&mut size),
+        )
+    };
+    if read.is_ok() && size >= 8 {
+        return [palette[4], palette[5], palette[6]].map(|v| v as f32 / 255.0);
+    }
+    let (mut abgr, mut size) = (0u32, 4u32);
+    let read = unsafe {
+        RegGetValueW(
+            HKEY_CURRENT_USER,
+            KEY,
+            w!("AccentColorMenu"),
+            RRF_RT_REG_DWORD,
+            None,
+            Some((&mut abgr as *mut u32).cast()),
+            Some(&mut size),
+        )
+    };
+    if read.is_ok() {
+        return [abgr, abgr >> 8, abgr >> 16].map(|v| (v & 0xFF) as f32 / 255.0);
+    }
+    system_accent()
+}
+
+/// How much the open view is scaled so it fits the body while the island
+/// grows to it or shrinks from it: 1 once open.
+fn open_fit(s: &Scene) -> f32 {
+    // By width and by height, so the controls at the bottom aren't cut
+    // while the body is still growing taller.
+    let k = (s.size.0 / s.open.width).min(s.size.1 / pages::OPEN_HEIGHT);
+    k.clamp(0.5, 1.0)
+}
+
+/// The system's accent color, brightened for the black island the way a
+/// cover's is (see [`layout::accent`]).
+fn system_accent() -> [f32; 3] {
+    let (mut argb, mut opaque) = (0u32, BOOL(0));
+    if unsafe { DwmGetColorizationColor(&mut argb, &mut opaque) }.is_err() {
+        return DEFAULT_ACCENT;
+    }
+    let c = [argb >> 16, argb >> 8, argb].map(|v| (v & 0xFF) as f32 / 255.0);
+    let max = c[0].max(c[1]).max(c[2]);
+    if max - c[0].min(c[1]).min(c[2]) < 0.1 {
+        // A grey accent: the ring would read as nothing.
+        return DEFAULT_ACCENT;
+    }
+    c.map(|v| (v / max * 0.95) * 0.85 + 0.15)
+}
 
 struct Art {
     /// The `Arc` it was decoded from, by address.
@@ -208,16 +323,15 @@ struct Text {
     time: IDWriteTextFormat,
     time_end: IDWriteTextFormat,
     empty: IDWriteTextFormat,
-    icon: IDWriteTextFormat,
     peek: IDWriteTextFormat,
     closed: IDWriteTextFormat,
-    note: IDWriteTextFormat,
     menu: IDWriteTextFormat,
     menu_head: IDWriteTextFormat,
-    tab: IDWriteTextFormat,
     clock: IDWriteTextFormat,
     big: IDWriteTextFormat,
     next: IDWriteTextFormat,
+    /// A notification's title.
+    toast_title: IDWriteTextFormat,
 }
 
 /// One entry of the menu, as drawn.
@@ -255,6 +369,8 @@ pub struct Renderer {
     // Kept alive: dropping the target detaches the visual from the window.
     _target: IDCompositionTarget,
     visual: IDCompositionVisual,
+    /// While the cover travels between views, they leave it out.
+    morphing: bool,
     surface: Option<(IDCompositionSurface, u32, u32)>,
     fill: ID2D1SolidColorBrush,
     ink: ID2D1SolidColorBrush,
@@ -263,6 +379,9 @@ pub struct Renderer {
     text: Text,
     wic: IWICImagingFactory,
     art: Option<Art>,
+    /// The logo of the app whose notification shows (cached apart from the
+    /// cover, so the two never evict each other).
+    logo: Option<(usize, f32, Option<Art>)>,
     /// The cover's color in this frame; `None` without a cover.
     accent: Option<[f32; 3]>,
     bars: Bars,
@@ -274,6 +393,8 @@ pub struct Renderer {
     /// The body's bounds in the last frame (px): the next frame redraws
     /// only those and its own, and the rest of the surface is kept.
     drawn: Option<RECT>,
+    /// The icons drawn so far, as shapes.
+    icons: std::cell::RefCell<std::collections::HashMap<Icon, ID2D1PathGeometry>>,
 }
 
 fn d3d_device() -> Result<ID3D11Device> {
@@ -352,17 +473,6 @@ fn affine(k: f32, x: f32, y: f32) -> Matrix3x2 {
     }
 }
 
-fn has_family(dw: &IDWriteFactory, name: PCWSTR) -> bool {
-    let mut fonts: Option<IDWriteFontCollection> = None;
-    let (mut index, mut exists) = (0, BOOL(0));
-    unsafe {
-        dw.GetSystemFontCollection(&mut fonts, false).is_ok()
-            && fonts.is_some_and(|f| {
-                f.FindFamilyName(name, &mut index, &mut exists).is_ok() && exists.as_bool()
-            })
-    }
-}
-
 impl Text {
     fn new() -> Result<Self> {
         unsafe {
@@ -393,13 +503,6 @@ impl Text {
                 Ok(f)
             };
             let ui = w!("Segoe UI");
-            // Windows 11 has Fluent icons; Windows 10 the MDL2 ones, with the
-            // same code points for these.
-            let icons = if has_family(&dw, w!("Segoe Fluent Icons")) {
-                w!("Segoe Fluent Icons")
-            } else {
-                w!("Segoe MDL2 Assets")
-            };
             let (n, b) = (DWRITE_FONT_WEIGHT_NORMAL, DWRITE_FONT_WEIGHT_SEMI_BOLD);
             let lines = format(ui, b, 16.0, DWRITE_TEXT_ALIGNMENT_LEADING)?;
             lines.SetWordWrapping(DWRITE_WORD_WRAPPING_WRAP)?;
@@ -411,16 +514,14 @@ impl Text {
                 time: format(ui, n, 11.0, DWRITE_TEXT_ALIGNMENT_LEADING)?,
                 time_end: format(ui, n, 11.0, DWRITE_TEXT_ALIGNMENT_TRAILING)?,
                 empty: format(ui, n, 14.0, DWRITE_TEXT_ALIGNMENT_CENTER)?,
-                icon: format(icons, n, 18.0, DWRITE_TEXT_ALIGNMENT_CENTER)?,
                 peek: format(ui, b, 13.0, DWRITE_TEXT_ALIGNMENT_LEADING)?,
                 closed: format(ui, b, 12.0, DWRITE_TEXT_ALIGNMENT_LEADING)?,
-                note: format(icons, n, 22.0, DWRITE_TEXT_ALIGNMENT_CENTER)?,
                 menu: format(ui, n, 12.0, DWRITE_TEXT_ALIGNMENT_LEADING)?,
                 menu_head: format(ui, b, 12.0, DWRITE_TEXT_ALIGNMENT_LEADING)?,
-                tab: format(icons, n, 15.0, DWRITE_TEXT_ALIGNMENT_CENTER)?,
                 clock: format(ui, b, 12.0, DWRITE_TEXT_ALIGNMENT_TRAILING)?,
                 big: format(ui, b, 42.0, DWRITE_TEXT_ALIGNMENT_LEADING)?,
                 next: format(ui, n, 12.0, DWRITE_TEXT_ALIGNMENT_TRAILING)?,
+                toast_title: format(ui, b, 14.0, DWRITE_TEXT_ALIGNMENT_LEADING)?,
                 dw: dw.clone(),
             })
         }
@@ -452,7 +553,9 @@ impl Renderer {
                 bars,
                 bars_at: None,
                 view: (0.0, 1.0, 0.0),
+                morphing: false,
                 drawn: None,
+                icons: Default::default(),
                 factory,
                 dc,
                 dcomp,
@@ -465,6 +568,7 @@ impl Renderer {
                 text: Text::new()?,
                 wic: CoCreateInstance(&CLSID_WICImagingFactory, None, CLSCTX_INPROC_SERVER)?,
                 art: None,
+                logo: None,
                 accent: None,
             })
         }
@@ -561,6 +665,41 @@ impl Renderer {
         self.art.as_ref()
     }
 
+    /// The logo of the app whose notification shows, decoded once per
+    /// notification (a logo that can't be read isn't tried again).
+    fn logo(&mut self, bytes: &std::sync::Arc<Vec<u8>>, side: f32) -> Option<&Art> {
+        let key = std::sync::Arc::as_ptr(bytes) as usize;
+        if !self
+            .logo
+            .as_ref()
+            .is_some_and(|(k, s, _)| *k == key && *s == side)
+        {
+            let art = self
+                .decode(bytes, side)
+                .ok()
+                .map(|(brush, size, accent)| Art {
+                    key,
+                    brush,
+                    side,
+                    size,
+                    accent,
+                });
+            self.logo = Some((key, side, art));
+        }
+        self.logo.as_ref().and_then(|(_, _, a)| a.as_ref())
+    }
+
+    /// The color of a notification's ring: its logo's, or the system's
+    /// accent when the logo has none of its own (grey, or no logo).
+    fn toast_accent(&mut self, n: &Notice, scale: f32) -> [f32; 3] {
+        let side = (TOAST_LOGO * scale).ceil();
+        let logo = n.logo.and_then(|b| self.logo(b, side)).map(|a| a.accent);
+        match logo {
+            Some(a) if a != [0.85; 3] => a,
+            _ => system_accent(),
+        }
+    }
+
     /// The cover's color, from an 8 x 8 thumbnail of it.
     fn accent_of(&self, frame: &IWICBitmapFrameDecode) -> Result<[f32; 3]> {
         unsafe {
@@ -628,6 +767,10 @@ impl Renderer {
     /// Fills `r` (DIPs, in the content space) with the cover, or a dim
     /// square when there is none.
     fn draw_art(&mut self, track: &Track, r: Rect, radius: f32, alpha: f32, scale: f32) {
+        // The views leave the cover to the one travelling between them.
+        if self.morphing {
+            return;
+        }
         let rounded = D2D1_ROUNDED_RECT {
             rect: rf(r),
             radiusX: radius,
@@ -660,10 +803,95 @@ impl Renderer {
                         width: NOTE_BOX,
                         height: NOTE_BOX,
                     };
-                    self.text("\u{E8D6}", &self.text.note, box_, 0.6 * alpha);
+                    self.icon(Icon::Music, box_, 22.0, WHITE, 0.6 * alpha);
                     dc.SetTransform(&m);
                 }
             }
+        }
+    }
+
+    /// An icon's shape (see `island_core::icons`), read once.
+    fn icon_geometry(&self, icon: Icon) -> Option<ID2D1PathGeometry> {
+        if let Some(g) = self.icons.borrow().get(&icon) {
+            return Some(g.clone());
+        }
+        let cmds = svg::parse(icon.path())?;
+        let geo = unsafe {
+            let geo: ID2D1PathGeometry = self.factory.CreatePathGeometry().ok()?.cast().ok()?;
+            let sink = geo.Open().ok()?;
+            sink.SetFillMode(D2D1_FILL_MODE_WINDING);
+            let mut open = false;
+            for c in cmds {
+                match c {
+                    svg::Cmd::Move(p) => {
+                        if open {
+                            sink.EndFigure(D2D1_FIGURE_END_OPEN);
+                        }
+                        sink.BeginFigure(v(p), D2D1_FIGURE_BEGIN_FILLED);
+                        open = true;
+                    }
+                    svg::Cmd::Line(p) => sink.AddLine(v(p)),
+                    svg::Cmd::Cubic(a, b, to) => sink.AddBezier(&D2D1_BEZIER_SEGMENT {
+                        point1: v(a),
+                        point2: v(b),
+                        point3: v(to),
+                    }),
+                    svg::Cmd::Arc {
+                        radius,
+                        rotation,
+                        large,
+                        sweep,
+                        to,
+                    } => sink.AddArc(&D2D1_ARC_SEGMENT {
+                        point: v(to),
+                        size: D2D_SIZE_F {
+                            width: radius.0,
+                            height: radius.1,
+                        },
+                        rotationAngle: rotation,
+                        sweepDirection: if sweep {
+                            D2D1_SWEEP_DIRECTION_CLOCKWISE
+                        } else {
+                            D2D1_SWEEP_DIRECTION_COUNTER_CLOCKWISE
+                        },
+                        arcSize: if large {
+                            D2D1_ARC_SIZE_LARGE
+                        } else {
+                            D2D1_ARC_SIZE_SMALL
+                        },
+                    }),
+                    svg::Cmd::Close => {
+                        if open {
+                            sink.EndFigure(D2D1_FIGURE_END_CLOSED);
+                        }
+                        open = false;
+                    }
+                }
+            }
+            if open {
+                sink.EndFigure(D2D1_FIGURE_END_OPEN);
+            }
+            sink.Close().ok()?;
+            geo
+        };
+        self.icons.borrow_mut().insert(icon, geo.clone());
+        Some(geo)
+    }
+
+    /// `icon`, filled in its color, `size` DIPs across, centered in `r`.
+    fn icon(&self, icon: Icon, r: Rect, size: f32, [r_, g, b]: [f32; 3], a: f32) {
+        let Some(geo) = self.icon_geometry(icon) else {
+            return;
+        };
+        let k = size / icons::VIEW;
+        let (x, y) = (r.x + (r.width - size) / 2.0, r.y + (r.height - size) / 2.0);
+        unsafe {
+            let mut m = Matrix3x2::default();
+            self.dc.GetTransform(&mut m);
+            self.dc.SetTransform(&(affine(k, x, y) * m));
+            self.ink.SetColor(&D2D1_COLOR_F { r: r_, g, b, a });
+            self.dc.FillGeometry(&geo, &self.ink, None::<&ID2D1Brush>);
+            self.dc.SetTransform(&m);
         }
     }
 
@@ -722,6 +950,11 @@ impl Renderer {
         self.tinted_rounded(r, radius, [1.0; 3], alpha);
     }
 
+    /// The cover's color made vivid for the player; white without one.
+    fn theme(&self) -> [f32; 3] {
+        self.accent.map_or(WHITE, color::vivid)
+    }
+
     fn tinted_rounded(&self, r: Rect, radius: f32, [r_, g, b]: [f32; 3], a: f32) {
         unsafe {
             self.ink.SetColor(&D2D1_COLOR_F { r: r_, g, b, a });
@@ -775,14 +1008,19 @@ impl Renderer {
             let r = shift(pages::tab(i), dx);
             let on = page == s.page;
             if on {
-                self.rounded(r, r.height / 2.0, 0.14 * alpha);
+                let tint = if s.track.is_some() {
+                    self.theme()
+                } else {
+                    WHITE
+                };
+                self.tinted_rounded(r, r.height / 2.0, tint, 0.18 * alpha);
             }
-            let glyph = match page {
-                Page::Home => "\u{EC4F}",
-                Page::Focus => "\u{E916}",
+            let icon = match page {
+                Page::Home => Icon::Music,
+                Page::Focus => Icon::Timer,
             };
             let a = if on { 0.95 } else { 0.5 };
-            self.text(glyph, &self.text.tab, r, a * alpha);
+            self.icon(icon, r, 16.0, WHITE, a * alpha);
         }
         let clock = shift(pages::clock(s.open.width), dx);
         if s.tabs_timer {
@@ -820,14 +1058,14 @@ impl Renderer {
                 self.rounded(d, pages::DOT / 2.0, 0.2 * alpha);
             }
         }
-        let play = if f.running { "\u{E769}" } else { "\u{E768}" };
-        for (b, glyph) in [
-            (FocusButton::Reset, "\u{E72C}"),
-            (FocusButton::PlayPause, play),
-            (FocusButton::Skip, "\u{E893}"),
+        let play = if f.running { Icon::Pause } else { Icon::Play };
+        for (b, icon, size) in [
+            (FocusButton::Reset, Icon::Reset, 19.0),
+            (FocusButton::PlayPause, play, 24.0),
+            (FocusButton::Skip, Icon::Next, 19.0),
         ] {
             let r = shift(pages::focus_button(b, width), dx);
-            self.text(glyph, &self.text.icon, r, 0.95 * alpha);
+            self.icon(icon, r, size, WHITE, 0.95 * alpha);
         }
     }
 
@@ -843,7 +1081,22 @@ impl Renderer {
             return;
         };
         let p = layout::player(s.open);
-        self.draw_art(t, shift(layout::ART, dx), 10.0, alpha, s.scale);
+        let art = shift(layout::ART, dx);
+        if self.accent.is_some() && !self.morphing {
+            // A halo of the cover's color around it, soft at its edge.
+            let theme = self.theme();
+            for i in 1..=6 {
+                let g = i as f32 * 2.0;
+                let r = Rect {
+                    x: art.x - g,
+                    y: art.y - g + 2.0,
+                    width: art.width + 2.0 * g,
+                    height: art.height + 2.0 * g,
+                };
+                self.tinted_rounded(r, 10.0 + g, theme, 0.035 * alpha);
+            }
+        }
+        self.draw_art(t, art, 10.0, alpha, s.scale);
         self.text(&t.title, &self.text.title, shift(p.title, dx), alpha);
         let artist = if t.artist.is_empty() {
             &t.album
@@ -851,15 +1104,26 @@ impl Renderer {
             &t.artist
         };
         self.text(artist, &self.text.artist, shift(p.artist, dx), 0.6 * alpha);
+        // The player takes the cover's color: the progress and the play
+        // button (white for a gray cover).
+        let theme = self.theme();
         let bar = shift(p.bar, dx);
-        self.rounded(bar, 2.0, 0.2 * alpha);
+        self.tinted_rounded(bar, 2.0, theme, 0.16 * alpha);
         if t.duration_ms > 0 {
             let done = (s.position_ms as f32 / t.duration_ms as f32).clamp(0.0, 1.0);
             let filled = Rect {
                 width: bar.width * done,
                 ..bar
             };
-            self.rounded(filled, 2.0, 0.9 * alpha);
+            self.tinted_rounded(filled, 2.0, theme, 0.95 * alpha);
+            // The playhead, a dot a little taller than the bar.
+            let head = Rect {
+                x: filled.x + filled.width - 4.0,
+                y: bar.y + bar.height / 2.0 - 4.0,
+                width: 8.0,
+                height: 8.0,
+            };
+            self.tinted_rounded(head, 4.0, theme, alpha);
             let times = shift(p.times, dx);
             self.text(
                 &fmt_time(s.position_ms),
@@ -874,18 +1138,26 @@ impl Renderer {
                 0.5 * alpha,
             );
         }
-        for (b, glyph, on) in [
-            (Button::Prev, "\u{E892}", t.can_prev),
+        // Play and pause bigger than the skips, as on a phone.
+        for (b, icon, size, on) in [
+            (Button::Prev, Icon::Previous, 19.0, t.can_prev),
             (
                 Button::PlayPause,
-                if t.playing { "\u{E769}" } else { "\u{E768}" },
+                if t.playing { Icon::Pause } else { Icon::Play },
+                25.0,
                 t.can_toggle,
             ),
-            (Button::Next, "\u{E893}", t.can_next),
+            (Button::Next, Icon::Next, 19.0, t.can_next),
         ] {
             let a = if on { 0.95 } else { 0.3 } * alpha;
-            let r = layout::button(b, s.open);
-            self.text(glyph, &self.text.icon, shift(r, dx), a);
+            let r = shift(layout::button(b, s.open), dx);
+            if b == Button::PlayPause {
+                // On a disc in the cover's color, the icon in what reads.
+                self.tinted_rounded(r, r.width / 2.0, theme, a);
+                self.icon(icon, r, 22.0, color::ink_on(theme), alpha);
+            } else {
+                self.icon(icon, r, size, WHITE, a);
+            }
         }
         if let (Some(l), Some(col)) = (s.lyrics, s.open.lyrics_rect()) {
             self.draw_lyrics(&l, shift(col, dx), alpha);
@@ -952,7 +1224,11 @@ impl Renderer {
                 if a <= 0.01 {
                     continue;
                 }
-                self.ink.SetColor(&white(a));
+                // The sung line white; the others a little of the cover's
+                // color, so the column belongs to the song.
+                let k = (i as f32 - focus).abs().min(1.0);
+                let [r, g, b] = color::toward_white(self.theme(), 1.0 - 0.4 * k);
+                self.ink.SetColor(&D2D1_COLOR_F { r, g, b, a });
                 self.dc.DrawTextLayout(
                     v(Point {
                         x: col.x,
@@ -976,24 +1252,28 @@ impl Renderer {
         // The cover and bars stay put when only the line changes.
         let same_song = s.notice.is_none() && !matches!(before, Some(Before::Notice(_)));
         match before {
-            Some(Before::Notice(n)) => self.peek_notice(&n, s.size, dx, old_dy, old_a),
+            Some(Before::Notice(n)) => self.peek_notice(&n, s, dx, old_dy, old_a),
             Some(Before::Line(line)) if !same_song => {
                 self.peek_song(s, Some(line), dx, old_dy, old_a, old_a)
             }
-            Some(Before::Line(line)) => {
-                self.peek_text(&[(line.to_string(), false)], dx, old_dy, old_a)
-            }
+            Some(Before::Line(line)) => self.peek_text(
+                &[(line.to_string(), false)],
+                s.peek_width,
+                dx,
+                old_dy,
+                old_a,
+            ),
             Some(Before::Song) if !same_song => self.peek_song(s, None, dx, old_dy, old_a, old_a),
             Some(Before::Song) => {
                 let spans = s
                     .track
                     .map_or(vec![], |t| s.song.spans(&t.title, &t.artist));
-                self.peek_text(&spans, dx, old_dy, old_a);
+                self.peek_text(&spans, s.peek_width, dx, old_dy, old_a);
             }
             None => {}
         }
         if let Some(n) = s.notice {
-            self.peek_notice(&n, s.size, dx, new_dy, new_a);
+            self.peek_notice(&n, s, dx, new_dy, new_a);
             return;
         }
         let current = s
@@ -1005,9 +1285,9 @@ impl Renderer {
         self.peek_song(s, line, dx, new_dy, new_a, art_a);
     }
 
-    fn peek_text(&mut self, spans: &[(String, bool)], dx: f32, dy: f32, alpha: f32) {
+    fn peek_text(&mut self, spans: &[(String, bool)], width: f32, dx: f32, dy: f32, alpha: f32) {
         if alpha > 0.0 {
-            let r = lift(shift(layout::PEEK_TEXT, dx), dy);
+            let r = lift(shift(layout::peek_parts(width).1, dx), dy);
             self.song(spans, &self.text.peek, r, alpha);
         }
     }
@@ -1025,24 +1305,30 @@ impl Renderer {
     ) {
         let Some(t) = s.track else { return };
         if art_a > 0.0 {
-            self.draw_art(t, shift(layout::PEEK_ART, dx), 7.0, art_a, s.scale);
-            self.bars(t, shift(layout::PEEK_BARS, dx), art_a);
+            let (art, _, bars) = layout::peek_parts(s.peek_width);
+            self.draw_art(t, shift(art, dx), 7.0, art_a, s.scale);
+            self.bars(t, shift(bars, dx), art_a);
         }
         let spans = match line {
             Some(l) => vec![(l.to_string(), false)],
             None => s.song.spans(&t.title, &t.artist),
         };
-        self.peek_text(&spans, dx, dy, alpha);
+        self.peek_text(&spans, s.peek_width, dx, dy, alpha);
     }
 
-    fn peek_notice(&mut self, n: &Notice, size: (f32, f32), dx: f32, dy: f32, alpha: f32) {
+    fn peek_notice(&mut self, n: &Notice, s: &Scene, dx: f32, dy: f32, alpha: f32) {
+        let (size, scale) = (s.size, s.scale);
         if alpha <= 0.0 {
+            return;
+        }
+        if n.toast {
+            self.peek_toast(n, size, dy, alpha, scale);
             return;
         }
         let at = |r: Rect| lift(shift(r, dx), dy);
         let Some(level) = n.level else {
             // (A level is laid out at the body's own size, without `dx`.)
-            self.tinted(n.icon, &self.text.icon, at(layout::PEEK_ART), n.tint, alpha);
+            self.icon(n.icon, at(layout::PEEK_ART), 20.0, n.tint, alpha);
             let mut spans = vec![(n.title.to_string(), false)];
             if !n.detail.is_empty() {
                 spans.push((format!("  {}", n.detail), true));
@@ -1054,7 +1340,13 @@ impl Renderer {
         // the word stands where the bar was.
         let at = |r: Rect| lift(r, dy);
         let l = glance::level_layout(size);
-        self.tinted(n.icon, &self.text.icon, at(l.icon), n.tint, alpha);
+        // A level with no color of its own takes the system's accent.
+        let tint = if n.tint == WHITE {
+            windows_accent()
+        } else {
+            n.tint
+        };
+        self.icon(n.icon, at(l.icon), l.icon.height * 0.8, WHITE, alpha);
         if n.detail.is_empty() {
             let word = Rect {
                 x: l.bar.x,
@@ -1067,15 +1359,140 @@ impl Renderer {
             return;
         }
         let bar = at(l.bar);
-        self.rounded(bar, bar.height / 2.0, 0.2 * alpha);
+        self.tinted_rounded(bar, bar.height / 2.0, tint, 0.18 * alpha);
         let done = Rect {
             width: bar.width * level.clamp(0.0, 1.0),
             ..bar
         };
         if done.width > 0.0 {
-            self.tinted_rounded(done, bar.height / 2.0, n.tint, 0.95 * alpha);
+            self.tinted_rounded(done, bar.height / 2.0, tint, 0.95 * alpha);
         }
         self.tinted(n.detail, &self.text.clock, at(l.text), WHITE, 0.9 * alpha);
+    }
+
+    /// A notification, as on a phone: the app's logo; its name dim with
+    /// "now" at the right, the title bold and the body dim below. Laid out
+    /// at its full size, centered: the body uncovers it as it grows.
+    fn peek_toast(&mut self, n: &Notice, size: (f32, f32), dy: f32, alpha: f32, scale: f32) {
+        use island_core::notifications as toast;
+        let dx = (size.0 - toast::SIZE.0) / 2.0;
+        let l = toast::layout(toast::SIZE, !n.body.is_empty());
+        let at = |r: Rect| lift(shift(r, dx), dy);
+        let r = at(l.logo);
+        let rounded = D2D1_ROUNDED_RECT {
+            rect: rf(r),
+            radiusX: 11.0,
+            radiusY: 11.0,
+        };
+        let side = (TOAST_LOGO * scale).ceil();
+        let dc = self.dc.clone();
+        match n.logo.and_then(|b| self.logo(b, side)) {
+            Some(a) => unsafe {
+                let k = r.width / a.side;
+                let (cx, cy) = ((a.size.0 - a.side) / 2.0, (a.size.1 - a.side) / 2.0);
+                a.brush.SetTransform(&affine(k, r.x - cx * k, r.y - cy * k));
+                a.brush.SetOpacity(alpha);
+                dc.FillRoundedRectangle(&rounded, &a.brush);
+            },
+            // No logo: the bell, on a square in the ring's color.
+            None => {
+                let accent = self.toast_accent(n, scale);
+                self.tinted_rounded(r, 11.0, accent, 0.28 * alpha);
+                self.icon(n.icon, r, 24.0, WHITE, alpha);
+            }
+        }
+        self.tinted(n.title, &self.text.menu, at(l.app), WHITE, 0.6 * alpha);
+        self.tinted(n.when, &self.text.next, at(l.when), WHITE, 0.45 * alpha);
+        let title = if n.detail.is_empty() {
+            n.title
+        } else {
+            n.detail
+        };
+        self.text(title, &self.text.toast_title, at(l.title), 0.97 * alpha);
+        if !n.body.is_empty() {
+            self.tinted(n.body, &self.text.artist, at(l.body), WHITE, 0.62 * alpha);
+        }
+    }
+
+    /// A notification's ring: the outline in its color, a fine line over a
+    /// soft wide one, as bright as `a` (px, from the body's top-left).
+    fn ring(&self, geo: &ID2D1PathGeometry, color: [f32; 3], a: f32, scale: f32) {
+        let [r, g, b] = color;
+        unsafe {
+            for (width, k) in [(6.0, 0.18), (1.6, 1.0)] {
+                self.ink.SetColor(&D2D1_COLOR_F { r, g, b, a: a * k });
+                self.dc.DrawGeometry(geo, &self.ink, width * scale, None);
+            }
+        }
+    }
+
+    /// Two lights running around the edge, opposite each other, each a
+    /// bright head with a tail that fades: soft and wide under, fine and
+    /// near white on top. `at` is how far around (0 to 1).
+    fn comet(&self, geo: &ID2D1PathGeometry, rgb: [f32; 3], at: f32, a: f32, scale: f32) {
+        if a <= 0.0 {
+            return;
+        }
+        let Ok(total) = (unsafe { geo.ComputeLength(None, 0.25) }) else {
+            return;
+        };
+        let period = total / 2.0;
+        if period <= 1.0 {
+            return;
+        }
+        let head = at * total;
+        // Only inside the island: the light hugs its edge, never spills.
+        let params = D2D1_LAYER_PARAMETERS1 {
+            contentBounds: D2D_RECT_F {
+                left: f32::MIN,
+                top: f32::MIN,
+                right: f32::MAX,
+                bottom: f32::MAX,
+            },
+            geometricMask: std::mem::ManuallyDrop::new(geo.cast::<ID2D1Geometry>().ok()),
+            maskAntialiasMode: D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
+            maskTransform: Matrix3x2::identity(),
+            opacity: 1.0,
+            opacityBrush: std::mem::ManuallyDrop::new(None),
+            layerOptions: D2D1_LAYER_OPTIONS1_NONE,
+        };
+        unsafe { self.dc.PushLayer(&params, None::<&ID2D1Layer>) };
+        // (Each stroke shows its inner half: they are twice as wide.)
+        for (width, tail, k, white) in [
+            // A soft glow, stacked thin to fade off without edges...
+            (34.0, 0.3, 0.05, 0.0),
+            (26.0, 0.32, 0.06, 0.0),
+            (19.0, 0.34, 0.08, 0.0),
+            (13.0, 0.36, 0.11, 0.1),
+            (8.0, 0.36, 0.18, 0.2),
+            // ...and the line itself, bright near the head.
+            (4.5, 0.3, 0.55, 0.35),
+            (2.2, 0.16, 1.0, 0.75),
+        ] {
+            let w = width * scale;
+            let len = (tail * period).min(period - w);
+            let props = D2D1_STROKE_STYLE_PROPERTIES1 {
+                startCap: D2D1_CAP_STYLE_ROUND,
+                endCap: D2D1_CAP_STYLE_ROUND,
+                dashCap: D2D1_CAP_STYLE_ROUND,
+                dashStyle: D2D1_DASH_STYLE_CUSTOM,
+                // The dash starts `len` behind the head.
+                dashOffset: -((head - len).rem_euclid(period)) / w,
+                ..Default::default()
+            };
+            let dashes = [len / w, (period - len) / w];
+            let Ok(style) = (unsafe { self.factory.CreateStrokeStyle(&props, Some(&dashes)) })
+            else {
+                continue;
+            };
+            let [r, g, b] = color::toward_white(rgb, white);
+            unsafe {
+                self.ink.SetColor(&D2D1_COLOR_F { r, g, b, a: a * k });
+                self.dc.DrawGeometry(geo, &self.ink, w, &style);
+            }
+        }
+        unsafe { self.dc.PopLayer() };
+        drop(std::mem::ManuallyDrop::into_inner(params.geometricMask));
     }
 
     fn draw_closed(&mut self, s: &Scene, dx: f32, alpha: f32) {
@@ -1089,7 +1506,7 @@ impl Renderer {
                     width: 20.0,
                     height: h,
                 };
-                self.tinted("\u{E916}", &self.text.tab, icon, s.focus.tint(), alpha);
+                self.icon(Icon::Timer, icon, 16.0, s.focus.tint(), alpha);
                 let text = Rect {
                     x: dx + 44.0,
                     y: 0.0,
@@ -1100,11 +1517,32 @@ impl Renderer {
             }
             return;
         };
-        self.draw_art(t, shift(layout::SMALL_ART, dx), 5.0, alpha, s.scale);
+        let (art, text, bars) = layout::closed_parts(s.closed_width);
+        self.draw_art(t, shift(art, dx), 5.0, alpha, s.scale);
         let spans = s.song.spans(&t.title, &t.artist);
-        let text = shift(layout::CLOSED_TEXT, dx);
-        self.song(&spans, &self.text.closed, text, alpha);
-        self.bars(t, shift(layout::BARS, dx), alpha);
+        self.song(&spans, &self.text.closed, shift(text, dx), alpha);
+        self.bars(t, shift(bars, dx), alpha);
+    }
+
+    /// How wide a line of the closed island's text (`closed`) or of the
+    /// song's glance takes, in DIPs, on one line.
+    pub fn text_width(&self, spans: &[(String, bool)], closed: bool) -> f32 {
+        let text: Vec<u16> = spans.iter().flat_map(|s| s.0.encode_utf16()).collect();
+        let format = if closed {
+            &self.text.closed
+        } else {
+            &self.text.peek
+        };
+        unsafe {
+            let Ok(layout) = self.text.dw.CreateTextLayout(&text, format, 4000.0, 64.0) else {
+                return 0.0;
+            };
+            let mut m = DWRITE_TEXT_METRICS::default();
+            if layout.GetMetrics(&mut m).is_err() {
+                return 0.0;
+            }
+            m.widthIncludingTrailingWhitespace.ceil()
+        }
     }
 
     /// The bars are composition visuals (see `bars.rs`): here we only note
@@ -1125,8 +1563,50 @@ impl Renderer {
 
     /// Places the next view for its entrance at visibility `a`, scaled
     /// about (`cx`, 0) of the content; gives its opacity.
-    fn enter(&mut self, base: &Matrix3x2, cx: f32, a: f32) -> f32 {
+    /// Where the cover is while the island opens or closes (content DIPs)
+    /// and its corner; `None` at rest, or when one end has no cover (a
+    /// notice's glance, the focus page).
+    fn morph(&self, s: &Scene) -> Option<(Rect, f32)> {
+        let t = s.openness;
+        if s.track.is_none() || s.page != Page::Home || !(0.001..0.999).contains(&t) {
+            return None;
+        }
+        let (small, radius) = if s.peek_view {
+            if s.notice.is_some() {
+                return None;
+            }
+            let dx = (s.size.0 - s.peek_width) / 2.0;
+            (shift(layout::peek_parts(s.peek_width).0, dx), 7.0)
+        } else {
+            let dx = (s.size.0 - s.closed_width) / 2.0;
+            (shift(layout::closed_parts(s.closed_width).0, dx), 5.0)
+        };
+        // The player's cover where the open view, scaled to the body, has it.
+        let (cx, k) = (s.size.0 / 2.0, open_fit(s));
+        let big = Rect {
+            x: cx + ((s.size.0 - s.open.width) / 2.0 + layout::ART.x - cx) * k,
+            y: (pages::PAGE_Y + layout::ART.y) * k,
+            width: layout::ART.width * k,
+            height: layout::ART.height * k,
+        };
+        let e = t * t * (3.0 - 2.0 * t);
+        let mix = |a: f32, b: f32| a + (b - a) * e;
+        Some((
+            Rect {
+                x: mix(small.x, big.x),
+                y: mix(small.y, big.y),
+                width: mix(small.width, big.width),
+                height: mix(small.height, big.height),
+            },
+            mix(radius, 10.0),
+        ))
+    }
+
+    /// `fit` scales the view further, about the same point: the open one
+    /// grows with the body instead of showing at full size, cut by it.
+    fn enter(&mut self, base: &Matrix3x2, cx: f32, a: f32, fit: f32) -> f32 {
         let (opacity, k, drop) = layout::entrance(a);
+        let k = k * fit;
         self.view = (cx, k, drop);
         unsafe {
             self.dc
@@ -1137,7 +1617,7 @@ impl Renderer {
 
     /// The cover's color rising from the bottom of the body (px, from the
     /// body's top-left).
-    fn glow(&self, geo: &ID2D1PathGeometry, height: f32, accent: [f32; 3]) -> Result<()> {
+    fn glow(&self, geo: &ID2D1PathGeometry, height: f32, accent: [f32; 3], k: f32) -> Result<()> {
         let [r, g, b] = accent;
         let at = |position, a| D2D1_GRADIENT_STOP {
             position,
@@ -1146,7 +1626,7 @@ impl Renderer {
         unsafe {
             let stops = ID2D1RenderTarget::CreateGradientStopCollection(
                 &self.dc,
-                &[at(0.0, 0.0), at(1.0, 0.32)],
+                &[at(0.0, 0.0), at(1.0, 0.32 * k)],
                 D2D1_GAMMA_2_2,
                 D2D1_EXTEND_MODE_CLAMP,
             )?;
@@ -1157,6 +1637,47 @@ impl Renderer {
                         Y: height * 0.35,
                     },
                     endPoint: Vector2 { X: 0.0, Y: height },
+                },
+                None,
+                &stops,
+            )?;
+            self.dc.FillGeometry(geo, &brush, None::<&ID2D1Brush>);
+        }
+        Ok(())
+    }
+
+    /// The cover's color, open: a light from where the cover is (the left
+    /// third) that fades out toward the lyrics (px, from the body's
+    /// top-left).
+    fn cover_light(
+        &self,
+        geo: &ID2D1PathGeometry,
+        width: f32,
+        height: f32,
+        accent: [f32; 3],
+        k: f32,
+    ) -> Result<()> {
+        let [r, g, b] = accent;
+        let at = |position, a| D2D1_GRADIENT_STOP {
+            position,
+            color: D2D1_COLOR_F { r, g, b, a },
+        };
+        unsafe {
+            let stops = ID2D1RenderTarget::CreateGradientStopCollection(
+                &self.dc,
+                &[at(0.0, 0.34 * k), at(0.45, 0.12 * k), at(1.0, 0.0)],
+                D2D1_GAMMA_2_2,
+                D2D1_EXTEND_MODE_CLAMP,
+            )?;
+            let brush = self.dc.CreateRadialGradientBrush(
+                &D2D1_RADIAL_GRADIENT_BRUSH_PROPERTIES {
+                    center: Vector2 {
+                        X: width * 0.2,
+                        Y: height * 0.6,
+                    },
+                    gradientOriginOffset: Vector2::default(),
+                    radiusX: width * 0.62,
+                    radiusY: height * 0.9,
                 },
                 None,
                 &stops,
@@ -1177,12 +1698,21 @@ impl Renderer {
             .and_then(|t| t.art.as_ref())
             .and_then(|b| self.art(b, side))
             .map(|a| a.accent);
+        // A notification on screen: its color, ring and how visible it is.
+        let toast = match s.notice {
+            Some(n) if n.toast && s.alpha[1] > 0.0 => {
+                Some((self.toast_accent(&n, s.scale), n.ring, s.alpha[1], n.orbit))
+            }
+            _ => None,
+        };
         let (sw, sh) = (s.width.max(1) as i32, s.height.max(1) as i32);
+        // Room for the ring and the light around the edge, outside it.
+        let m = (6.0 * s.scale).ceil() as i32;
         let now = RECT {
-            left: (s.body.x.floor() as i32 - 1).clamp(0, sw - 1),
-            top: (s.body.y.floor() as i32 - 1).clamp(0, sh - 1),
-            right: ((s.body.x + s.body.width).ceil() as i32 + 1).clamp(1, sw),
-            bottom: ((s.body.y + s.body.height).ceil() as i32 + 1).clamp(1, sh),
+            left: (s.body.x.floor() as i32 - m).clamp(0, sw - 1),
+            top: (s.body.y.floor() as i32 - m).clamp(0, sh - 1),
+            right: ((s.body.x + s.body.width).ceil() as i32 + m).clamp(1, sw),
+            bottom: ((s.body.y + s.body.height).ceil() as i32 + m).clamp(1, sh),
         };
         let dirty = match self.drawn {
             Some(d) => RECT {
@@ -1233,8 +1763,23 @@ impl Renderer {
                 let (bx, by) = (ox + s.body.x, oy + s.body.y);
                 self.dc.SetTransform(&Matrix3x2::translation(bx, by));
                 self.dc.FillGeometry(&geo, &self.fill, None::<&ID2D1Brush>);
+                // A notification takes the glow over in its own color, with
+                // its ring; the cover's gives way as it comes in.
+                let shown = toast.map_or(0.0, |(_, _, a, _)| a);
                 if let Some(accent) = self.accent {
-                    self.glow(&geo, s.body.height, accent)?;
+                    self.glow(&geo, s.body.height, accent, 1.0 - shown)?;
+                    // Open, the color also spreads from behind the cover.
+                    let open = s.alpha[2] * (1.0 - shown);
+                    if open > 0.0 && s.track.is_some() {
+                        self.cover_light(&geo, s.body.width, s.body.height, accent, open)?;
+                    }
+                }
+                if let Some((color, ring, a, orbit)) = toast {
+                    self.glow(&geo, s.body.height, color, a)?;
+                    self.ring(&geo, color, ring * a, s.scale);
+                    if let Some((at, bright)) = orbit {
+                        self.comet(&geo, color, at, bright * a, s.scale);
+                    }
                 }
 
                 // The content, in DIPs, clipped to the body.
@@ -1251,23 +1796,33 @@ impl Renderer {
                 );
                 let [closed, peek, open] = s.alpha;
                 let cx = s.size.0 / 2.0;
+                // Opening or closing, the cover is one: it travels and grows
+                // between its small place and the player's, drawn once on
+                // top, instead of one fading out as the other fades in.
+                let morph = self.morph(s);
+                self.morphing = morph.is_some();
                 if closed > 0.0 {
                     let w = if s.track.is_some() {
-                        layout::CLOSED_MEDIA_WIDTH
+                        s.closed_width
                     } else {
                         CLOSED_W
                     };
-                    let a = self.enter(&base, cx, closed);
+                    let a = self.enter(&base, cx, closed, 1.0);
                     self.draw_closed(s, (s.size.0 - w) / 2.0, a);
                 }
                 if peek > 0.0 {
-                    let a = self.enter(&base, cx, peek);
-                    self.draw_peek(s, (s.size.0 - layout::PEEK.0) / 2.0, a);
+                    let a = self.enter(&base, cx, peek, 1.0);
+                    self.draw_peek(s, (s.size.0 - s.peek_width) / 2.0, a);
                 }
                 if open > 0.0 {
-                    let a = self.enter(&base, cx, open);
+                    let a = self.enter(&base, cx, open, open_fit(s));
                     let w = s.open.width;
                     self.draw_open(s, (s.size.0 - w) / 2.0, a);
+                }
+                self.morphing = false;
+                if let (Some((r, radius)), Some(t)) = (morph, s.track) {
+                    self.dc.SetTransform(&base);
+                    self.draw_art(t, r, radius, 1.0, s.scale);
                 }
                 self.view = (0.0, 1.0, 0.0);
                 self.dc.PopAxisAlignedClip();

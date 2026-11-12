@@ -5,7 +5,7 @@
 //! moment on their own, and a blip like that is no news.
 
 /// Segoe Fluent Icons (and MDL2).
-pub const ICON: &str = "\u{E702}";
+pub const ICON: crate::icons::Icon = crate::icons::Icon::Bluetooth;
 /// The icon's colour (linear RGB), Bluetooth's own blue.
 pub const TINT: [f32; 3] = [0.2, 0.5, 1.0];
 /// How long a change must hold before it's told, in ms.
