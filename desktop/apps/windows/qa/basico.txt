@@ -1,0 +1,71 @@
+# QA visual básico: island.exe --qa qa/basico.txt --qa-out <carpeta>
+# Cada estado y transición a cámara lenta, con capturas y comprobaciones.
+slow 3
+wait-rest
+background
+grab cerrada
+idle 1500
+
+# Empieza la música: la isla se ensancha al nombre.
+film musica 40
+track "Una canción con un nombre bastante largo" "Alguien"
+wait-rest
+grab musica
+wait 4000
+wait-rest
+idle 1500
+
+# Abrir y cerrar.
+film abrir 80
+open
+wait-rest
+grab abierta
+film cerrar 80
+close
+wait-rest
+idle 1500
+
+# Volumen sobre la canción, y un aviso.
+film volumen 60
+level 0.4
+wait-rest
+grab volumen
+wait 2500
+wait-rest
+notice "Micrófono apagado" "Zoom"
+wait-rest
+grab aviso
+wait 4000
+wait-rest
+
+# Una notificación, y una canción nueva mientras se ve.
+film toast 120
+toast "Mensajes" "Ana" "¿Nos vemos a las 6? Llevo lo que falta para la cena"
+wait-rest
+grab toast
+track "Otra canción" "Otra persona"
+wait-rest
+wait 6000
+wait-rest
+idle 1500
+
+# Más grande y flotante.
+set islandScale 1.4
+wait-rest
+background
+film escala 80
+open
+wait-rest
+close
+wait-rest
+set placement "floating"
+wait-rest
+background
+grab flotante
+film flotante 80
+open
+wait-rest
+close
+wait-rest
+idle 1500
+quit

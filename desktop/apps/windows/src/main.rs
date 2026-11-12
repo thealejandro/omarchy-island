@@ -12,6 +12,8 @@ mod media;
 mod notifications;
 mod pacer;
 mod privacy;
+#[cfg(feature = "qa")]
+mod qa;
 mod render;
 mod settings_file;
 mod startup;
@@ -627,6 +629,10 @@ fn monitors() -> Vec<(HMONITOR, Monitor)> {
 
 /// A screen's scale (DIPs to px); 1.0 without a usable answer.
 fn monitor_scale(mon: HMONITOR) -> f32 {
+    #[cfg(feature = "qa")]
+    if let Some(s) = qa::scale() {
+        return s;
+    }
     let (mut dx, mut dy) = (96, 96);
     unsafe {
         let _ = GetDpiForMonitor(mon, MDT_EFFECTIVE_DPI, &mut dx, &mut dy);
@@ -1513,6 +1519,8 @@ impl App {
                 .last_frame
                 .map_or(16.0, |t| (now - t).as_secs_f32() * 1000.0);
             sf.last_frame = Some(now);
+            #[cfg(feature = "qa")]
+            let ms = ms / qa::slow();
             // Growing is loose and a little wobbly; shrinking (also from
             // open to the glance) is firm, so it never dips under where it
             // stops.
@@ -1546,6 +1554,8 @@ impl App {
             }
         }
         self.draw_surface(i);
+        #[cfg(feature = "qa")]
+        qa::frame(self, i);
         if !moving {
             let peek = self.peek;
             // Nothing runs while the island is still.
@@ -1716,6 +1726,11 @@ impl App {
     /// at rest redraw.
     fn media_update(&mut self) {
         self.track = self.media.latest();
+        self.track_changed();
+    }
+
+    /// The song on screen is `self.track` now.
+    fn track_changed(&mut self) {
         keys::set_media(self.track.is_some());
         // A new song gets a glance; the one playing at start doesn't.
         let song = self
@@ -1844,6 +1859,8 @@ impl App {
             }
             WM_APP_OPEN if self.menu.is_none() => self.open_menu(true),
             WM_APP_QUIT => self.quit(),
+            #[cfg(feature = "qa")]
+            WM_TIMER if wp.0 == qa::TIMER => qa::step(self),
             WM_APP_OFFER if self.menu.is_none() => {
                 if let (Some(offer), Ok(me)) = (install::offer(), std::env::current_exe()) {
                     self.show_offer(offer, env!("CARGO_PKG_VERSION").to_owned(), me, false);
@@ -1917,6 +1934,8 @@ impl App {
     /// timers and frames. Glances and content are shared; an island opens
     /// and closes on its own.
     fn surface_message(&mut self, hwnd: HWND, msg: u32, wp: WPARAM, lp: LPARAM) -> Option<LRESULT> {
+        #[cfg(feature = "qa")]
+        qa::surface_msg(msg, wp.0);
         let Some(i) = self.surfaces.iter().position(|s| s.hwnd == hwnd) else {
             return match msg {
                 WM_DPICHANGED | WM_DISPLAYCHANGE => unsafe {
@@ -1989,7 +2008,7 @@ impl App {
             WM_CLOSE => self.quit(),
             // Signing out or shutting down ends the app with no WM_CLOSE:
             // the banners come back first.
-            WM_ENDSESSION if wp.0 != 0 => banners::pause(),
+            WM_ENDSESSION if wp.0 != 0 && !qa_mode() => banners::pause(),
             // Destroyed from outside the app: it goes from the list (its
             // pacer's thread ends with it).
             WM_DESTROY => {
@@ -2347,7 +2366,9 @@ impl App {
         self.close_menu();
         self.keys = None;
         // Windows' banners back while the island is closed.
-        banners::pause();
+        if !qa_mode() {
+            banners::pause();
+        }
         // The icon goes first: the taskbar keeps a dead one otherwise.
         self.tray = None;
         // The anchor's own WM_DESTROY can't run now (the app is borrowed),
@@ -2567,6 +2588,15 @@ impl Overrides {
     }
 }
 
+/// Running a visual QA script (the `qa` feature): nothing of the user's is
+/// touched.
+fn qa_mode() -> bool {
+    #[cfg(feature = "qa")]
+    return qa::active();
+    #[cfg(not(feature = "qa"))]
+    false
+}
+
 fn main() -> Result<()> {
     // DLLs loaded from here on come from System32 only, never from the
     // exe's folder (see build.rs for the ones it starts with).
@@ -2574,6 +2604,8 @@ fn main() -> Result<()> {
         let _ = SetDefaultDllDirectories(LOAD_LIBRARY_SEARCH_SYSTEM32);
     }
     let args: Vec<String> = std::env::args().collect();
+    #[cfg(feature = "qa")]
+    qa::from_args(&args).map_err(|e| Error::new(E_FAIL, e.to_string()))?;
     // For uninstalling by hand: Windows' banners back on, without the island
     // open.
     if install::has(&args, "--restore-banners") {
@@ -2614,7 +2646,8 @@ fn main() -> Result<()> {
         let _single = CreateMutexW(None, false, w!("Local\\IslandDesktop"))?;
         // A newer exe than the installed one that is running: that one goes,
         // so this one can offer the update.
-        let running = GetLastError() == ERROR_ALREADY_EXISTS;
+        // A QA script runs beside the island in use.
+        let running = GetLastError() == ERROR_ALREADY_EXISTS && !qa_mode();
         if running {
             let update = install::offer() == Some(Offer::Update);
             let anchor = FindWindowExW(Some(HWND_MESSAGE), None, ANCHOR_CLASS, None).ok();
@@ -2700,7 +2733,8 @@ fn main() -> Result<()> {
             surfaces: Vec::new(),
             placement: defaults.placement,
             monitor: defaults.monitor.clone(),
-            media: media::Media::start(anchor, WM_APP_MEDIA),
+            // In QA the script makes up the songs: the real ones go nowhere.
+            media: media::Media::start(anchor, if qa_mode() { 0 } else { WM_APP_MEDIA }),
             track: None,
             song: None,
             peek: false,
@@ -2709,7 +2743,7 @@ fn main() -> Result<()> {
             args: Overrides::from_args(),
             locale,
             texts,
-            tray: Some(tray::Tray::new(anchor, WM_APP_TRAY, texts.name)),
+            tray: (!qa_mode()).then(|| tray::Tray::new(anchor, WM_APP_TRAY, texts.name)),
             menu: None,
             taskbar_created: RegisterWindowMessageW(w!("TaskbarCreated")),
             song_text: defaults.song_text,
@@ -2741,8 +2775,9 @@ fn main() -> Result<()> {
             bluetooth: None,
             notifications: None,
             pulse: None,
-            banners_quiet: banners::active(),
-            banners_off: None,
+            // The banners are the user's: QA leaves them as they are.
+            banners_quiet: !qa_mode() && banners::active(),
+            banners_off: qa_mode().then_some(false),
             offer: None,
             offer_from: None,
             offer_found: false,
@@ -2750,11 +2785,22 @@ fn main() -> Result<()> {
             last_sound: None,
         };
         APP.with_borrow_mut(|a| *a = Some(app));
-        // A file with a typo at start: the defaults until it is fixed.
-        let file = settings_file::load().unwrap_or_default();
-        APP.with_borrow_mut(|a| a.as_mut().map(|a| a.apply(file)));
-        settings_file::watch(anchor, WM_APP_SETTINGS);
-        if install::has(&args, install::INSTALLED) {
+        if qa_mode() {
+            // The script's settings, never the user's file.
+            #[cfg(feature = "qa")]
+            {
+                let file = qa::settings();
+                APP.with_borrow_mut(|a| a.as_mut().map(|a| a.apply(file)));
+                qa::begin(anchor);
+            }
+        } else {
+            // A file with a typo at start: the defaults until it is fixed.
+            let file = settings_file::load().unwrap_or_default();
+            APP.with_borrow_mut(|a| a.as_mut().map(|a| a.apply(file)));
+            settings_file::watch(anchor, WM_APP_SETTINGS);
+        }
+        if qa_mode() {
+        } else if install::has(&args, install::INSTALLED) {
             // A downloaded update, once installed, is of no more use.
             install::clear_updates();
             let _ = PostMessageW(Some(anchor), WM_APP_INSTALLED, WPARAM(0), LPARAM(0));
@@ -2770,6 +2816,10 @@ fn main() -> Result<()> {
         }
         // Takes the tray icon away too, if it is still there.
         APP.with_borrow_mut(|a| *a = None);
+        #[cfg(feature = "qa")]
+        if qa_mode() {
+            std::process::exit(qa::code());
+        }
     }
     Ok(())
 }

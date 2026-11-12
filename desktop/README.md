@@ -17,6 +17,20 @@ cargo test --workspace
 cargo build --release -p island-windows   # target/release/island.exe
 ```
 
+### Visual QA
+
+A build with `--features qa` (never a release) plays a script of states and
+transitions in slow motion, checks every frame (the body fits its window, no
+jumps or wobble at rest, nothing runs when idle, nothing drawn outside the
+silhouette) and writes `report.txt`, `trace.csv` and PNG frames:
+
+```sh
+cargo build --release -p island-windows --features qa
+target/release/island.exe --qa apps/windows/qa/basico.txt --qa-out qa-out
+```
+
+The exit code is the number of failures. Close the installed island first.
+
 ## Download
 
 Each `windows-vX.Y.Z` tag publishes a GitHub Release (never marked Latest:
