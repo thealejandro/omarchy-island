@@ -61,6 +61,97 @@ pub fn toward_white(c: Rgb, k: f32) -> Rgb {
     c.map(|v| v + (1.0 - v) * k)
 }
 
+/// `#rrggbb` or `#rgb` (spaces around are fine) as 0 to 1.
+pub fn parse_hex(s: &str) -> Option<Rgb> {
+    let hex = s.trim().strip_prefix('#')?;
+    // Checked first, so the slicing below never splits a character.
+    if !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
+        return None;
+    }
+    let digit = |i: usize, n: usize| u8::from_str_radix(&hex[i..i + n], 16).ok();
+    let rgb = match hex.len() {
+        6 => [digit(0, 2)?, digit(2, 2)?, digit(4, 2)?],
+        3 => [digit(0, 1)? * 17, digit(1, 1)? * 17, digit(2, 1)? * 17],
+        _ => return None,
+    };
+    Some(rgb.map(|v| f32::from(v) / 255.0))
+}
+
+/// The contrast white text needs on the island (WCAG 1.4.3).
+pub const TEXT_LEGIBLE: f32 = 4.5;
+
+/// `c` as is when white text reads on it, else mixed toward black just
+/// enough that it does (a light theme's background would hide the text).
+pub fn under_white_text(c: Rgb) -> Rgb {
+    let contrast = |c: Rgb| 1.05 / (luminance(c) + 0.05);
+    if contrast(c) >= TEXT_LEGIBLE {
+        return c;
+    }
+    let toward_black = |k: f32| c.map(|v| v * (1.0 - k));
+    let (mut lo, mut hi) = (0.0, 1.0);
+    for _ in 0..20 {
+        let k = (lo + hi) / 2.0;
+        if contrast(toward_black(k)) >= TEXT_LEGIBLE {
+            hi = k;
+        } else {
+            lo = k;
+        }
+    }
+    toward_black(hi)
+}
+
+/// WCAG's relative luminance of an sRGB color.
+fn luminance(c: Rgb) -> f32 {
+    let lin = |v: f32| {
+        if v <= 0.04045 {
+            v / 12.92
+        } else {
+            ((v + 0.055) / 1.055).powf(2.4)
+        }
+    };
+    0.2126 * lin(c[0]) + 0.7152 * lin(c[1]) + 0.0722 * lin(c[2])
+}
+
+/// The contrast between two colors, 1 to 21.
+pub fn contrast(a: Rgb, b: Rgb) -> f32 {
+    let (la, lb) = (luminance(a), luminance(b));
+    (la.max(lb) + 0.05) / (la.min(lb) + 0.05)
+}
+
+/// `c`'s contrast against the island's black.
+pub fn contrast_on_black(c: Rgb) -> f32 {
+    contrast(c, [0.0; 3])
+}
+
+/// The least contrast a bar or ring needs to be seen (WCAG 1.4.11).
+pub const LEGIBLE: f32 = 3.0;
+
+/// `c` as is when it reads on the island's `body`, else mixed toward white
+/// just enough that it does (a dark color chosen by hand, or the system's
+/// on a lighter body, would hardly show). A body dark enough for the white
+/// text always leaves room for it.
+pub fn legible_on(c: Rgb, body: Rgb) -> Rgb {
+    if contrast(c, body) >= LEGIBLE {
+        return c;
+    }
+    let (mut lo, mut hi) = (0.0, 1.0);
+    for _ in 0..20 {
+        let k = (lo + hi) / 2.0;
+        let m = toward_white(c, k);
+        if contrast(m, body) >= LEGIBLE && luminance(m) >= luminance(body) {
+            hi = k;
+        } else {
+            lo = k;
+        }
+    }
+    toward_white(c, hi)
+}
+
+/// [`legible_on`] the island's black.
+pub fn legible_on_black(c: Rgb) -> Rgb {
+    legible_on(c, [0.0; 3])
+}
+
 /// Black or white, whichever reads better on `c`.
 pub fn ink_on([r, g, b]: Rgb) -> Rgb {
     // Relative luminance, near enough (the colors here are bright).
@@ -94,6 +185,46 @@ mod tests {
         assert_eq!(vivid([0.85; 3]), WHITE);
         assert_eq!(vivid([0.0; 3]), WHITE);
         assert!(!is_gray([1.0, 0.4, 0.6]));
+    }
+
+    #[test]
+    fn dark_colors_are_lifted_to_read_on_black() {
+        for dark in [[0.125; 3], [0.0, 0.0, 0.4], [0.0; 3], [0.3, 0.0, 0.0]] {
+            let c = legible_on_black(dark);
+            assert!(contrast_on_black(c) >= LEGIBLE, "{dark:?}");
+            // Only as much as needed.
+            assert!(contrast_on_black(c) < LEGIBLE + 0.05, "{dark:?}");
+        }
+        // Bright ones stay as chosen.
+        assert_eq!(legible_on_black([1.0, 0.5, 0.0]), [1.0, 0.5, 0.0]);
+        assert_eq!(legible_on_black(WHITE), WHITE);
+        // On the lightest body the white text allows, it still shows.
+        let body = under_white_text([0.93, 0.97, 0.99]);
+        let c = legible_on(legible_on_black([0.0, 0.2, 0.6]), body);
+        assert!(contrast(c, body) >= LEGIBLE);
+        assert!(luminance(c) > luminance(body));
+    }
+
+    #[test]
+    fn light_bodies_are_darkened_under_white_text() {
+        // A light theme's background (Aero's #eef8fc).
+        let c = under_white_text([0.933, 0.973, 0.988]);
+        let on = |c: Rgb| 1.05 / (luminance(c) + 0.05);
+        assert!(on(c) >= TEXT_LEGIBLE && on(c) < TEXT_LEGIBLE + 0.05);
+        // Its hue is kept: still bluish.
+        assert!(c[2] > c[0]);
+        let dark = [0.1, 0.12, 0.2];
+        assert_eq!(under_white_text(dark), dark);
+        assert_eq!(under_white_text([0.0; 3]), [0.0; 3]);
+    }
+
+    #[test]
+    fn hex_colors() {
+        assert_eq!(parse_hex(" #ff0000 "), Some([1.0, 0.0, 0.0]));
+        assert_eq!(parse_hex("#fff"), Some(WHITE));
+        for bad in ["ff0000", "#12345", "#ggg", "#é12", ""] {
+            assert_eq!(parse_hex(bad), None, "{bad}");
+        }
     }
 
     #[test]
