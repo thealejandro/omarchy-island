@@ -274,8 +274,10 @@ struct Surface {
     /// asked for.
     last_frame: Option<Instant>,
     pacer: pacer::Pacer,
-    /// The body is on its way to a smaller size.
+    /// The body is on its way to a smaller size (its height).
     shrinking: bool,
+    /// Its width is on its way to a smaller one.
+    narrowing: bool,
     renderer: Option<render::Renderer>,
     /// The open island's width setting as it fits this screen.
     open_width: f32,
@@ -320,6 +322,7 @@ impl Surface {
             last_frame: None,
             pacer: pacer::Pacer::new(hwnd, WM_APP_FRAME),
             shrinking: false,
+            narrowing: false,
             renderer: render::Renderer::new(hwnd).ok(),
             // Fitted to the screen by the first place().
             open_width: layout::OPEN_WIDTH,
@@ -344,8 +347,8 @@ impl Surface {
         let r = shape::window_rect(
             placement,
             self.monitor.rect,
-            self.widest(k) * s,
-            OPEN.1 * s,
+            (self.widest(k) + 2.0 * spring::ROOM_WIDTH) * s,
+            (OPEN.1 + spring::ROOM_HEIGHT) * s,
             EAR * s,
             MARGIN * s,
         );
@@ -386,6 +389,7 @@ impl Surface {
             self.width.value * s,
             self.height.value * s,
             EAR * s,
+            self.width.is_settled(),
         );
         let lx = (x - body.x - shape::ear_room(placement, EAR * s)) / s
             - (self.width.value - self.open_size().0) / 2.0;
@@ -747,7 +751,7 @@ impl App {
         let s = sf.scale;
         let (w, h) = (sf.width.value.max(0.0) * s, sf.height.value.max(0.0) * s);
         let (ear, radius) = (EAR * s, RADIUS * s);
-        let body = shape::body_rect(placement, sf.window.width, w, h, ear);
+        let body = shape::body_rect(placement, sf.window.width, w, h, ear, sf.width.is_settled());
         let outline = if placement.hangs() {
             shape::hanging(w, h, radius, ear)
         } else {
@@ -762,7 +766,7 @@ impl App {
             sf.height.value.max(sf.height.target) * s,
         );
         let inset = shape::ear_room(placement, ear);
-        let rb = shape::body_rect(placement, sf.window.width, rw, rh, ear);
+        let rb = shape::body_rect(placement, sf.window.width, rw, rh, ear, true);
         let region = [
             (rb.x + inset).floor() as i32,
             0,
@@ -1498,6 +1502,9 @@ impl App {
         if h != sf.height.target {
             sf.shrinking = h < sf.height.value;
         }
+        if w != sf.width.target {
+            sf.narrowing = w < sf.width.value;
+        }
         sf.width.target = w;
         sf.height.target = h;
         if sf.last_frame.is_none() {
@@ -1521,13 +1528,19 @@ impl App {
             sf.last_frame = Some(now);
             #[cfg(feature = "qa")]
             let ms = ms / qa::slow();
-            // Growing is loose and a little wobbly; shrinking (also from
-            // open to the glance) is firm, so it never dips under where it
-            // stops.
-            let (pw, ph) = if sf.shrinking {
-                (spring::CLOSE_WIDTH, spring::CLOSE_HEIGHT)
-            } else {
-                (spring::OPEN_WIDTH, spring::OPEN_HEIGHT)
+            // Opening is loose and a little wobbly; growing into a glance
+            // is firm; shrinking (also from open to the glance) is firm, so
+            // it never dips under where it stops. Each way on its own: a
+            // glance can narrow while it grows taller.
+            let ph = match (sf.shrinking, sf.open) {
+                (true, _) => spring::CLOSE_HEIGHT,
+                (false, true) => spring::OPEN_HEIGHT,
+                (false, false) => spring::GLANCE,
+            };
+            let pw = match (sf.narrowing, sf.open) {
+                (true, _) => spring::CLOSE_WIDTH,
+                (false, true) => spring::OPEN_WIDTH,
+                (false, false) => spring::GLANCE,
             };
             moving = sf.width.advance(&pw, ms) | sf.height.advance(&ph, ms);
             if let Some((_, at)) = &sf.swap {
