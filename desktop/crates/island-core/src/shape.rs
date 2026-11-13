@@ -152,13 +152,23 @@ pub fn window_rect(
 }
 
 /// Where a body of `width` x `height` (without ears) sits in a window of
-/// `window_width`, ears included: centered, or against its corner.
-pub fn body_rect(p: Placement, window_width: f32, width: f32, height: f32, ear: f32) -> Rect {
+/// `window_width`, ears included: centered, or against its corner. A
+/// centered body at rest (`snap`) sits on whole pixels, for crisp edges;
+/// while it moves it doesn't, so its center never wobbles by half a pixel.
+pub fn body_rect(
+    p: Placement,
+    window_width: f32,
+    width: f32,
+    height: f32,
+    ear: f32,
+    snap: bool,
+) -> Rect {
     let full = width + 2.0 * ear_room(p, ear);
     let x = match p {
         Placement::TopLeft => 0.0,
         Placement::TopRight => window_width - full,
-        _ => ((window_width - full) / 2.0).round(),
+        _ if snap => ((window_width - full) / 2.0).round(),
+        _ => (window_width - full) / 2.0,
     };
     Rect {
         x,
@@ -244,7 +254,7 @@ mod tests {
             }
         );
         assert_eq!(
-            body_rect(Placement::Top, 580.0, 180.0, 32.0, 10.0),
+            body_rect(Placement::Top, 580.0, 180.0, 32.0, 10.0, true),
             Rect {
                 x: 190.0,
                 y: 0.0,
@@ -255,13 +265,16 @@ mod tests {
         let right = window_rect(Placement::TopRight, mon, 560.0, 180.0, 10.0, 8.0);
         assert_eq!((right.x, right.y, right.width), (-8.0 - 560.0, 8.0, 560.0));
         assert_eq!(
-            body_rect(Placement::TopRight, 560.0, 180.0, 32.0, 10.0).x,
+            body_rect(Placement::TopRight, 560.0, 180.0, 32.0, 10.0, true).x,
             380.0
         );
         assert_eq!(
-            body_rect(Placement::TopLeft, 560.0, 180.0, 32.0, 10.0).x,
+            body_rect(Placement::TopLeft, 560.0, 180.0, 32.0, 10.0, true).x,
             0.0
         );
+        // Moving, a centered body keeps its center on the window's.
+        let b = body_rect(Placement::Floating, 581.0, 180.3, 32.0, 10.0, false);
+        assert_eq!(b.x + b.width / 2.0, 290.5);
         assert_eq!(
             window_rect(Placement::Floating, mon, 560.0, 180.0, 10.0, 8.0).y,
             8.0

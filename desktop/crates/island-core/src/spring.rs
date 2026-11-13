@@ -12,33 +12,47 @@ pub struct Params {
     pub epsilon: f32,
 }
 
-// From IslandWindow.qml: opening is loose and settles with a little wobble;
-// closing is stiffer and barely overshoots. Width is a touch softer than
-// height so the body stretches before it widens.
+// Opening is loose and settles with a little wobble (the window leaves room
+// for it, see `ROOM_WIDTH`); closing is stiffer and never overshoots, and a
+// glance grows firm, without a wobble. Width is a touch softer than height
+// so the body stretches before it widens.
 pub const OPEN_WIDTH: Params = Params {
-    spring: 3.8,
-    damping: 0.36,
+    spring: 4.4,
+    damping: 0.41,
     mass: 1.0,
     epsilon: 0.25,
 };
 pub const OPEN_HEIGHT: Params = Params {
-    spring: 4.4,
-    damping: 0.38,
+    spring: 5.2,
+    damping: 0.40,
     mass: 1.0,
     epsilon: 0.25,
 };
 pub const CLOSE_WIDTH: Params = Params {
-    spring: 6.5,
-    damping: 0.6,
+    spring: 6.4,
+    damping: 0.61,
     mass: 1.0,
     epsilon: 0.25,
 };
 pub const CLOSE_HEIGHT: Params = Params {
-    spring: 7.5,
-    damping: 0.65,
+    spring: 7.7,
+    damping: 0.70,
     mass: 1.0,
     epsilon: 0.25,
 };
+/// Growing into a glance (not open), both ways.
+pub const GLANCE: Params = Params {
+    spring: 7.7,
+    damping: 0.63,
+    mass: 1.0,
+    epsilon: 0.25,
+};
+
+/// Room the window keeps around the open body for its wobble, in DIPs: on
+/// each side, and below. The widest open (960) overshoots by under 5 a side;
+/// the tallest by under 8.
+pub const ROOM_WIDTH: f32 = 16.0;
+pub const ROOM_HEIGHT: f32 = 12.0;
 
 /// The step the parameters are tuned for (Qt's).
 const STEP_MS: f32 = 16.0;
@@ -107,6 +121,9 @@ impl Spring {
 mod tests {
     use super::*;
 
+    /// The open island's height, as in `pages::OPEN_HEIGHT`.
+    const OPEN_H: f32 = crate::pages::OPEN_HEIGHT;
+
     fn run(s: &mut Spring, p: &Params) -> (u32, f32) {
         let mut peak = s.value;
         for frame in 0..2000 {
@@ -159,6 +176,41 @@ mod tests {
         }
         assert_eq!(s.value, 32.0);
         assert!(low > 31.0, "low {low}");
+    }
+
+    #[test]
+    fn the_wobble_fits_the_room() {
+        for (from, to, p, room) in [
+            (32.0, OPEN_H, &OPEN_HEIGHT, ROOM_HEIGHT),
+            (180.0, 960.0, &OPEN_WIDTH, 2.0 * ROOM_WIDTH),
+            (180.0, 560.0, &GLANCE, 0.0),
+            (32.0, 64.0, &GLANCE, 0.0),
+        ] {
+            let mut s = Spring::at(from);
+            s.target = to;
+            let mut peak = s.value;
+            while s.advance(p, 16.7) {
+                peak = peak.max(s.value);
+            }
+            assert!(peak <= to + room, "{from} to {to}: peak {peak}");
+        }
+    }
+
+    #[test]
+    fn shrinking_never_dips_under() {
+        for (from, to, p) in [
+            (208.0, 32.0, &CLOSE_HEIGHT),
+            (960.0, 180.0, &CLOSE_WIDTH),
+            (64.0, 32.0, &GLANCE),
+        ] {
+            let mut s = Spring::at(from);
+            s.target = to;
+            let mut low = s.value;
+            while s.advance(p, 16.7) {
+                low = low.min(s.value);
+            }
+            assert!(low >= to - 0.01, "{from} to {to}: low {low}");
+        }
     }
 
     #[test]

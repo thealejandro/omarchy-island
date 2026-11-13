@@ -258,6 +258,7 @@ pub fn frame(app: &App, i: usize) {
         sf.width.value * s,
         sf.height.value * s,
         EAR * s,
+        sf.width.is_settled(),
     );
     let film = QA.with_borrow_mut(|q| {
         let q = q.as_mut()?;
@@ -566,16 +567,20 @@ fn run(app: &mut App, cmd: &[String]) -> std::result::Result<(), String> {
 fn screen_free() -> bool {
     let shows = unsafe { SHQueryUserNotificationState() }.is_ok_and(|s| s.0 != 1);
     if !shows {
-        QA.with_borrow_mut(|q| {
-            if let Some(q) = q {
-                let note = "sin capturas: el protector de pantalla o el bloqueo tapa el escritorio";
-                if !q.notes.iter().any(|n| n == note) {
-                    q.notes.push(note.into());
-                }
-            }
-        });
+        note("sin capturas: el protector de pantalla o el bloqueo tapa el escritorio");
     }
     shows
+}
+
+/// A note for the report, once.
+fn note(text: &str) {
+    QA.with_borrow_mut(|q| {
+        if let Some(q) = q
+            && !q.notes.iter().any(|n| n == text)
+        {
+            q.notes.push(text.into());
+        }
+    });
 }
 
 /// The screen behind each island, with the islands away for a moment.
@@ -609,7 +614,10 @@ fn shoot(app: &App, i: usize, name: &str) {
         return;
     }
     let sf = &app.surfaces[i];
-    let Some(g) = grab(sf.window) else { return };
+    let Some(g) = grab(sf.window) else {
+        note("sin capturas: Windows no deja leer la pantalla (¿sesión remota o desconectada?)");
+        return;
+    };
     let s = sf.scale;
     let body = shape::body_rect(
         app.placement,
@@ -617,6 +625,7 @@ fn shoot(app: &App, i: usize, name: &str) {
         sf.width.value * s,
         sf.height.value * s,
         EAR * s,
+        sf.width.is_settled(),
     );
     QA.with_borrow_mut(|q| {
         let Some(q) = q.as_mut() else { return };
